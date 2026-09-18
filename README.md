@@ -8,8 +8,8 @@ Windows 本地大学作业管理应用。安装后从开始菜单打开，或直
 
 | 文件 | 适用场景 |
 | --- | --- |
-| `作业簿_<版本>_x64_安装版.exe` | 推荐。标准 Windows 安装程序，会创建开始菜单入口。 |
-| `作业簿_<版本>_便携版.exe` | 无需安装，下载后直接运行；仍与安装版共用当前 Windows 用户的数据。 |
+| `homework-manager-v<版本>-windows-x64-installer.exe` | 推荐。标准 Windows 安装程序，会创建开始菜单入口。 |
+| `homework-manager-v<版本>-windows-x64-portable.exe` | 无需安装，下载后直接运行；仍与安装版共用当前 Windows 用户的数据。 |
 | `SHA256SUMS.txt` | 下载后的文件完整性校验值。 |
 
 当前仅发布 Windows x64 版本。首次运行前，如系统提示缺少 WebView2，请安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。Windows 的 SmartScreen 提示通常是因为个人发行版未进行代码签名；请仅从本仓库的 Releases 页面获取安装包，并先核对 SHA-256。

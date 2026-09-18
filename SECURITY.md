@@ -13,5 +13,5 @@
 每个 Release 都附带 `SHA256SUMS.txt`。在 PowerShell 中可用下列命令核对下载文件：
 
 ```powershell
-Get-FileHash .\作业簿_0.3.0_x64_安装版.exe -Algorithm SHA256
+Get-FileHash .\homework-manager-v0.3.0-windows-x64-installer.exe -Algorithm SHA256
 ```

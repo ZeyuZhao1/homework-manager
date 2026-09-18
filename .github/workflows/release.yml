@@ -39,10 +39,10 @@ jobs:
           $version = '${{ github.ref_name }}'.TrimStart('v')
           $releaseDir = 'release-assets'
           New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-          Copy-Item 'src-tauri/target/release/homework-manager.exe' "$releaseDir/作业簿_${version}_便携版.exe"
+          Copy-Item 'src-tauri/target/release/homework-manager.exe' "$releaseDir/homework-manager-v${version}-windows-x64-portable.exe"
           $installer = Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
           if (-not $installer) { throw 'NSIS installer was not generated.' }
-          Copy-Item $installer.FullName "$releaseDir/作业簿_${version}_x64_安装版.exe"
+          Copy-Item $installer.FullName "$releaseDir/homework-manager-v${version}-windows-x64-installer.exe"
           Get-ChildItem $releaseDir -File | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLowerInvariant())  $($_.Path | Split-Path -Leaf)" } | Set-Content -Encoding utf8 "$releaseDir/SHA256SUMS.txt"
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
