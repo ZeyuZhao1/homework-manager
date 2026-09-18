@@ -1,0 +1,51 @@
+name: Release Windows app
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify version tag
+        shell: pwsh
+        run: |
+          $tagVersion = '${{ github.ref_name }}'.TrimStart('v')
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($tagVersion -ne $packageVersion -or $tagVersion -ne $tauriVersion) {
+            throw "Tag v$tagVersion must match package.json ($packageVersion) and tauri.conf.json ($tauriVersion)."
+          }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+      - run: pnpm desktop:build
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $releaseDir = 'release-assets'
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          Copy-Item 'src-tauri/target/release/homework-manager.exe' "$releaseDir/作业簿_${version}_便携版.exe"
+          $installer = Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer was not generated.' }
+          Copy-Item $installer.FullName "$releaseDir/作业簿_${version}_x64_安装版.exe"
+          Get-ChildItem $releaseDir -File | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLowerInvariant())  $($_.Path | Split-Path -Leaf)" } | Set-Content -Encoding utf8 "$releaseDir/SHA256SUMS.txt"
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-assets/*
