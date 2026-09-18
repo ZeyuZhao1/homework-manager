@@ -44,7 +44,7 @@ jobs:
       - name: Prepare release assets
         shell: pwsh
         run: |
-          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $version = '${{ inputs.release_tag || github.ref_name }}'.TrimStart('v')
           $releaseDir = 'release-assets'
           New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
           Copy-Item 'src-tauri/target/release/homework-manager.exe' "$releaseDir/homework-manager-v${version}-windows-x64-portable.exe"
