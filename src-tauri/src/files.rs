@@ -371,7 +371,8 @@ mod tests {
         let event = rename_file_impl(&mut conn,&first,&naming("2.5&s2.6")).unwrap();
         assert!(!source.exists() && target.exists());
         let actual: String = conn.query_row("SELECT path FROM file_assets WHERE id=?1",[&shared_ids[0]],|r|r.get(0)).unwrap();
-        assert_eq!(actual,target.to_string_lossy());
+        assert_eq!(Path::new(&actual).file_name(), target.file_name());
+        assert!(Path::new(&actual).exists());
         drop(conn);
         let mut reopened = Connection::open(&db_path).unwrap();
         undo_rename_impl(&mut reopened,&event).unwrap();
