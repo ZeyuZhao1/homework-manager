@@ -1,12 +1,12 @@
 {
   "name": "homework-manager",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint src vite.config.ts",
+    "lint": "oxlint src modules vite.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",

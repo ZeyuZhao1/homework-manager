@@ -1,6 +1,6 @@
 # 本地功能模块协议（v1）
 
-应用在 `%APPDATA%\app.homeworkbook.local\modules` 的每个子目录中查找 `module.json`。安装模块时，把清单和可执行文件放入同一个子目录，在设置页点击“刷新模块”。应用不会在启动时运行模块；用户触发功能时才启动对应进程。模块由用户自行安装和信任。
+应用在 `%APPDATA%\app.homeworkbook.local\modules` 的每个子目录中查找 `module.json`。安装模块时，把清单和可执行文件放入同一个子目录，在设置页点击“刷新模块”。每个模块都可在设置页单独开启或关闭；关闭状态保存在 SQLite，模块入口会隐藏，模块宿主也会拒绝调用。应用不会在启动时运行模块；用户触发功能时才启动对应进程。模块由用户自行安装和信任。
 
 ```json
 {
@@ -41,6 +41,8 @@
 | `file.suggest-name` | `{ "path": "…", "course_code": "…", "role": "…" }` | `{ "name": "…", "reason": "…" }` |
 | `file.print` | `{ "paths": ["…"], "copies": 1 }` | `{ "queued": 1 }` |
 
-`assignment.extract` 已有内置模块 `builtin.ai.assignment-import`。AI 导入抽屉会列出所有声明该能力的模块，审核后才保存。外部模块的其他能力目前通过前端服务接口 `service.invokeModule` 调用；今后新增的界面操作可直接使用该接口。模块可以解析文件或提出命名建议，但实际数据库写入和文件重命名仍由主程序负责，以保留冲突预览及撤回记录。
+`assignment.extract` 已有内置模块 `builtin.ai.assignment-import`，源代码完整位于 [`modules/assignment-import`](modules/assignment-import)。其中 `module.json` 声明能力，`backend.rs` 实现识别与配置，`frontend/` 包含导入抽屉、服务商编辑、整块设置卡和类型化服务，`provider-presets.json` 保存预设，`prompts/` 存放默认提示词。`src/moduleRegistry.ts` 自动发现前端入口，`src-tauri/src/modules.rs` 注册内置后端。核心快照不包含 AI 服务商或模型分配；模块使用独立的 SQLite 表，并在首次启动时迁移旧配置和用户修改过的提示词。模块密钥沿用 Windows 凭据管理器。
+
+AI 导入抽屉会列出所有声明该能力的模块，审核后才保存。外部模块的其他能力目前通过前端服务接口 `service.invokeModule` 调用；今后新增的界面操作可直接使用该接口。模块可以解析文件或提出命名建议，但实际数据库写入和文件重命名仍由主程序负责，以保留冲突预览及撤回记录。
 
 模块不会收到应用保存的 API 密钥。需要云服务的外部模块应自行管理其凭据。数据库备份不包含模块文件。

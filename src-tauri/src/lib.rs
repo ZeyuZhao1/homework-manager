@@ -1,4 +1,3 @@
-mod ai;
 mod db;
 mod files;
 mod modules;
@@ -17,12 +16,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             db::load_snapshot,
             db::save_semester,
+            db::delete_semester,
             db::save_course,
             db::save_assignment,
+            db::save_assignments_batch,
             db::delete_assignment,
             db::save_settings,
-            db::save_provider,
-            db::delete_provider,
             db::backup_database,
             db::restore_database,
             db::compact_database,
@@ -40,12 +39,16 @@ pub fn run() {
             files::rename_file,
             files::undo_rename,
             modules::list_modules,
+            modules::set_module_enabled,
             modules::modules_directory,
             modules::open_modules_directory,
             modules::invoke_module,
-            ai::save_import_drafts,
-            ai::prompt_directory,
-            ai::open_prompt_directory,
+            modules::assignment_import::get_config,
+            modules::assignment_import::save_provider,
+            modules::assignment_import::delete_provider,
+            modules::assignment_import::save_routing,
+            modules::assignment_import::prompt_directory,
+            modules::assignment_import::open_prompt_directory,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start 作业簿");

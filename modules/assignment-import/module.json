@@ -1,0 +1,7 @@
+{
+  "id": "builtin.ai.assignment-import",
+  "name": "AI 作业导入",
+  "version": "0.4.0",
+  "capabilities": ["assignment.extract"],
+  "builtin": true
+}

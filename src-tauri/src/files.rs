@@ -63,13 +63,17 @@ pub fn save_common_file(state: State<'_, AppState>, payload: CommonFileInput) ->
     conn.execute("INSERT OR IGNORE INTO file_assets(id,path) VALUES (?1,?2)", params![Uuid::new_v4().to_string(),path]).map_err(|e| e.to_string())?;
     let file_id: String = conn.query_row("SELECT id FROM file_assets WHERE path=?1", [&path], |r| r.get(0)).map_err(|e| e.to_string())?;
     let label = if payload.label.trim().is_empty() { Path::new(&path).file_name().unwrap_or_default().to_string_lossy().to_string() } else { payload.label.trim().to_owned() };
+    let existed: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM common_files WHERE course_id=?1 AND file_id=?2)", params![payload.course_id,file_id], |r| r.get(0)).map_err(|e| e.to_string())?;
     conn.execute("INSERT INTO common_files(course_id,file_id,kind,label) VALUES (?1,?2,?3,?4) ON CONFLICT(course_id,file_id) DO UPDATE SET kind=excluded.kind,label=excluded.label", params![payload.course_id,file_id,payload.kind,label]).map_err(|e| e.to_string())?;
+    record_file_history(&conn,&file_id,"","",if existed { "common_updated" } else { "common_added" },&path,&format!("常用文件：{label}"))?;
     Ok(file_id)
 }
 
 #[tauri::command]
 pub fn remove_common_file(state: State<'_, AppState>, course_id: String, file_id: String) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let (path,label): (String,String) = conn.query_row("SELECT f.path,c.label FROM common_files c JOIN file_assets f ON f.id=c.file_id WHERE c.course_id=?1 AND c.file_id=?2", params![course_id,file_id], |r| Ok((r.get(0)?,r.get(1)?))).map_err(|_| "常用文件不存在".to_string())?;
+    record_file_history(&conn,&file_id,"","","common_removed",&path,&format!("取消常用文件：{label}"))?;
     conn.execute("DELETE FROM common_files WHERE course_id=?1 AND file_id=?2", params![course_id,file_id]).map_err(|e| e.to_string())?;
     crate::db::prune_unused_files(&conn)
 }
@@ -84,6 +88,35 @@ fn metadata_signature(path: &Path) -> Result<(i64, i64), String> {
     let meta = fs::metadata(path).map_err(|e| e.to_string())?;
     let time = meta.modified().map_err(|e| e.to_string())?.duration_since(UNIX_EPOCH).map_err(|e| e.to_string())?.as_millis() as i64;
     Ok((meta.len() as i64, time))
+}
+
+fn link_details(role: &str, page: &str, chapter: &str, problem: &str, note: &str) -> String {
+    let role = match role { "prompt" => "题目材料", "reference" => "教材参考", "solution" => "我的解答", _ => role };
+    let mut parts = vec![format!("角色：{role}")];
+    for (label, value) in [("页码",page),("章节",chapter),("题号",problem),("备注",note)] {
+        if !value.trim().is_empty() { parts.push(format!("{label}：{}", value.trim())); }
+    }
+    parts.join(" · ")
+}
+
+pub(crate) fn record_file_history(
+    conn: &rusqlite::Connection,
+    file_id: &str,
+    link_id: &str,
+    assignment_id: &str,
+    event_type: &str,
+    path: &str,
+    details: &str,
+) -> Result<(), String> {
+    let assignment_title = if assignment_id.is_empty() { String::new() } else {
+        conn.query_row("SELECT title FROM assignments WHERE id=?1", [assignment_id], |r| r.get(0)).optional().map_err(|e| e.to_string())?.unwrap_or_default()
+    };
+    let (file_size, modified_at_ms) = metadata_signature(Path::new(path)).map(|(size,modified)| (Some(size),Some(modified))).unwrap_or((None,None));
+    conn.execute(
+        "INSERT INTO file_history(id,file_id,link_id,assignment_id,assignment_title,event_type,path,details,file_size,modified_at_ms,occurred_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+        params![Uuid::new_v4().to_string(),file_id,link_id,assignment_id,assignment_title,event_type,path,details,file_size,modified_at_ms,now()]
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub(crate) fn normal_path(path: &Path) -> String {
@@ -123,7 +156,9 @@ fn link_files_batch_impl(conn: &mut rusqlite::Connection, payload: LinkBatchInpu
         let file_id: String = tx.query_row("SELECT id FROM file_assets WHERE path=?1", [&path], |r| r.get(0)).map_err(|e| e.to_string())?;
         let exists: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM assignment_files WHERE assignment_id=?1 AND file_id=?2 AND role=?3)", params![payload.assignment_id,file_id,payload.role], |r| r.get(0)).map_err(|e| e.to_string())?;
         if !exists {
-            tx.execute("INSERT INTO assignment_files(id,assignment_id,file_id,role,page,chapter,problem,note) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)", params![Uuid::new_v4().to_string(),payload.assignment_id,file_id,payload.role,payload.page,payload.chapter,payload.problem,payload.note]).map_err(|e| e.to_string())?;
+            let link_id = Uuid::new_v4().to_string();
+            tx.execute("INSERT INTO assignment_files(id,assignment_id,file_id,role,page,chapter,problem,note) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)", params![link_id,payload.assignment_id,file_id,payload.role,payload.page,payload.chapter,payload.problem,payload.note]).map_err(|e| e.to_string())?;
+            record_file_history(&tx,&file_id,&link_id,&payload.assignment_id,"linked",&path,&link_details(&payload.role,&payload.page,&payload.chapter,&payload.problem,&payload.note))?;
             created += 1;
         }
     }
@@ -152,20 +187,27 @@ fn link_file_impl(conn: &rusqlite::Connection, payload: LinkInput) -> Result<Str
             id
         }
     };
+    let is_update = !payload.id.trim().is_empty() && conn.query_row("SELECT EXISTS(SELECT 1 FROM assignment_files WHERE id=?1)", [&payload.id], |r| r.get::<_,bool>(0)).map_err(|e| e.to_string())?;
     let id = id_or_new(&payload.id);
     conn.execute("INSERT INTO assignment_files(id,assignment_id,file_id,role,page,chapter,problem,note) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET file_id=excluded.file_id,role=excluded.role,page=excluded.page,chapter=excluded.chapter,problem=excluded.problem,note=excluded.note", params![id,payload.assignment_id,file_id,payload.role,payload.page,payload.chapter,payload.problem,payload.note]).map_err(|e| e.to_string())?;
+    record_file_history(conn,&file_id,&id,&payload.assignment_id,if is_update { "link_updated" } else { "linked" },&path,&link_details(&payload.role,&payload.page,&payload.chapter,&payload.problem,&payload.note))?;
     Ok(id)
 }
 
 #[tauri::command]
 pub fn save_file_link(state: State<'_, AppState>, payload: FileLink) -> Result<(), String> {
-    state.db.lock().map_err(|e| e.to_string())?.execute("UPDATE assignment_files SET role=?2,page=?3,chapter=?4,problem=?5,note=?6 WHERE id=?1", params![payload.id,payload.role,payload.page,payload.chapter,payload.problem,payload.note]).map_err(|e| e.to_string())?;
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let (file_id,path): (String,String) = conn.query_row("SELECT f.id,f.path FROM assignment_files l JOIN file_assets f ON f.id=l.file_id WHERE l.id=?1", [&payload.id], |r| Ok((r.get(0)?,r.get(1)?))).map_err(|_| "文件关联不存在".to_string())?;
+    conn.execute("UPDATE assignment_files SET role=?2,page=?3,chapter=?4,problem=?5,note=?6 WHERE id=?1", params![payload.id,payload.role,payload.page,payload.chapter,payload.problem,payload.note]).map_err(|e| e.to_string())?;
+    record_file_history(&conn,&file_id,&payload.id,&payload.assignment_id,"link_updated",&path,&link_details(&payload.role,&payload.page,&payload.chapter,&payload.problem,&payload.note))?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn unlink_file(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let (assignment_id,file_id,path,role,page,chapter,problem,note): (String,String,String,String,String,String,String,String) = conn.query_row("SELECT l.assignment_id,f.id,f.path,l.role,l.page,l.chapter,l.problem,l.note FROM assignment_files l JOIN file_assets f ON f.id=l.file_id WHERE l.id=?1", [&id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?))).map_err(|_| "文件关联不存在".to_string())?;
+    record_file_history(&conn,&file_id,&id,&assignment_id,"unlinked",&path,&link_details(&role,&page,&chapter,&problem,&note))?;
     conn.execute("DELETE FROM assignment_files WHERE id=?1", [id]).map_err(|e| e.to_string())?;
     crate::db::prune_unused_files(&conn)?;
     Ok(())
@@ -178,9 +220,12 @@ pub fn relink_file(state: State<'_, AppState>, file_id: String, path: String) ->
 }
 
 fn relink_file_impl(conn: &rusqlite::Connection, file_id: &str, path: &str) -> Result<(), String> {
+    let old_path: String = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [file_id], |r| r.get(0)).map_err(|_| "文件关联不存在".to_string())?;
     let path = fs::canonicalize(path).map_err(|_| "新文件路径不存在".to_string())?;
     if !path.is_file() { return Err("请选择文件".into()); }
-    conn.execute("UPDATE file_assets SET path=?2 WHERE id=?1", params![file_id,normal_path(&path)]).map_err(|e| e.to_string())?;
+    let path = normal_path(&path);
+    conn.execute("UPDATE file_assets SET path=?2 WHERE id=?1", params![file_id,path]).map_err(|e| e.to_string())?;
+    record_file_history(conn,file_id,"","","relocated",&path,&format!("原路径：{old_path}"))?;
     Ok(())
 }
 
@@ -283,8 +328,10 @@ fn rename_file_impl(conn: &mut rusqlite::Connection, link_id: &str, naming: &Nam
     let id = Uuid::new_v4().to_string();
     let result = (|| -> Result<(), String> {
         let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let (assignment_id,role): (String,String) = tx.query_row("SELECT assignment_id,role FROM assignment_files WHERE id=?1", [link_id], |r| Ok((r.get(0)?,r.get(1)?))).map_err(|e| e.to_string())?;
         tx.execute("UPDATE file_assets SET path=?2 WHERE id=?1", params![preview.file_id,preview.new_path]).map_err(|e| e.to_string())?;
         tx.execute("INSERT INTO rename_history(id,file_id,old_path,new_path,file_size,modified_at_ms,changed_at) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![id,preview.file_id,preview.old_path,preview.new_path,size,modified,now()]).map_err(|e| e.to_string())?;
+        record_file_history(&tx,&preview.file_id,link_id,&assignment_id,"renamed",&preview.new_path,&format!("{} · 原路径：{}",link_details(&role,"","","",""),preview.old_path))?;
         tx.commit().map_err(|e| e.to_string())
     })();
     if let Err(error) = result { let _ = fs::rename(new,old); return Err(error); }
@@ -311,6 +358,7 @@ fn undo_rename_impl(conn: &mut rusqlite::Connection, id: &str) -> Result<(), Str
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         tx.execute("UPDATE file_assets SET path=?2 WHERE id=?1", params![file_id,old_path]).map_err(|e| e.to_string())?;
         tx.execute("UPDATE rename_history SET undone_at=?2 WHERE id=?1", params![id,now()]).map_err(|e| e.to_string())?;
+        record_file_history(&tx,&file_id,"","","rename_undone",&old_path,&format!("撤回名称：{new_path}"))?;
         tx.commit().map_err(|e| e.to_string())
     })();
     if let Err(error) = result { let _ = fs::rename(&old_path,&new_path); return Err(error); }
@@ -344,6 +392,7 @@ mod tests {
             CREATE TABLE file_assets(id TEXT PRIMARY KEY,path TEXT UNIQUE);
             CREATE TABLE assignment_files(id TEXT PRIMARY KEY,assignment_id TEXT,file_id TEXT,role TEXT,page TEXT,chapter TEXT,problem TEXT,note TEXT);
             CREATE TABLE rename_history(id TEXT PRIMARY KEY,file_id TEXT,old_path TEXT,new_path TEXT,file_size INTEGER,modified_at_ms INTEGER,changed_at TEXT,undone_at TEXT);
+            CREATE TABLE file_history(id TEXT PRIMARY KEY,file_id TEXT,link_id TEXT,assignment_id TEXT,assignment_title TEXT,event_type TEXT,path TEXT,details TEXT,file_size INTEGER,modified_at_ms INTEGER,occurred_at TEXT);
             CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT);
             INSERT INTO semesters VALUES('s','2026 秋季');
             INSERT INTO courses VALUES('c','s','Calculus','MA117');

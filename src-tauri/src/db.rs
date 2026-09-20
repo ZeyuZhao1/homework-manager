@@ -1,12 +1,11 @@
 use rusqlite::{params, Connection, OptionalExtension, MAIN_DB};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::{Path, PathBuf}, sync::Mutex};
+use std::{collections::HashMap, path::PathBuf, sync::Mutex};
 use tauri::{Manager, State};
 use uuid::Uuid;
 
 pub struct AppState {
     pub db: Mutex<Connection>,
-    pub prompts_dir: PathBuf,
     pub modules_dir: PathBuf,
 }
 
@@ -83,21 +82,24 @@ pub struct RenameEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Provider {
+pub struct FileHistoryEvent {
     pub id: String,
-    pub name: String,
-    pub kind: String,
-    pub base_url: String,
-    pub model: String,
-    pub has_key: bool,
+    pub file_id: String,
+    pub link_id: String,
+    pub assignment_id: String,
+    pub assignment_title: String,
+    pub event_type: String,
+    pub path: String,
+    pub details: String,
+    pub file_size: Option<i64>,
+    pub modified_at_ms: Option<i64>,
+    pub occurred_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub theme: String,
     pub naming_template: String,
-    pub assignment_provider_id: String,
-    pub material_provider_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -109,7 +111,7 @@ pub struct Snapshot {
     pub links: Vec<FileLink>,
     pub common_files: Vec<CommonFile>,
     pub renames: Vec<RenameEvent>,
-    pub providers: Vec<Provider>,
+    pub file_history: Vec<FileHistoryEvent>,
     pub settings: Settings,
     pub recent_values: HashMap<String, Vec<String>>,
 }
@@ -122,34 +124,10 @@ pub fn id_or_new(id: &str) -> String {
     if id.trim().is_empty() { Uuid::new_v4().to_string() } else { id.to_owned() }
 }
 
-fn key_entry(id: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new("app.homeworkbook.local", id).map_err(|e| e.to_string())
-}
-
-pub fn provider_key(id: &str) -> Result<String, String> {
-    key_entry(id)?.get_password().map_err(|_| "此服务商尚未保存 API Key".to_string())
-}
-
-fn ensure_prompt_files(directory: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(directory).map_err(|e| e.to_string())?;
-    for (name, current, previous) in [
-        ("assignment_system.txt", include_str!("../prompts/assignment_system.txt"), include_str!("../prompts/legacy/assignment_system_v0.2.txt")),
-        ("assignment_user.txt", include_str!("../prompts/assignment_user.txt"), include_str!("../prompts/legacy/assignment_user_v0.2.txt")),
-    ] {
-        let path = directory.join(name);
-        if !path.exists() || std::fs::read_to_string(&path).ok().as_deref() == Some(previous) {
-            std::fs::write(&path, current).map_err(|e| format!("无法更新提示词文件 {}：{e}",path.display()))?;
-        }
-    }
-    Ok(())
-}
-
 pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
-    let prompts_dir = data_dir.join("prompts");
     let modules_dir = data_dir.join("modules");
-    ensure_prompt_files(&prompts_dir)?;
     std::fs::create_dir_all(&modules_dir).map_err(|e| e.to_string())?;
     let path = data_dir.join("homework.db");
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
@@ -166,12 +144,14 @@ pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
          CREATE TABLE IF NOT EXISTS assignment_files (id TEXT PRIMARY KEY, assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE, file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, role TEXT NOT NULL, page TEXT NOT NULL DEFAULT '', chapter TEXT NOT NULL DEFAULT '', problem TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '');
          CREATE INDEX IF NOT EXISTS assignment_files_by_assignment ON assignment_files(assignment_id);
          CREATE TABLE IF NOT EXISTS rename_history (id TEXT PRIMARY KEY, file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, old_path TEXT NOT NULL, new_path TEXT NOT NULL, file_size INTEGER NOT NULL, modified_at_ms INTEGER NOT NULL, changed_at TEXT NOT NULL, undone_at TEXT);
-         CREATE TABLE IF NOT EXISTS providers (id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, base_url TEXT NOT NULL, model TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS file_history (id TEXT PRIMARY KEY, file_id TEXT NOT NULL, link_id TEXT NOT NULL DEFAULT '', assignment_id TEXT NOT NULL DEFAULT '', assignment_title TEXT NOT NULL DEFAULT '', event_type TEXT NOT NULL, path TEXT NOT NULL, details TEXT NOT NULL DEFAULT '', file_size INTEGER, modified_at_ms INTEGER, occurred_at TEXT NOT NULL);
+         CREATE INDEX IF NOT EXISTS file_history_by_file_time ON file_history(file_id, occurred_at DESC);
          CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
          CREATE TABLE IF NOT EXISTS recent_values (field TEXT NOT NULL, value TEXT NOT NULL, used_at TEXT NOT NULL, PRIMARY KEY(field,value));
          CREATE TABLE IF NOT EXISTS assignment_custom_fields (assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE, field_key TEXT NOT NULL, field_value TEXT NOT NULL, PRIMARY KEY(assignment_id,field_key));
          CREATE TABLE IF NOT EXISTS common_files (course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE, file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, kind TEXT NOT NULL, label TEXT NOT NULL, PRIMARY KEY(course_id,file_id));
-         PRAGMA user_version=2;"
+         CREATE TABLE IF NOT EXISTS module_states (module_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL);
+         PRAGMA user_version=4;"
     ).map_err(|e| e.to_string())?;
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM semesters", [], |r| r.get(0)).map_err(|e| e.to_string())?;
     if count == 0 {
@@ -196,11 +176,12 @@ pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
         INSERT OR IGNORE INTO recent_values(field,value,used_at) SELECT 'submission_url',trim(submission_url),updated_at FROM assignments WHERE trim(submission_url)<>'';
         INSERT OR IGNORE INTO recent_values(field,value,used_at) SELECT 'submission_notes',trim(submission_notes),updated_at FROM assignments WHERE trim(submission_notes)<>'';").map_err(|e| e.to_string())?;
     prune_unused_files(&conn)?;
-    Ok(AppState { db: Mutex::new(conn), prompts_dir, modules_dir })
+    crate::modules::initialize(&conn, &data_dir)?;
+    Ok(AppState { db: Mutex::new(conn), modules_dir })
 }
 
 pub fn prune_unused_files(conn: &Connection) -> Result<(), String> {
-    conn.execute("DELETE FROM file_assets WHERE id NOT IN (SELECT file_id FROM assignment_files) AND id NOT IN (SELECT file_id FROM rename_history) AND id NOT IN (SELECT file_id FROM common_files)", []).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM file_assets WHERE id NOT IN (SELECT file_id FROM assignment_files) AND id NOT IN (SELECT file_id FROM rename_history) AND id NOT IN (SELECT file_id FROM common_files) AND id NOT IN (SELECT file_id FROM file_history)", []).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -212,9 +193,13 @@ pub fn current_settings(conn: &Connection) -> Result<Settings, String> {
     Ok(Settings {
         theme: setting(conn, "theme", "light")?,
         naming_template: setting(conn, "naming_template", "{course_code}-{material}-hw-{scope}")?,
-        assignment_provider_id: setting(conn, "assignment_provider_id", "")?,
-        material_provider_id: setting(conn, "material_provider_id", "")?,
     })
+}
+
+pub fn course_identifiers(conn: &Connection) -> Result<Vec<(String,String,String)>, String> {
+    conn.prepare("SELECT id,name,code FROM courses ORDER BY name,code").map_err(|e| e.to_string())?
+        .query_map([], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -239,6 +224,19 @@ pub fn load_snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
     let files = conn.prepare("SELECT id,path FROM file_assets ORDER BY path").map_err(|e| e.to_string())?
         .query_map([], |r| { let path: String = r.get(1)?; Ok(FileAsset { id:r.get(0)?, missing: !std::path::Path::new(&path).is_file(), path }) }).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+    for file in files.iter().filter(|file| !file.missing) {
+        let Ok(metadata) = std::fs::metadata(&file.path) else { continue };
+        let Ok(modified) = metadata.modified() else { continue };
+        let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) else { continue };
+        let modified_at_ms = duration.as_millis() as i64;
+        let current = (metadata.len() as i64, modified_at_ms);
+        let previous = conn.query_row("SELECT file_size,modified_at_ms FROM file_history WHERE file_id=?1 AND file_size IS NOT NULL AND modified_at_ms IS NOT NULL ORDER BY occurred_at DESC,rowid DESC LIMIT 1", [&file.id], |r| Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?))).optional().map_err(|e| e.to_string())?;
+        match previous {
+            None => crate::files::record_file_history(&conn,&file.id,"","","tracking_started",&file.path,"开始记录文件大小和修改时间")?,
+            Some(old) if old != current => crate::files::record_file_history(&conn,&file.id,"","","content_changed",&file.path,&format!("文件状态发生变化（原大小 {} 字节）",old.0))?,
+            _ => {}
+        }
+    }
     let links = conn.prepare("SELECT id,assignment_id,file_id,role,page,chapter,problem,note FROM assignment_files").map_err(|e| e.to_string())?
         .query_map([], |r| Ok(FileLink { id:r.get(0)?,assignment_id:r.get(1)?,file_id:r.get(2)?,role:r.get(3)?,page:r.get(4)?,chapter:r.get(5)?,problem:r.get(6)?,note:r.get(7)? })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
@@ -248,8 +246,8 @@ pub fn load_snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
     let renames = conn.prepare("SELECT id,file_id,old_path,new_path,changed_at,undone_at FROM rename_history ORDER BY changed_at DESC LIMIT 100").map_err(|e| e.to_string())?
         .query_map([], |r| Ok(RenameEvent { id:r.get(0)?,file_id:r.get(1)?,old_path:r.get(2)?,new_path:r.get(3)?,changed_at:r.get(4)?,undone_at:r.get(5)? })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
-    let providers = conn.prepare("SELECT id,name,kind,base_url,model FROM providers ORDER BY name").map_err(|e| e.to_string())?
-        .query_map([], |r| { let id:String=r.get(0)?; Ok(Provider { has_key:provider_key(&id).is_ok(), id, name:r.get(1)?,kind:r.get(2)?,base_url:r.get(3)?,model:r.get(4)? }) }).map_err(|e| e.to_string())?
+    let file_history = conn.prepare("SELECT id,file_id,link_id,assignment_id,assignment_title,event_type,path,details,file_size,modified_at_ms,occurred_at FROM file_history ORDER BY occurred_at DESC,rowid DESC LIMIT 1000").map_err(|e| e.to_string())?
+        .query_map([], |r| Ok(FileHistoryEvent { id:r.get(0)?,file_id:r.get(1)?,link_id:r.get(2)?,assignment_id:r.get(3)?,assignment_title:r.get(4)?,event_type:r.get(5)?,path:r.get(6)?,details:r.get(7)?,file_size:r.get(8)?,modified_at_ms:r.get(9)?,occurred_at:r.get(10)? })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
     let mut recent_values: HashMap<String,Vec<String>> = HashMap::new();
     let mut stmt = conn.prepare("SELECT field,value FROM recent_values ORDER BY used_at DESC,rowid DESC").map_err(|e| e.to_string())?;
@@ -258,7 +256,7 @@ pub fn load_snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
         let values = recent_values.entry(field).or_default();
         if values.len() < 12 { values.push(value); }
     }
-    Ok(Snapshot { semesters,courses,assignments,files,links,common_files,renames,providers,settings:current_settings(&conn)?,recent_values })
+    Ok(Snapshot { semesters,courses,assignments,files,links,common_files,renames,file_history,settings:current_settings(&conn)?,recent_values })
 }
 
 pub fn remember_value(conn: &Connection, field: &str, value: &str) -> Result<(), String> {
@@ -276,6 +274,35 @@ pub fn save_semester(state: State<'_, AppState>, mut payload: Semester) -> Resul
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     conn.execute("INSERT INTO semesters(id,name,source_root) VALUES (?1,?2,?3) ON CONFLICT(id) DO UPDATE SET name=excluded.name,source_root=excluded.source_root", params![payload.id,payload.name.trim(),payload.source_root.trim()]).map_err(|e| e.to_string())?;
     Ok(payload.id)
+}
+
+#[tauri::command]
+pub fn delete_semester(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let semester_count: i64 = conn.query_row("SELECT COUNT(*) FROM semesters", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+    if semester_count <= 1 { return Err("至少需要保留一个学期".into()); }
+    let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM semesters WHERE id=?1)", [&id], |r| r.get(0)).map_err(|e| e.to_string())?;
+    if !exists { return Err("学期不存在或已被删除".into()); }
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let affected = {
+        let mut stmt = tx.prepare("SELECT l.id,l.assignment_id,l.file_id,f.path FROM assignment_files l JOIN file_assets f ON f.id=l.file_id JOIN assignments a ON a.id=l.assignment_id JOIN courses c ON c.id=a.course_id WHERE c.semester_id=?1").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([&id], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?))).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?
+    };
+    for (link_id,assignment_id,file_id,path) in affected {
+        crate::files::record_file_history(&tx,&file_id,&link_id,&assignment_id,"unlinked",&path,"因删除学期移除关联")?;
+    }
+    let common_files = {
+        let mut stmt = tx.prepare("SELECT cf.file_id,f.path,cf.label FROM common_files cf JOIN file_assets f ON f.id=cf.file_id JOIN courses c ON c.id=cf.course_id WHERE c.semester_id=?1").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([&id], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?
+    };
+    for (file_id,path,label) in common_files {
+        crate::files::record_file_history(&tx,&file_id,"","","common_removed",&path,&format!("删除学期时取消常用文件：{label}"))?;
+    }
+    tx.execute("DELETE FROM semesters WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
+    prune_unused_files(&tx)?;
+    tx.commit().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -307,9 +334,62 @@ pub fn save_assignment(state: State<'_, AppState>, mut payload: Assignment) -> R
     Ok(payload.id)
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BatchAssignmentInput {
+    assignments: Vec<Assignment>,
+    paths: Vec<String>,
+    file_role: String,
+}
+
+#[tauri::command]
+pub fn save_assignments_batch(state: State<'_, AppState>, payload: BatchAssignmentInput) -> Result<Vec<String>, String> {
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    save_assignments_batch_impl(&mut conn, payload)
+}
+
+fn save_assignments_batch_impl(conn: &mut Connection, payload: BatchAssignmentInput) -> Result<Vec<String>, String> {
+    if payload.assignments.is_empty() { return Err("没有可创建的作业".into()); }
+    if !["prompt","reference","solution"].contains(&payload.file_role.as_str()) { return Err("无效的文件角色".into()); }
+    for item in &payload.assignments {
+        if item.title.trim().is_empty() || item.course_id.trim().is_empty() { return Err("请为每条作业确认课程和标题".into()); }
+        if !["todo","doing","done","submitted"].contains(&item.status.as_str()) { return Err("无效的作业状态".into()); }
+    }
+    let paths = payload.paths.iter().map(|path| {
+        let canonical = std::fs::canonicalize(path).map_err(|_| format!("文件不存在：{path}"))?;
+        if !canonical.is_file() { return Err(format!("请选择文件：{path}")); }
+        Ok(crate::files::normal_path(&canonical))
+    }).collect::<Result<Vec<_>, String>>()?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let mut ids = Vec::with_capacity(payload.assignments.len());
+    for item in &payload.assignments {
+        let id = Uuid::new_v4().to_string();
+        let timestamp = now();
+        tx.execute("INSERT INTO assignments(id,course_id,title,description,due_at,status,submission_label,submission_url,submission_notes,source_name,source_text,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?12)", params![id,item.course_id,item.title.trim(),item.description,item.due_at,item.status,item.submission_label,item.submission_url,item.submission_notes,item.source_name,item.source_text,timestamp]).map_err(|e| e.to_string())?;
+        for (field,value) in [("title",&item.title),("submission_label",&item.submission_label),("submission_url",&item.submission_url),("submission_notes",&item.submission_notes)] { remember_value(&tx,field,value)?; }
+        for path in &paths {
+            tx.execute("INSERT OR IGNORE INTO file_assets(id,path) VALUES (?1,?2)", params![Uuid::new_v4().to_string(),path]).map_err(|e| e.to_string())?;
+            let file_id: String = tx.query_row("SELECT id FROM file_assets WHERE path=?1", [path], |r| r.get(0)).map_err(|e| e.to_string())?;
+            let link_id = Uuid::new_v4().to_string();
+            tx.execute("INSERT INTO assignment_files(id,assignment_id,file_id,role) VALUES (?1,?2,?3,?4)", params![link_id,id,file_id,payload.file_role]).map_err(|e| e.to_string())?;
+            crate::files::record_file_history(&tx,&file_id,&link_id,&id,"linked",path,&format!("角色：{}",payload.file_role))?;
+        }
+        ids.push(id);
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(ids)
+}
+
 #[tauri::command]
 pub fn delete_assignment(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let affected = {
+        let mut stmt = conn.prepare("SELECT l.id,l.file_id,f.path FROM assignment_files l JOIN file_assets f ON f.id=l.file_id WHERE l.assignment_id=?1").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([&id], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?
+    };
+    for (link_id,file_id,path) in affected {
+        crate::files::record_file_history(&conn,&file_id,&link_id,&id,"unlinked",&path,"因删除作业移除关联")?;
+    }
     conn.execute("DELETE FROM assignments WHERE id=?1", [id]).map_err(|e| e.to_string())?;
     prune_unused_files(&conn)?;
     Ok(())
@@ -325,37 +405,9 @@ pub fn compact_database(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn save_settings(state: State<'_, AppState>, payload: Settings) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
-    for (key,value) in [("theme",payload.theme),("naming_template",payload.naming_template),("assignment_provider_id",payload.assignment_provider_id),("material_provider_id",payload.material_provider_id)] {
+    for (key,value) in [("theme",payload.theme),("naming_template",payload.naming_template)] {
         conn.execute("INSERT INTO settings(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key,value]).map_err(|e| e.to_string())?;
     }
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ProviderInput {
-    pub id: String,
-    pub name: String,
-    pub kind: String,
-    pub base_url: String,
-    pub model: String,
-    pub api_key: String,
-}
-
-#[tauri::command]
-pub fn save_provider(state: State<'_, AppState>, mut payload: ProviderInput) -> Result<String, String> {
-    if !["bailian","deepseek","custom"].contains(&payload.kind.as_str()) { return Err("无效的服务商类型".into()); }
-    if payload.name.trim().is_empty() || payload.model.trim().is_empty() { return Err("请填写服务商名称和模型".into()); }
-    payload.id = id_or_new(&payload.id);
-    if !payload.api_key.trim().is_empty() { key_entry(&payload.id)?.set_password(payload.api_key.trim()).map_err(|e| e.to_string())?; }
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    conn.execute("INSERT INTO providers(id,name,kind,base_url,model) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET name=excluded.name,kind=excluded.kind,base_url=excluded.base_url,model=excluded.model", params![payload.id,payload.name,payload.kind,payload.base_url.trim_end_matches('/'),payload.model]).map_err(|e| e.to_string())?;
-    Ok(payload.id)
-}
-
-#[tauri::command]
-pub fn delete_provider(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    state.db.lock().map_err(|e| e.to_string())?.execute("DELETE FROM providers WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
-    let _ = key_entry(&id).and_then(|e| e.delete_credential().map_err(|e| e.to_string()));
     Ok(())
 }
 
@@ -373,7 +425,9 @@ fn backup_impl(conn: &Connection, path: &str) -> Result<(), String> {
 #[tauri::command]
 pub fn restore_database(state: State<'_, AppState>, path: String) -> Result<(), String> {
     let mut conn = state.db.lock().map_err(|e| e.to_string())?;
-    restore_impl(&mut conn, &path)
+    restore_impl(&mut conn, &path)?;
+    let data_dir = state.modules_dir.parent().ok_or("模块目录无效")?;
+    crate::modules::initialize(&conn, data_dir)
 }
 
 fn restore_impl(conn: &mut Connection, path: &str) -> Result<(), String> {
@@ -381,13 +435,16 @@ fn restore_impl(conn: &mut Connection, path: &str) -> Result<(), String> {
     let check: String = source.query_row("PRAGMA integrity_check", [], |r| r.get(0)).map_err(|e| e.to_string())?;
     if check != "ok" { return Err("备份数据库完整性检查失败".into()); }
     let version: i64 = source.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(|e| e.to_string())?;
-    if !(1..=2).contains(&version) { return Err("备份数据库版本不兼容".into()); }
+    if !(1..=4).contains(&version) { return Err("备份数据库版本不兼容".into()); }
     conn.restore(MAIN_DB, path, None::<fn(rusqlite::backup::Progress)>).map_err(|e| e.to_string())?;
     conn.execute_batch("PRAGMA foreign_keys=ON").map_err(|e| e.to_string())?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS recent_values (field TEXT NOT NULL, value TEXT NOT NULL, used_at TEXT NOT NULL, PRIMARY KEY(field,value));
         CREATE TABLE IF NOT EXISTS assignment_custom_fields (assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE, field_key TEXT NOT NULL, field_value TEXT NOT NULL, PRIMARY KEY(assignment_id,field_key));
         CREATE TABLE IF NOT EXISTS common_files (course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE, file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, kind TEXT NOT NULL, label TEXT NOT NULL, PRIMARY KEY(course_id,file_id));
-        PRAGMA user_version=2; PRAGMA journal_size_limit=1048576; PRAGMA wal_autocheckpoint=100;").map_err(|e| e.to_string())?;
+        CREATE TABLE IF NOT EXISTS file_history (id TEXT PRIMARY KEY, file_id TEXT NOT NULL, link_id TEXT NOT NULL DEFAULT '', assignment_id TEXT NOT NULL DEFAULT '', assignment_title TEXT NOT NULL DEFAULT '', event_type TEXT NOT NULL, path TEXT NOT NULL, details TEXT NOT NULL DEFAULT '', file_size INTEGER, modified_at_ms INTEGER, occurred_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS file_history_by_file_time ON file_history(file_id, occurred_at DESC);
+        CREATE TABLE IF NOT EXISTS module_states (module_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL);
+        PRAGMA user_version=4; PRAGMA journal_size_limit=1048576; PRAGMA wal_autocheckpoint=100;").map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -395,17 +452,30 @@ fn restore_impl(conn: &mut Connection, path: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
-    fn upgrades_only_untouched_default_prompts() {
-        let dir = std::env::temp_dir().join(format!("homeworkbook-prompt-test-{}",Uuid::new_v4()));
-        ensure_prompt_files(&dir).unwrap();
-        let system = dir.join("assignment_system.txt");
-        let user = dir.join("assignment_user.txt");
-        assert_eq!(std::fs::read_to_string(&system).unwrap(),include_str!("../prompts/assignment_system.txt"));
-        std::fs::write(&system,"my custom system").unwrap();
-        std::fs::write(&user,include_str!("../prompts/legacy/assignment_user_v0.2.txt")).unwrap();
-        ensure_prompt_files(&dir).unwrap();
-        assert_eq!(std::fs::read_to_string(&system).unwrap(),"my custom system");
-        assert_eq!(std::fs::read_to_string(&user).unwrap(),include_str!("../prompts/assignment_user.txt"));
+    fn batch_creates_multiple_assignments_with_one_shared_file_atomically() {
+        let dir = std::env::temp_dir().join(format!("homeworkbook-batch-{}",Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let attachment = dir.join("sheet.pdf");
+        std::fs::write(&attachment,b"sample").unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;
+          CREATE TABLE courses(id TEXT PRIMARY KEY);
+          INSERT INTO courses VALUES('course');
+          CREATE TABLE assignments(id TEXT PRIMARY KEY,course_id TEXT REFERENCES courses(id),title TEXT,description TEXT,due_at TEXT,status TEXT,submission_label TEXT,submission_url TEXT,submission_notes TEXT,source_name TEXT,source_text TEXT,created_at TEXT,updated_at TEXT);
+          CREATE TABLE file_assets(id TEXT PRIMARY KEY,path TEXT UNIQUE);
+          CREATE TABLE assignment_files(id TEXT PRIMARY KEY,assignment_id TEXT,file_id TEXT,role TEXT);
+          CREATE TABLE file_history(id TEXT PRIMARY KEY,file_id TEXT,link_id TEXT,assignment_id TEXT,assignment_title TEXT,event_type TEXT,path TEXT,details TEXT,file_size INTEGER,modified_at_ms INTEGER,occurred_at TEXT);
+          CREATE TABLE recent_values(field TEXT,value TEXT,used_at TEXT,PRIMARY KEY(field,value));").unwrap();
+        let make = |title: &str, course_id: &str| Assignment { id:String::new(),course_id:course_id.into(),title:title.into(),description:String::new(),due_at:None,status:"todo".into(),submission_label:String::new(),submission_url:String::new(),submission_notes:String::new(),source_name:"notice".into(),source_text:String::new(),created_at:String::new(),updated_at:String::new(),custom_fields:HashMap::new() };
+        let paths = vec![attachment.to_string_lossy().to_string()];
+        let ids = save_assignments_batch_impl(&mut conn,BatchAssignmentInput{assignments:vec![make("One","course"),make("Two","course")],paths:paths.clone(),file_role:"prompt".into()}).unwrap();
+        assert_eq!(ids.len(),2);
+        fn count(conn: &Connection, table: &str) -> i64 { conn.query_row(&format!("SELECT COUNT(*) FROM {table}"),[],|r|r.get(0)).unwrap() }
+        assert_eq!(count(&conn,"assignments"),2);
+        assert_eq!(count(&conn,"assignment_files"),2);
+        assert_eq!(count(&conn,"file_assets"),1);
+        assert!(save_assignments_batch_impl(&mut conn,BatchAssignmentInput{assignments:vec![make("Three","course"),make("Bad","missing")],paths,file_role:"prompt".into()}).is_err());
+        assert_eq!(count(&conn,"assignments"),2);
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]

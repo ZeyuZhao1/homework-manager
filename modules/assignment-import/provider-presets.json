@@ -1,0 +1,6 @@
+{
+  "bailian": { "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model": "" },
+  "deepseek": { "base_url": "https://api.deepseek.com", "model": "deepseek-flash" },
+  "gemini": { "base_url": "https://generativelanguage.googleapis.com/v1beta", "model": "gemini-2.5-flash" },
+  "custom": { "base_url": "", "model": "" }
+}

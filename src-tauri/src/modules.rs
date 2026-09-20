@@ -1,13 +1,17 @@
 //! Capability based local modules. Built-ins and user-installed executables share one JSON contract.
-use crate::{ai, db::AppState};
+use crate::db::AppState;
+#[path = "../../modules/assignment-import/backend.rs"]
+pub mod assignment_import;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{fs, path::{Component, Path, PathBuf}, process::Stdio, time::Duration};
 use tauri::State;
 use tokio::{io::AsyncWriteExt, process::Command, time::timeout};
 
-const AI_ID: &str = "builtin.ai.assignment-import";
-const AI_CAPABILITY: &str = "assignment.extract";
+pub fn initialize(conn: &Connection, data_dir: &Path) -> Result<(), String> {
+    assignment_import::initialize(conn, data_dir)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModuleDescriptor {
@@ -16,6 +20,7 @@ pub struct ModuleDescriptor {
     pub version: String,
     pub capabilities: Vec<String>,
     pub builtin: bool,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,17 +51,32 @@ fn module_entries(root: &Path) -> Vec<(ModuleDescriptor, PathBuf)> {
         let Ok(root_canonical) = dir.canonicalize() else { continue };
         let Ok(executable) = dir.join(relative).canonicalize() else { continue };
         if !executable.starts_with(&root_canonical) || !executable.is_file() { continue }
-        modules.push((ModuleDescriptor { id:manifest.id, name:manifest.name, version:manifest.version, capabilities:manifest.capabilities, builtin:false }, executable));
+        modules.push((ModuleDescriptor { id:manifest.id, name:manifest.name, version:manifest.version, capabilities:manifest.capabilities, builtin:false, enabled:true }, executable));
     }
     modules.sort_by(|a,b| a.0.name.cmp(&b.0.name));
     modules
 }
 
+fn enabled(conn: &Connection, module_id: &str) -> Result<bool, String> {
+    Ok(conn.query_row("SELECT enabled FROM module_states WHERE module_id=?1", [module_id], |r| r.get::<_,bool>(0)).optional().map_err(|e| e.to_string())?.unwrap_or(true))
+}
+
 #[tauri::command]
-pub fn list_modules(state: State<'_, AppState>) -> Vec<ModuleDescriptor> {
-    let mut items = vec![ModuleDescriptor { id:AI_ID.into(), name:"AI 作业识别".into(), version:env!("CARGO_PKG_VERSION").into(), capabilities:vec![AI_CAPABILITY.into()], builtin:true }];
+pub fn list_modules(state: State<'_, AppState>) -> Result<Vec<ModuleDescriptor>, String> {
+    let mut items = vec![assignment_import::descriptor()];
     items.extend(module_entries(&state.modules_dir).into_iter().map(|(descriptor,_)| descriptor));
-    items
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    for item in &mut items { item.enabled = enabled(&conn,&item.id)?; }
+    Ok(items)
+}
+
+#[tauri::command]
+pub fn set_module_enabled(state: State<'_, AppState>, module_id: String, enabled: bool) -> Result<(), String> {
+    let installed = module_id == assignment_import::ID || module_entries(&state.modules_dir).iter().any(|(descriptor,_)| descriptor.id == module_id);
+    if !installed { return Err("模块未安装或清单无效".into()); }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    conn.execute("INSERT INTO module_states(module_id,enabled,updated_at) VALUES (?1,?2,?3) ON CONFLICT(module_id) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at", rusqlite::params![module_id,enabled,crate::db::now()]).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -69,10 +89,12 @@ pub fn open_modules_directory(state: State<'_, AppState>) -> Result<(), String> 
 
 #[tauri::command]
 pub async fn invoke_module(state: State<'_, AppState>, module_id: String, capability: String, input: Value) -> Result<Value, String> {
-    if module_id == AI_ID {
-        if capability != AI_CAPABILITY { return Err("模块不支持此功能".into()) }
-        let payload: ai::AiRequest = serde_json::from_value(input).map_err(|e| format!("作业识别输入无效：{e}"))?;
-        return serde_json::to_value(ai::analyze_assignment(state,payload).await.map_err(|e| format!("AI 作业识别失败：{e}"))?).map_err(|e| e.to_string());
+    {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        if !enabled(&conn,&module_id)? { return Err("模块已关闭，请先在设置中开启".into()); }
+    }
+    if module_id == assignment_import::ID {
+        return assignment_import::invoke(state, &capability, input).await;
     }
     let (descriptor, executable) = module_entries(&state.modules_dir).into_iter().find(|(descriptor,_)| descriptor.id == module_id).ok_or("模块未安装或清单无效")?;
     if !descriptor.capabilities.iter().any(|item| item == &capability) { return Err("模块未声明此功能".into()) }
