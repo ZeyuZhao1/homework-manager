@@ -13,5 +13,16 @@
 每个 Release 都附带 `SHA256SUMS.txt`。在 PowerShell 中可用下列命令核对下载文件：
 
 ```powershell
-Get-FileHash .\homework-manager-v0.3.0-windows-x64-installer.exe -Algorithm SHA256
+Get-FileHash .\homework-manager-v0.4.0-windows-x64-installer.exe -Algorithm SHA256
 ```
+
+将输出的 `Hash` 与同一 Release 中 `SHA256SUMS.txt` 对应文件名的值比较。安装版和便携版都应分别校验。
+
+## 信任边界
+
+- 实际学习文件保留在用户目录中；数据库只记录路径和元数据。
+- AI 功能只有在用户点击开始识别后才向所选服务商发送文字和附件。
+- API Key 存入 Windows 凭据管理器，不进入数据库备份。
+- 外部模块是用户自行安装的本地可执行文件，以当前 Windows 用户权限运行，并不处于操作系统沙箱中。
+
+安装外部模块前应核实来源和哈希。模块协议的路径限制和超时只能保护宿主调用流程，不能阻止恶意程序访问当前用户有权访问的资源。
