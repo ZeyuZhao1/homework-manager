@@ -119,7 +119,7 @@ pnpm desktop:build
 
 1. 新安装建表；
 2. 旧数据库升级；
-3. 版本 1–4 备份恢复后的补表；
+3. 版本 1–6 备份恢复后的补表；
 4. `PRAGMA user_version`；
 5. Snapshot 序列化兼容；
 6. Rust 测试中的最小测试 schema。
@@ -140,7 +140,7 @@ pnpm desktop:build
 
 ### 5.4 新增外部模块能力
 
-若能力可由独立 EXE 完成，优先保持外部模块协议：
+若能力可由独立进程完成，优先保持外部模块协议。入口可以是原生 EXE，也可以是无需编译的 PowerShell `.ps1`：
 
 1. 在 `MODULES.md` 定义输入/结果；
 2. 在模块清单声明能力；
@@ -149,6 +149,8 @@ pnpm desktop:build
 5. 添加资源限制和失败路径测试。
 
 外部模块当前不能动态注入 React UI。若需要完整 UI，只能新增编译期内置模块或在核心界面中增加通用能力 UI。
+
+PowerShell 模块使用 `runtime: "powershell"` 和 `entrypoint` 清单字段，由 Windows PowerShell 5.1 以非交互模式执行。脚本源码应使用 ASCII 或带 BOM 的 UTF-8，stdout 必须只有协议 JSON。可参考 [`modules/document-navigation`](../modules/document-navigation/README.md) 的安装、私有缓存和手工协议验证方式。
 
 ## 6. 新增 Tauri 命令
 
@@ -223,6 +225,18 @@ pnpm build
 ### 8.3 API Key
 
 服务名为 `app.homeworkbook.local`，账户键使用服务商 UUID。应用只返回 `has_key`，不会把已保存密钥重新展示到前端。删除服务商会尝试删除对应凭据。
+
+## Blackboard 同步模块开发
+
+精简扩展和原生消息主机位于 [`modules/blackboard-sync`](../modules/blackboard-sync/README.md)。扩展的纯逻辑测试不需学校账号；独立主机使用单独的 Cargo 清单。Windows 发布安装包由 `build.ps1` 生成，安装时才注册当前用户的 Chrome 原生消息主机。
+
+```powershell
+node --test modules/blackboard-sync/tests/*.test.js
+cargo test --manifest-path modules/blackboard-sync/host/Cargo.toml
+./modules/blackboard-sync/build.ps1
+```
+
+浏览器预览不能模拟 Chrome 登录、原生消息或桌面 SQLite 审核事务。实机验收须在 Windows Chrome 加载解压扩展，并以有效南科大账号检查一次。
 
 ## 9. 常见问题
 

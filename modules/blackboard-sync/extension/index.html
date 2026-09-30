@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BB 作业同步</title><link rel="stylesheet" href="style.css"></head><body>
+<main><header><div><small>作业簿模块</small><h1>南科大 BB 作业同步</h1></div><button id="sync">立即检查</button></header>
+<p id="status" role="status">正在读取状态…</p><p id="error" role="alert"></p>
+<section><h2>自动检查</h2><label><input id="enabled" type="checkbox">启用每日检查</label><label>校园时间 <input id="time" type="time" value="09:00"></label><button id="saveSettings">保存检查设置</button><p>Chrome 关闭或电脑休眠时不会检查；下次启动后补查。检查完成后，结果会进入作业簿的“导入待审核”。</p></section>
+<section><h2>学校登录</h2><p>密码保存在 Windows 凭据管理器。会话过期时自动尝试学校统一认证；验证码仍需你在学校页面完成。</p><form id="credentials"><label>校园账号 <input id="username" autocomplete="username" required></label><label>密码 <input id="password" type="password" autocomplete="current-password" required></label><div class="actions"><button type="submit">保存账号</button><button type="button" id="deleteCredentials">移除账号</button><button type="button" id="openLogin">打开学校登录</button></div></form></section>
+<section><h2>课程范围</h2><div id="courses">首次检查后显示课程。</div><button id="saveCourses">保存选课</button></section>
+<section><h2>连接与诊断</h2><button id="testConnection">测试本地主机</button><p id="connection"></p><div id="warnings"></div></section>
+</main><script type="module" src="ui.js"></script></body></html>

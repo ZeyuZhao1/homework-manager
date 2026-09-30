@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "作业簿 · 南科大 BB 作业同步",
+  "version": "1.0.0",
+  "minimum_chrome_version": "116",
+  "description": "检查南科大 Blackboard 作业并送至作业簿审核。",
+  "permissions": ["storage", "alarms", "offscreen", "scripting", "nativeMessaging"],
+  "host_permissions": ["https://bb.sustech.edu.cn/*", "https://cas.sustech.edu.cn/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "打开 BB 作业同步" },
+  "options_page": "index.html",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7jP2aJFiXGKanYD3WbRxgUhedDkPMV+zDCmwEm6xFfIKb2tH93+p8K+V/chbQmQhzoOF6yLB2aWf94OTDcwfi8QJZsvIxbtZ18tadaDymAY770RNXRAMCQgCwYHGOjZ6LqhdhKPljEA1uV34IObeEVBptW6U5H8/e1ia3JzM7VtBVfX+QP761+9RlguMj2uQQFg6xucRsiG/521abdgAhfm66G36HZXA0PMDXflS7KJx2vf4tAS+7lgPDoXdhv9DyUfsRKMqJcSlvQrgZcvGzrP+sXMrb9JBFDzEWV5DQk8YyHy+IVUXYJf3ubwXz0UjLMQfuM59alD0ZJXxpXnuOQIDAQAB"
+}

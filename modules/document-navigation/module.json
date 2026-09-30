@@ -1,0 +1,11 @@
+{
+  "id": "local.document-navigation",
+  "name": "文档目录定位",
+  "version": "1.0.0",
+  "capabilities": [
+    "document.navigation.index",
+    "document.navigation.open"
+  ],
+  "runtime": "powershell",
+  "entrypoint": "module.ps1"
+}

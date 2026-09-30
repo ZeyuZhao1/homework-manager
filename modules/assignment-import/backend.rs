@@ -1,5 +1,5 @@
 use crate::db::{id_or_new, AppState};
-use super::ModuleDescriptor;
+use crate::modules::ModuleDescriptor;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::{multipart, Client};
 use rusqlite::{params, OptionalExtension};
@@ -9,6 +9,17 @@ use std::{fs, path::{Path, PathBuf}};
 use tauri::State;
 
 pub const ID: &str = "builtin.ai.assignment-import";
+
+pub fn registration() -> crate::modules::BuiltinModuleRegistration {
+    crate::modules::BuiltinModuleRegistration {
+        descriptor,
+        initialize,
+        before_snapshot: None,
+        assignment_saved: None,
+        assignment_deleted: None,
+        manage: None,
+    }
+}
 const CAPABILITY: &str = "assignment.extract";
 const SYSTEM_PROMPT: &str = include_str!("prompts/assignment_system.txt");
 const USER_PROMPT: &str = include_str!("prompts/assignment_user.txt");

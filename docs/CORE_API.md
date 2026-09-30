@@ -217,7 +217,7 @@ interface ModuleDescriptor {
 | --- | --- | --- | --- |
 | `browseDirectory(courseId, relativePath)` | `browse_directory` | 课程 ID、相对路径 | `DirectoryEntry[]`；请求规范化后必须仍在课程根目录内；目录优先排序 |
 | `searchCourseFiles(courseId, query)` | `search_course_files` | 课程 ID、查询 | 少于 2 字符返回空；最大深度 12；最多 100 个文件 |
-| `openFile(fileId)` | `open_file` | 文件 ID | 用系统默认程序打开；缺失路径会失败 |
+| `openFile(fileId, linkId?)` | `open_file` | 文件 ID、可选关联 ID | 有关联位置时依次尝试已启用的 `document.navigation.open` 外部模块，否则用系统默认程序打开；缺失路径会失败 |
 | `relinkFile(fileId, path)` | `relink_file` | 文件 ID、新路径 | 新路径必须存在并为文件；更新当前路径并写 `relocated` 历史 |
 
 ```ts
@@ -225,6 +225,12 @@ interface DirectoryEntry {
   name: string
   path: string
   is_dir: boolean
+}
+
+interface OpenFileResult {
+  used_module: boolean
+  location_applied: boolean
+  warning: string | null
 }
 ```
 
@@ -255,14 +261,14 @@ interface RenamePreview {
 | `renameFile(linkId, naming)` | `rename_file` | 改名记录 ID | 拒绝无变化和冲突；原地改名并事务更新路径与历史 |
 | `undoRename(id)` | `undo_rename` | `void` | 仅撤回该文件最新有效改名；检查当前路径、原名占用及文件签名 |
 
-允许的命名模板占位符在 [README.md](../README.md#4-统一命名与撤回) 中列出。未知花括号占位符会导致预览失败。
+允许的命名模板占位符在 [README.md](../README.md#4-文档定位统一命名与撤回) 中列出。未知花括号占位符会导致预览失败。
 
 ## 5. 数据库维护接口
 
 | 前端服务 | Tauri 命令 | 行为 |
 | --- | --- | --- |
 | `backup(path)` | `backup_database` | 使用 SQLite backup API 导出当前数据库 |
-| `restore(path)` | `restore_database` | 先做 `integrity_check`，仅接受 `user_version` 1–4，然后恢复、补表并升级到版本 4 |
+| `restore(path)` | `restore_database` | 先做 `integrity_check`，接受 `user_version` 1–6，然后恢复、补表并升级到版本 6 |
 | `compactDatabase()` | `compact_database` | 清理无引用文件记录，截断 WAL 并执行 `VACUUM` |
 
 恢复后会重新初始化内置模块的表与提示词兼容逻辑。备份不含 API Key、提示词、模块文件或实际学习文件。
@@ -289,9 +295,23 @@ interface RenamePreview {
 | `setModuleEnabled(moduleId, enabled)` | `set_module_enabled` | 返回 `void` | 只接受当前已安装模块；写 `module_states` |
 | `modulesDirectory()` | `modules_directory` | 返回路径字符串 | 获取 AppData 模块根目录 |
 | `openModulesDirectory()` | `open_modules_directory` | 返回 `void` | 使用系统文件管理器打开模块目录 |
-| `invokeModule<T>(moduleId, capability, input)` | `invoke_module` | 返回能力 `result` | 检查启用状态和能力；内置分派或启动外部 EXE |
+| `invokeModule<T>(moduleId, capability, input)` | `invoke_module` | 返回能力 `result` | 检查启用状态和能力；内置分派或启动外部原生/PowerShell 入口 |
+| 模块私有服务 | `manage_builtin_module` | `moduleId`、`operation`、`payload` / JSON | 检查内置模块与启用状态后，交给模块注册的管理分派；宿主不理解模块业务字段 |
 
 `invokeModule` 对外部模块应用 2 MB 请求、4 MB 输出和 120 秒超时。完整协议见 [MODULES.md](../MODULES.md)。
+
+前端在快照或模块清单变化后，会把已关联且未失效的文件最小清单发送给所有启用的 `document.navigation.index` 模块。`open_file` 只在调用方提供合法 `linkId` 且该关联填写了页码或章节时调用 `document.navigation.open`；模块未接管时回退到普通打开，并在 `OpenFileResult.warning` 中解释定位失败。
+
+`manage_builtin_module` 只供随应用编译的内置模块前端使用。周期作业的操作名、负载类型和预览实现全部位于 `modules/recurring-assignments/`，核心前端不直接调用这些操作。
+
+### 通用作业同步审核
+
+| 前端服务 | Tauri 命令 | 输入 | 返回/行为 |
+| --- | --- | --- | --- |
+| `previewAssignmentImport(moduleId, snapshot)` | `preview_assignment_import` | 已启用且声明 `assignment.sync.snapshot` 的外部模块 ID、来源快照 | 课程建议映射、待审核的新作业及已关联作业差异；不写库 |
+| `applyAssignmentImport(payload)` | `apply_assignment_import` | 来源快照、课程选择、逐项审核决定及选中的字段 | 在一个事务中建立课程映射、创建/关联/更新作业及保存来源基线；返回处理项数 |
+
+类型定义在 `src/importSync.ts`。决定动作是 `create`、`link`、`update`、`ignore` 或 `defer`；`update` 的 `fields` 仅接受 `title`、`description`、`due_at`、`submission_url`、`status`。来源已提交时才可把本地状态改为 `submitted`。来源表按模块、账户、课程与作业 ID 定位；忽略本次版本后，相同数据不再重复提示。浏览器预览会明确提示本地模块不可用。
 
 ## 8. AI 作业导入模块接口
 

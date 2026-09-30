@@ -23,7 +23,7 @@ flowchart LR
     C --> FS[Windows 文件系统]
     C --> MH[模块宿主]
     MH --> BI[内置 AI 模块]
-    MH --> EX[外部模块 EXE]
+    MH --> EX[外部模块 EXE / PowerShell]
     BI --> KC[Windows 凭据管理器]
     BI --> AI[AI 服务商 HTTPS API]
 ```
@@ -70,7 +70,7 @@ Rust 实现按责任分为：
 - `journal_mode=WAL`：改善读取和写入恢复能力；
 - `journal_size_limit=1048576`；
 - `wal_autocheckpoint=100`；
-- `user_version=4`。
+- `user_version=6`；版本 6 增加通用作业导入的课程映射、来源关联与忽略基线表。
 
 数据库是元数据和审计记录的事实来源，但不是实际学习文件的容器。
 
@@ -83,7 +83,7 @@ Rust 实现按责任分为：
 - 在课程根目录内浏览和搜索；
 - 原地重命名并同步数据库；
 - 用大小和修改时间保护撤回；
-- 使用系统默认程序打开文件。
+- 普通打开使用系统默认程序；带页码/章节的作业关联可先交给声明文档定位能力的外部模块。
 
 应用不会复制关联文件，也不会因为删除作业、课程或学期而删除磁盘文件。
 
@@ -92,7 +92,9 @@ Rust 实现按责任分为：
 模块宿主统一使用能力名分派：
 
 - 内置模块在同一进程中执行；
-- 外部模块按需启动独立进程，通过 JSON over stdio 执行；
+- 内置模块通过通用注册信息声明初始化、同步和作业生命周期钩子，模块私有管理请求由单一宿主入口转发；
+- 外部模块按需启动独立进程，通过 JSON over stdio 执行；入口可以是模块内原生可执行文件或 PowerShell 脚本；
+- `document.navigation.index` 在关联快照变化后接收最小文件清单，`document.navigation.open` 只在用户点击带位置的关联时接管打开；核心不包含格式解析规则；
 - 两者都受模块启用状态控制；
 - 外部模块还受清单、路径、能力、大小和超时检查。
 
@@ -259,7 +261,27 @@ sequenceDiagram
 
 撤回时会同时检查：这是该文件最新未撤回记录、当前路径仍为新路径、原路径未被占用、文件大小和修改时间与改名时一致。
 
-### 6.4 备份与恢复
+### 6.4 模块化文档定位
+
+```mermaid
+sequenceDiagram
+    participant UI as React 文件关联
+    participant H as 通用模块宿主
+    participant M as 外部文档定位模块
+    participant F as 本地文件
+    UI->>H: snapshot 后 document.navigation.index(paths)
+    H->>M: JSON over stdio
+    M->>F: 只读目录/标题
+    M-->>H: indexed/cached/skipped
+    UI->>H: open_file(fileId, linkId)
+    H->>M: document.navigation.open(path,page,chapter)
+    M->>F: 用户触发的定位打开
+    M-->>H: handled/location_applied/warning
+```
+
+索引缓存属于模块私有文件，不进入 SQLite 或数据库备份。禁用或移除模块后，核心的文件关联和页码/章节字段仍完整保留，打开行为回退为系统默认程序。
+
+### 6.5 备份与恢复
 
 - 导出使用 SQLite backup API，不直接复制可能仍处于 WAL 状态的主文件；
 - 恢复先以只读方式打开来源数据库并执行兼容性检查，再替换当前连接的内容；
@@ -292,6 +314,12 @@ Tauri 标识符为 `app.homeworkbook.local`。Windows 上主要目录为：
 ```
 
 安装版和便携版由相同标识符解析 AppData，所以共享上述目录。
+
+## Blackboard 作业同步数据流
+
+精简 Chrome 扩展在已授权的学校站点扫描当前学期作业，经限定扩展 ID 的 Chrome 原生消息主机，把本次成功确认的课程和作业元数据原子写入模块私有 `inbox.json`。校园密码只在 Windows 凭据管理器，收件箱没有 Cookie、密码或实际学习文件。扩展与本地主机均在独立模块 `modules/blackboard-sync/`，主程序不解析 Blackboard 页面。
+
+通用导入界面通过已启用外部模块的 `assignment.sync.snapshot` 能力读取收件箱，再调用 `preview_assignment_import` 计算新建、关联与逐字段变化。用户确认后，`apply_assignment_import` 在一个核心数据库事务内建立课程、映射和作业来源关联。来源 ID 负责幂等；来源缺席不会触发删除。模块禁用只阻止主程序调用，Chrome 侧扫描可在扩展设置里暂停。
 
 ## 9. 浏览器预览模式
 

@@ -37,6 +37,13 @@ pub struct DirectoryEntry {
 }
 
 #[derive(Debug, Serialize)]
+pub struct OpenFileResult {
+    pub used_module: bool,
+    pub location_applied: bool,
+    pub warning: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct RenamePreview {
     pub file_id: String,
     pub old_path: String,
@@ -50,6 +57,66 @@ pub struct NamingInput { pub material: String, pub sections: String, pub version
 
 #[derive(Debug, Deserialize)]
 pub struct CommonFileInput { pub course_id: String, pub path: String, pub kind: String, pub label: String }
+
+#[derive(Debug, Deserialize)]
+pub struct ModuleFileBatchInput {
+    pub module_id: String,
+    pub owner_type: String,
+    pub owner_id: String,
+    pub owner_label: String,
+    pub paths: Vec<String>,
+    pub role: String,
+    pub note: String,
+}
+
+pub(crate) fn remove_module_owner_files(conn: &rusqlite::Connection, module_id: &str, owner_type: &str, owner_id: &str) -> Result<(), String> {
+    let affected = {
+        let mut stmt = conn.prepare("SELECT l.id,l.file_id,f.path,l.owner_label FROM module_file_links l JOIN file_assets f ON f.id=l.file_id WHERE l.module_id=?1 AND l.owner_type=?2 AND l.owner_id=?3").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(params![module_id,owner_type,owner_id], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?))).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?
+    };
+    for (link_id,file_id,path,label) in affected {
+        record_file_history(conn,&file_id,&link_id,"","module_unlinked",&path,&format!("模块关联：{label}"))?;
+    }
+    conn.execute("DELETE FROM module_file_links WHERE module_id=?1 AND owner_type=?2 AND owner_id=?3", params![module_id,owner_type,owner_id]).map_err(|e| e.to_string())?;
+    crate::db::prune_unused_files(conn)
+}
+
+#[tauri::command]
+pub fn link_module_files(state: State<'_, AppState>, payload: ModuleFileBatchInput) -> Result<usize, String> {
+    if payload.module_id.trim().is_empty() || payload.owner_type.trim().is_empty() || payload.owner_id.trim().is_empty() { return Err("模块文件关联缺少所有者".into()); }
+    if !["shared","prompt","reference","solution"].contains(&payload.role.as_str()) { return Err("无效的文件角色".into()); }
+    if payload.paths.is_empty() { return Err("请选择文件".into()); }
+    let canonical = payload.paths.iter().map(|raw| {
+        let path = fs::canonicalize(raw).map_err(|_| format!("文件不存在：{raw}"))?;
+        if !path.is_file() { return Err(format!("请选择文件：{raw}")); }
+        Ok(normal_path(&path))
+    }).collect::<Result<HashSet<_>,String>>()?;
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let mut created = 0;
+    for path in canonical {
+        tx.execute("INSERT OR IGNORE INTO file_assets(id,path) VALUES (?1,?2)", params![Uuid::new_v4().to_string(),path]).map_err(|e| e.to_string())?;
+        let file_id: String = tx.query_row("SELECT id FROM file_assets WHERE path=?1", [&path], |r| r.get(0)).map_err(|e| e.to_string())?;
+        let id = Uuid::new_v4().to_string();
+        let changed = tx.execute("INSERT OR IGNORE INTO module_file_links(id,module_id,owner_type,owner_id,owner_label,file_id,role,note,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![id,payload.module_id,payload.owner_type,payload.owner_id,payload.owner_label.trim(),file_id,payload.role,payload.note,now()]).map_err(|e| e.to_string())?;
+        if changed > 0 {
+            record_file_history(&tx,&file_id,&id,"","module_linked",&path,&format!("模块关联：{}",payload.owner_label.trim()))?;
+            created += 1;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(created)
+}
+
+#[tauri::command]
+pub fn unlink_module_file(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let (file_id,path,label): (String,String,String) = conn.query_row("SELECT l.file_id,f.path,l.owner_label FROM module_file_links l JOIN file_assets f ON f.id=l.file_id WHERE l.id=?1", [&id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|_| "模块文件关联不存在".to_string())?;
+    record_file_history(&conn,&file_id,&id,"","module_unlinked",&path,&format!("模块关联：{label}"))?;
+    conn.execute("DELETE FROM module_file_links WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
+    crate::db::prune_unused_files(&conn)
+}
 
 #[tauri::command]
 pub fn save_common_file(state: State<'_, AppState>, payload: CommonFileInput) -> Result<String, String> {
@@ -167,11 +234,48 @@ fn link_files_batch_impl(conn: &mut rusqlite::Connection, payload: LinkBatchInpu
 }
 
 #[tauri::command]
-pub fn open_file(state: State<'_, AppState>, file_id: String) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    let path: String = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [file_id], |r| r.get(0)).map_err(|_| "文件关联不存在".to_string())?;
+pub async fn open_file(state: State<'_, AppState>, file_id: String, link_id: Option<String>) -> Result<OpenFileResult, String> {
+    let (path, location, navigation_modules) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let path: String = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [&file_id], |r| r.get(0)).map_err(|_| "文件关联不存在".to_string())?;
+        let location = link_id.as_deref().filter(|id| !id.trim().is_empty()).and_then(|id| {
+            conn.query_row(
+                "SELECT page,chapter,problem FROM assignment_files WHERE id=?1 AND file_id=?2",
+                params![id,file_id],
+                |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?)),
+            ).optional().ok().flatten()
+        });
+        let modules = crate::modules::external_modules_for_capability(&state.modules_dir, "document.navigation.open")
+            .into_iter().filter(|module| crate::modules::enabled(&conn, &module.id).unwrap_or(false)).collect::<Vec<_>>();
+        (path, location, modules)
+    };
     if !Path::new(&path).is_file() { return Err("文件不存在，请先重新定位".into()); }
-    open::that(&path).map_err(|e| format!("无法用默认程序打开文件：{e}"))
+    if let Some((page,chapter,problem)) = location.filter(|(page,chapter,_)| !page.trim().is_empty() || !chapter.trim().is_empty()) {
+        let mut failures = Vec::new();
+        for module in &navigation_modules {
+            let input = serde_json::json!({"path":path,"page":page,"chapter":chapter,"problem":problem});
+            match crate::modules::invoke_external_module(&state.modules_dir, &module.id, "document.navigation.open", input).await {
+                Ok(result) if result.get("handled").and_then(serde_json::Value::as_bool) == Some(true) => {
+                    return Ok(OpenFileResult {
+                        used_module: true,
+                        location_applied: result.get("location_applied").and_then(serde_json::Value::as_bool).unwrap_or(true),
+                        warning: result.get("warning").and_then(serde_json::Value::as_str).map(str::to_owned),
+                    });
+                }
+                Ok(_) => {}
+                Err(error) => failures.push(format!("{}：{error}",module.name)),
+            }
+        }
+        open::that(&path).map_err(|e| format!("无法用默认程序打开文件：{e}"))?;
+        let warning = if failures.is_empty() {
+            navigation_modules.first().map(|_| "该文件格式不支持定位，已按普通方式打开".to_string())
+        } else {
+            Some(format!("定位模块未能完成跳转，已按普通方式打开（{}）", failures.join("；")))
+        };
+        return Ok(OpenFileResult { used_module:false, location_applied:false, warning });
+    }
+    open::that(&path).map_err(|e| format!("无法用默认程序打开文件：{e}"))?;
+    Ok(OpenFileResult { used_module:false, location_applied:false, warning:None })
 }
 
 fn link_file_impl(conn: &rusqlite::Connection, payload: LinkInput) -> Result<String, String> {

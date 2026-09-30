@@ -1,7 +1,8 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import type { Assignment, CommonFile, Course, DirectoryEntry, FileHistoryEvent, FileLink, FileRole, LinkBatchInput, LinkInput, ModuleDescriptor, NamingInput, RenamePreview, Semester, Settings, Snapshot } from './types'
+import type { Assignment, CommonFile, Course, DirectoryEntry, FileHistoryEvent, FileLink, FileRole, LinkBatchInput, LinkInput, ModuleDescriptor, NamingInput, OpenFileResult, RenamePreview, Semester, Settings, Snapshot } from './types'
+import type { ApplyImport, ImportPreview, RemoteSnapshot } from './importSync'
 
 const desktop = isTauri()
 const root = 'D:\\share\\University\\Year 1 Fall'
@@ -22,14 +23,14 @@ let previewState: Snapshot = {
     { id: 'sample-link-1', assignment_id: 'sample-1', file_id: 'sample-file-1', role: 'prompt', page: '', chapter: '', problem: '', note: '' },
     { id: 'sample-link-2', assignment_id: 'sample-1', file_id: 'sample-file-2', role: 'solution', page: '', chapter: '', problem: '', note: '' },
   ],
-  common_files: [], renames: [], file_history: [], settings: { theme: 'light', naming_template: '{course_code}-{material}-hw-{scope}' }, recent_values: {},
+  module_file_links: [], common_files: [], renames: [], file_history: [], settings: { theme: 'light', naming_template: '{course_code}-{material}-hw-{scope}' }, recent_values: {},
 }
 
-try { const saved = localStorage.getItem('homeworkbook-preview'); if (saved) previewState = JSON.parse(saved) as Snapshot; previewState.recent_values ||= {}; previewState.common_files ||= []; previewState.file_history ||= []; previewState.assignments.forEach(a => { a.custom_fields ||= {} }); if (['{course}-{assignment}-{role}-v{version}','{course_code}-{material}-hw-{sections}'].includes(previewState.settings.naming_template)) previewState.settings.naming_template = '{course_code}-{material}-hw-{scope}' } catch { /* preview data is disposable */ }
+try { const saved = localStorage.getItem('homeworkbook-preview'); if (saved) previewState = JSON.parse(saved) as Snapshot; previewState.recent_values ||= {}; previewState.common_files ||= []; previewState.module_file_links ||= []; previewState.file_history ||= []; previewState.assignments.forEach(a => { a.custom_fields ||= {} }); if (['{course}-{assignment}-{role}-v{version}','{course_code}-{material}-hw-{sections}'].includes(previewState.settings.naming_template)) previewState.settings.naming_template = '{course_code}-{material}-hw-{scope}' } catch { /* preview data is disposable */ }
 function persist() { localStorage.setItem('homeworkbook-preview', JSON.stringify(previewState)) }
 function clone(): Snapshot { return structuredClone(previewState) }
 function newId() { return crypto.randomUUID() }
-let previewModuleEnabled = localStorage.getItem('homeworkbook-preview-module-assignment-import') !== 'false'
+const previewModuleKey = (moduleId: string) => `homeworkbook-preview-module-${moduleId}`
 function trackPreview(fileId: string, eventType: FileHistoryEvent['event_type'], path: string, link?: Partial<FileLink>, details = '') {
   previewState.file_history.unshift({ id:newId(), file_id:fileId, link_id:link?.id || '', assignment_id:link?.assignment_id || '', assignment_title:previewState.assignments.find(a => a.id === link?.assignment_id)?.title || '', event_type:eventType, path, details, file_size:null, modified_at_ms:null, occurred_at:new Date().toISOString() })
 }
@@ -104,6 +105,25 @@ export const service = {
     if (desktop) return invoke<void>('unlink_file', { id })
     const link = previewState.links.find(x => x.id === id); const file = previewState.files.find(x => x.id === link?.file_id); if (link && file) trackPreview(file.id,'unlinked',file.path,link,`角色：${link.role}`); previewState.links = previewState.links.filter(x => x.id !== id); persist()
   },
+  async linkModuleFiles(payload: { module_id: string; owner_type: string; owner_id: string; owner_label: string; paths: string[]; role: string; note: string }): Promise<number> {
+    if (desktop) return invoke<number>('link_module_files', { payload })
+    let created = 0
+    for (const path of [...new Set(payload.paths)]) {
+      let file = previewState.files.find(item => item.path === path)
+      if (!file) { file = { id:newId(), path, missing:false }; previewState.files.push(file) }
+      if (!previewState.module_file_links.some(link => link.module_id === payload.module_id && link.owner_id === payload.owner_id && link.file_id === file.id)) {
+        previewState.module_file_links.push({ id:newId(), module_id:payload.module_id, owner_type:payload.owner_type, owner_id:payload.owner_id, owner_label:payload.owner_label, file_id:file.id, role:payload.role, note:payload.note })
+        trackPreview(file.id,'module_linked',file.path,undefined,`周期任务 · ${payload.owner_label}`); created++
+      }
+    }
+    persist(); return created
+  },
+  async unlinkModuleFile(id: string) {
+    if (desktop) return invoke<void>('unlink_module_file', { id })
+    const link = previewState.module_file_links.find(item => item.id === id); const file = previewState.files.find(item => item.id === link?.file_id)
+    if (link && file) trackPreview(file.id,'module_unlinked',file.path,undefined,`周期任务 · ${link.owner_label}`)
+    previewState.module_file_links = previewState.module_file_links.filter(item => item.id !== id); persist()
+  },
   async saveCommonFile(payload: { course_id: string; path: string; kind: CommonFile['kind']; label: string }) {
     if (desktop) return invoke<string>('save_common_file', { payload })
     let file = previewState.files.find(x => x.path === payload.path)
@@ -156,10 +176,12 @@ export const service = {
   async backup(path: string) { if (desktop) return invoke<void>('backup_database', { path }) },
   async restore(path: string) { if (desktop) return invoke<void>('restore_database', { path }) },
   async compactDatabase() { if (desktop) return invoke<void>('compact_database') },
-  async openFile(fileId: string) { if (desktop) return invoke<void>('open_file', { fileId }) },
+  async openFile(fileId: string, linkId?: string): Promise<OpenFileResult> { if (desktop) return invoke<OpenFileResult>('open_file', { fileId, linkId:linkId || null }); return { used_module:false, location_applied:false, warning:null } },
   async invokeModule<T>(moduleId: string, capability: string, input: unknown): Promise<T> { if (!desktop) throw new Error('浏览器预览不运行本地模块'); return invoke<T>('invoke_module', { moduleId, capability, input }) },
-  async listModules(): Promise<ModuleDescriptor[]> { return desktop ? invoke<ModuleDescriptor[]>('list_modules') : [{ id:'builtin.ai.assignment-import', name:'AI 作业导入', version:'0.4.0', capabilities:['assignment.extract'], builtin:true, enabled:previewModuleEnabled }] },
-  async setModuleEnabled(moduleId: string, enabled: boolean) { if (desktop) return invoke<void>('set_module_enabled', { moduleId, enabled }); if (moduleId === 'builtin.ai.assignment-import') { previewModuleEnabled = enabled; localStorage.setItem('homeworkbook-preview-module-assignment-import', String(enabled)) } },
+  async previewAssignmentImport(moduleId: string, snapshot: RemoteSnapshot): Promise<ImportPreview> { if (!desktop) throw new Error('浏览器预览不运行本地模块'); return invoke<ImportPreview>('preview_assignment_import', { moduleId, snapshot }) },
+  async applyAssignmentImport(payload: ApplyImport): Promise<number> { if (!desktop) throw new Error('浏览器预览不运行本地模块'); return invoke<number>('apply_assignment_import', { payload }) },
+  async listModules(builtins: Omit<ModuleDescriptor,'enabled'>[] = []): Promise<ModuleDescriptor[]> { return desktop ? invoke<ModuleDescriptor[]>('list_modules') : builtins.map(module => ({ ...module, enabled:localStorage.getItem(previewModuleKey(module.id)) !== 'false' })) },
+  async setModuleEnabled(moduleId: string, enabled: boolean) { if (desktop) return invoke<void>('set_module_enabled', { moduleId, enabled }); localStorage.setItem(previewModuleKey(moduleId), String(enabled)) },
   async modulesDirectory(): Promise<string> { return desktop ? invoke<string>('modules_directory') : '%APPDATA%\\app.homeworkbook.local\\modules' },
   async openModulesDirectory() { if (desktop) return invoke<void>('open_modules_directory') },
   async openUrl(url: string) { if (desktop) return openUrl(url); window.open(url, '_blank', 'noopener,noreferrer') },
