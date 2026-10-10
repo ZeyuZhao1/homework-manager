@@ -34,7 +34,7 @@
 ## 2. 项目现状
 
 - 产品名：作业簿（Homework Manager）；
-- 当前版本：`0.4.0`；
+- 最新正式版本：`0.4.0`；`main` 的后续改动见 CHANGELOG；
 - 正式平台：Windows x64；
 - 前端：React 19、TypeScript、Vite；
 - 桌面框架：Tauri 2；
@@ -56,6 +56,8 @@
 | 改领域数据/CRUD | `src-tauri/src/db.rs` | 事务、级联、schema、备份恢复、Snapshot |
 | 改文件关联/浏览/改名 | `src-tauri/src/files.rs` | 路径边界、历史、安全撤回、数据库补偿 |
 | 新增前后端接口 | Rust 命令 + `src-tauri/src/lib.rs` + `src/types.ts` + `src/service.ts` | 注册、预览实现、接口文档、测试 |
+| 改周期作业 | `modules/recurring-assignments/` | 模块私有状态、通用生命周期钩子、核心文件关联 |
+| 改导入审核 | `src/ImportInbox.tsx`, `src-tauri/src/import_sync.rs` | 来源校验、幂等和审核事务 |
 | 改模块发现/外部协议 | `src-tauri/src/modules.rs`, `MODULES.md` | 清单校验、能力检查、输入输出限制、超时 |
 | 改 AI 提取 | `modules/assignment-import/` | 凭据、提供商差异、附件隐私、提示词迁移、审核边界 |
 | 改备份/恢复 | `src-tauri/src/db.rs` | integrity check、user_version、WAL、模块表初始化 |

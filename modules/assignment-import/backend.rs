@@ -1,5 +1,5 @@
 use crate::db::{id_or_new, AppState};
-use super::ModuleDescriptor;
+use crate::modules::ModuleDescriptor;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::{multipart, Client};
 use rusqlite::{params, OptionalExtension};
@@ -9,11 +9,24 @@ use std::{fs, path::{Path, PathBuf}};
 use tauri::State;
 
 pub const ID: &str = "builtin.ai.assignment-import";
+
+pub fn registration() -> crate::modules::BuiltinModuleRegistration {
+    crate::modules::BuiltinModuleRegistration {
+        descriptor,
+        initialize,
+        before_snapshot: None,
+        assignment_saved: None,
+        assignment_deleted: None,
+        manage: None,
+    }
+}
 const CAPABILITY: &str = "assignment.extract";
 const SYSTEM_PROMPT: &str = include_str!("prompts/assignment_system.txt");
 const USER_PROMPT: &str = include_str!("prompts/assignment_user.txt");
 const LEGACY_SYSTEM_PROMPT: &str = include_str!("prompts/legacy/assignment_system_v0.2.txt");
 const LEGACY_USER_PROMPT: &str = include_str!("prompts/legacy/assignment_user_v0.2.txt");
+// Keep the wire contract stable even when the user has an older/custom prompt.
+const OUTPUT_CONTRACT: &str = r#"应用输出格式要求：只返回一个 JSON 对象，不要 Markdown 或解释。格式为 {"assignments":[{"course_name":"","title":"","description":"","due_at":null,"submission_label":"","submission_url":"","submission_notes":"","evidence":""}]}。未知字符串填空字符串；due_at 仅填已明确的本地 YYYY-MM-DDTHH:mm:ss 或 null。没有作业时返回 {"assignments":[]}。"#;
 
 pub fn descriptor() -> ModuleDescriptor {
     let manifest: Value = serde_json::from_str(include_str!("module.json")).expect("bundled assignment-import manifest");
@@ -199,13 +212,52 @@ fn check_capability(provider: &ProviderConfig, paths: &[String]) -> Result<(), S
 }
 
 fn extract_json(content: &str) -> Result<AiResult, String> {
-    let text = content.trim();
-    let data = if text.starts_with('{') { text } else {
-        let start = text.find('{').ok_or("模型未返回可解析的作业数据")?;
-        let end = text.rfind('}').ok_or("模型未返回完整的作业数据")?;
-        &text[start..=end]
+    let mut text = content.trim().trim_start_matches('\u{feff}').trim_start();
+    // Some compatible endpoints put reasoning in content rather than a separate field.
+    while let Some(reasoning) = text.strip_prefix("<think>") {
+        let (_, answer) = reasoning.split_once("</think>").ok_or("模型只返回了思考内容，未返回完整的作业数据，请重试")?;
+        text = answer.trim_start();
+    }
+    let start = text.find(['{', '[']).ok_or("模型未返回可解析的作业 JSON，请重试")?;
+    // Deserialize one complete value: fences/prose after it are harmless, but never
+    // fall back to an inner object when an outer array/object is truncated.
+    let mut stream = serde_json::Deserializer::from_str(&text[start..]).into_iter::<Value>();
+    let value = stream.next().ok_or("模型未返回作业数据")?.map_err(|error| {
+        if error.is_eof() {
+            "模型返回的作业 JSON 不完整，请减少本次内容或分批识别".to_string()
+        } else {
+            format!("模型返回的 JSON 语法无效（第 {} 行，第 {} 列），请重试", error.line(), error.column())
+        }
+    })?;
+    let trailing = text[start + stream.byte_offset()..].trim_start();
+    if trailing.starts_with(['{', '[']) {
+        return Err("模型返回了多个 JSON 结果，请重试".into());
+    }
+    let drafts = match &value {
+        Value::Array(items) => items.clone(),
+        Value::Object(object) => match object.get("assignments") {
+            Some(Value::Array(items)) => items.clone(),
+            Some(_) => return Err("模型返回的 assignments 必须是作业数组，请重试".into()),
+            None if object.contains_key("title") => vec![value.clone()],
+            None => return Err("模型返回的 JSON 缺少 assignments 作业数组，请重试".into()),
+        },
+        _ => return Err("模型未返回作业对象或数组，请重试".into()),
     };
-    let mut result: AiResult = serde_json::from_str(data).map_err(|_| "模型返回格式无效，请重试或改用手动录入".to_string())?;
+    let mut result = AiResult { assignments: Vec::with_capacity(drafts.len()) };
+    for (index, mut draft) in drafts.into_iter().enumerate() {
+        let object = draft.as_object_mut().ok_or_else(|| format!("模型返回的第 {} 项作业必须是对象，请重试", index + 1))?;
+        for field in ["course_name", "course_id", "title", "description", "submission_label", "submission_url", "submission_notes", "evidence"] {
+            match object.get(field) {
+                None | Some(Value::Null) => { object.insert(field.into(), Value::String(String::new())); }
+                Some(Value::String(_)) => {}
+                Some(_) => return Err(format!("模型返回的第 {} 项作业字段 {field} 必须是字符串，请重试", index + 1)),
+            }
+        }
+        if !matches!(object.get("due_at"), None | Some(Value::Null | Value::String(_))) {
+            return Err(format!("模型返回的第 {} 项作业字段 due_at 必须是时间字符串或 null，请重试", index + 1));
+        }
+        result.assignments.push(serde_json::from_value(draft).map_err(|_| "模型返回的作业字段类型无效，请重试")?);
+    }
     result.assignments.retain(|a| !a.title.trim().is_empty());
     if result.assignments.is_empty() { return Err("未识别出独立作业，请检查输入内容".into()); }
     for item in &mut result.assignments {
@@ -218,8 +270,25 @@ fn extract_json(content: &str) -> Result<AiResult, String> {
     Ok(result)
 }
 
-fn response_content(value: &Value) -> Result<&str, String> {
-    value.pointer("/choices/0/message/content").and_then(Value::as_str).ok_or_else(|| "服务商没有返回文字内容".into())
+fn response_content(value: &Value) -> Result<String, String> {
+    match value.pointer("/choices/0/finish_reason").and_then(Value::as_str) {
+        Some("length") => return Err("模型输出达到长度上限，作业数据可能不完整，请减少本次内容或分批识别".into()),
+        Some("content_filter") => return Err("服务商拦截了本次识别内容，请检查输入或切换模型".into()),
+        _ => {}
+    }
+    if value.pointer("/choices/0/message/refusal").and_then(Value::as_str).is_some_and(|s| !s.trim().is_empty()) {
+        return Err("模型拒绝了本次识别，请检查输入或切换模型".into());
+    }
+    let content = value.pointer("/choices/0/message/content");
+    let text = match content {
+        Some(Value::String(text)) => text.clone(),
+        Some(Value::Array(parts)) => parts.iter()
+            .filter(|p| p.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|p| p.get("text").and_then(Value::as_str)).collect::<String>(),
+        _ => String::new(),
+    };
+    if text.trim().is_empty() { return Err("服务商没有返回文字内容，请重试或切换模型".into()); }
+    Ok(text)
 }
 
 fn prompt_file(directory: &Path, name: &str) -> Result<String, String> {
@@ -267,12 +336,18 @@ fn gemini_request(system: &str, prompt: &str, files: &[(String, String)]) -> Val
 }
 
 fn gemini_response(value: &Value) -> Result<String, String> {
+    match value.pointer("/candidates/0/finishReason").and_then(Value::as_str) {
+        Some("MAX_TOKENS") => return Err("Gemini 输出达到长度上限，作业数据可能不完整，请减少本次内容或分批识别".into()),
+        Some(reason) if reason != "STOP" => return Err("Gemini 未完成本次识别，请检查输入或切换模型".into()),
+        _ => {}
+    }
     let parts = value.pointer("/candidates/0/content/parts").and_then(Value::as_array).ok_or_else(|| {
         let reason = value.pointer("/promptFeedback/blockReason").and_then(Value::as_str).unwrap_or("没有返回候选结果");
         format!("Gemini 未返回识别结果：{reason}")
     })?;
-    let text = parts.iter().filter_map(|p| p.get("text").and_then(Value::as_str)).collect::<String>();
-    if text.is_empty() { return Err("Gemini 没有返回文字内容".into()); }
+    let text = parts.iter().filter(|p| p.get("thought").and_then(Value::as_bool) != Some(true))
+        .filter_map(|p| p.get("text").and_then(Value::as_str)).collect::<String>();
+    if text.trim().is_empty() { return Err("Gemini 没有返回文字内容".into()); }
     Ok(text)
 }
 
@@ -318,8 +393,9 @@ async fn do_import(provider: &ProviderConfig, key: &str, system: &str, prompt: &
 }
 
 async fn do_import_with_timeout(provider: &ProviderConfig, key: &str, system: &str, prompt: &str, paths: &[String], timeout: std::time::Duration) -> Result<AiResult, String> {
+    let system = format!("{system}\n\n{OUTPUT_CONTRACT}");
     let client = Client::builder().timeout(timeout).build().map_err(|e| e.to_string())?;
-    if provider.kind == "gemini" { return do_gemini_import(&client, provider, key, system, prompt, paths).await; }
+    if provider.kind == "gemini" { return do_gemini_import(&client, provider, key, &system, prompt, paths).await; }
     let file_model = provider.kind == "bailian" && (provider.model.to_lowercase().starts_with("qwen-long") || provider.model.eq_ignore_ascii_case("qwen-doc-turbo"));
     let mut content = vec![json!({"type":"text","text":prompt})];
     let mut uploaded = Vec::new();
@@ -345,12 +421,18 @@ async fn do_import_with_timeout(provider: &ProviderConfig, key: &str, system: &s
         let mut messages = vec![json!({"role":"system","content":system})];
         for file_id in &uploaded { messages.push(json!({"role":"system","content":format!("fileid://{file_id}")})); }
         messages.push(json!({"role":"user","content":if file_model { Value::String(prompt.to_owned()) } else { Value::Array(content) }}));
-        let request = json!({"model":provider.model,"messages":messages,"temperature":0.1});
+        let mut request = json!({"model":provider.model,"messages":messages,"temperature":0.1});
+        // Only opt in for documented models; custom/file-only endpoints may reject it.
+        let model = provider.model.to_lowercase();
+        if provider.kind == "deepseek" || (provider.kind == "bailian" &&
+            ["qwen3.8-max", "qwen3.8-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.7-flash", "qwen-long"].iter().any(|prefix| model.starts_with(prefix))) {
+            request["response_format"] = json!({"type":"json_object"});
+        }
         let response = client.post(format!("{}/chat/completions",provider.base_url)).bearer_auth(key).json(&request).send().await.map_err(http_error)?;
         let status = response.status();
         let value: Value = response.json().await.map_err(http_error)?;
         if !status.is_success() { return Err(format!("模型请求失败（{}）：{}",status,value.get("error").unwrap_or(&value))); }
-        extract_json(response_content(&value)?)
+        extract_json(&response_content(&value)?)
     }.await;
     for file_id in uploaded {
         let _ = client.delete(format!("{}/files/{}",provider.base_url,file_id)).bearer_auth(key).send().await;
@@ -410,6 +492,137 @@ mod tests {
         let result = extract_json(r#"{"assignments":[{"title":"A","due_at":"2026-09-25T23:59:00"},{"title":"B","due_at":null}]}"#).unwrap();
         assert_eq!(result.assignments.len(),2);
         assert_eq!(result.assignments[1].due_at,None);
+    }
+    #[test]
+    fn parses_wrapped_json_without_consuming_trailing_prose() {
+        let data = r#"{"assignments":[{"title":"题目 {A}","description":"引用：\"[1]\" 和 }","due_at":null}]}"#;
+        for content in [data.to_owned(), format!("{data}\n识别完成。"), format!("说明：\n```json\n{data}\n```\n请审核。"), format!("\u{feff}<think>示例 {{\"assignments\":[]}}</think>\n{data}")] {
+            let result = extract_json(&content).unwrap();
+            assert_eq!(result.assignments.len(),1);
+            assert_eq!(result.assignments[0].title,"题目 {A}");
+            assert_eq!(result.assignments[0].description,"引用：\"[1]\" 和 }");
+        }
+    }
+    #[test]
+    fn normalizes_nullable_and_missing_text_fields() {
+        let result = extract_json(r#"{"assignments":[{"title":"A","course_name":null,"course_id":null,"description":null,"submission_label":null,"submission_url":null,"submission_notes":null,"evidence":null},{"title":"B"}]}"#).unwrap();
+        assert_eq!(result.assignments.len(),2);
+        for draft in result.assignments {
+            assert!(draft.course_name.is_empty() && draft.course_id.is_empty());
+            assert!(draft.description.is_empty() && draft.submission_label.is_empty());
+            assert!(draft.submission_url.is_empty() && draft.submission_notes.is_empty() && draft.evidence.is_empty());
+            assert!(draft.due_at.is_none());
+        }
+    }
+    #[test]
+    fn accepts_bare_array_and_single_assignment() {
+        for data in [r#"[{"title":"A"},{"title":"B"}]"#, r#"```json
+[{"title":"A"},{"title":"B"}]
+```"#] {
+            assert_eq!(extract_json(data).unwrap().assignments.len(),2);
+        }
+        assert_eq!(extract_json(r#"{"title":"A"}"#).unwrap().assignments[0].title,"A");
+    }
+    #[test]
+    fn rejects_incomplete_outer_json_instead_of_importing_inner_drafts() {
+        for data in [r#"{"assignments":[{"title":"A"}]"#, r#"[{"title":"A"},"#, r#"<think>{"assignments":[{"title":"A"}]}"#] {
+            assert!(extract_json(data).unwrap_err().contains("完整"));
+        }
+        assert!(extract_json(r#"{"assignments":[{"title":"A"}]} {"assignments":[{"title":"B"}]}"#).unwrap_err().contains("多个"));
+    }
+    #[test]
+    fn rejects_wrong_types_with_safe_actionable_errors() {
+        for (data, expected) in [
+            (r#"{"assignments":null}"#, "assignments"),
+            (r#"{"assignments":{"title":"A"}}"#, "assignments"),
+            (r#"{"unrelated":"PRIVATE_SENTINEL"}"#, "assignments"),
+            (r#"{"assignments":[null]}"#, "第 1 项"),
+            (r#"{"assignments":[{"title":"A","description":{"secret":"PRIVATE_SENTINEL"}}]}"#, "description"),
+            (r#"{"assignments":[{"title":"A","due_at":123}]}"#, "due_at"),
+            (r#"{"assignments":[{"title":"PRIVATE_SENTINEL",}]}"#, "语法"),
+        ] {
+            let error = extract_json(data).unwrap_err();
+            assert!(error.contains(expected),"{error}");
+            assert!(!error.contains("PRIVATE_SENTINEL"),"{error}");
+        }
+        assert!(extract_json(r#"{"assignments":[{"title":null},{"title":"  "}]}"#).unwrap_err().contains("未识别"));
+    }
+    #[test]
+    fn compatible_response_handles_text_parts_and_ignores_reasoning() {
+        let response = json!({"choices":[{"finish_reason":"stop","message":{
+            "reasoning_content":"PRIVATE_SENTINEL",
+            "content":[{"type":"text","text":"{\"assignments\":["},{"type":"image_url","image_url":{}},{"type":"text","text":"{\"title\":\"A\"}]}"}]
+        }}]});
+        assert_eq!(extract_json(&response_content(&response).unwrap()).unwrap().assignments[0].title,"A");
+    }
+    #[test]
+    fn compatible_response_rejects_truncation_refusal_and_empty_content() {
+        for (response,expected) in [
+            (json!({"choices":[{"finish_reason":"length","message":{"content":"{\"assignments\":[{\"title\":\"A\"}]}"}}]}), "长度上限"),
+            (json!({"choices":[{"finish_reason":"content_filter","message":{"content":null}}]}), "拦截"),
+            (json!({"choices":[{"message":{"refusal":"PRIVATE_SENTINEL","content":null}}]}), "拒绝"),
+            (json!({"choices":[{"message":{"reasoning_content":"PRIVATE_SENTINEL","content":null}}]}), "没有返回文字"),
+            (json!({"choices":[{"message":{"content":"  "}}]}), "没有返回文字"),
+        ] {
+            let error = response_content(&response).unwrap_err();
+            assert!(error.contains(expected),"{error}");
+            assert!(!error.contains("PRIVATE_SENTINEL"));
+        }
+    }
+    #[test]
+    fn gemini_ignores_thought_parts_and_reports_incomplete_output() {
+        let response = json!({"candidates":[{"finishReason":"STOP","content":{"parts":[
+            {"thought":true,"text":"{\"assignments\":[]}"},
+            {"text":"{\"assignments\":["},{"text":"{\"title\":\"A\"}]}"}
+        ]}}]});
+        assert_eq!(extract_json(&gemini_response(&response).unwrap()).unwrap().assignments[0].title,"A");
+        for (reason, expected) in [("MAX_TOKENS","长度上限"),("SAFETY","未完成")] {
+            let mut blocked = response.clone();
+            blocked["candidates"][0]["finishReason"] = json!(reason);
+            assert!(gemini_response(&blocked).unwrap_err().contains(expected));
+        }
+    }
+    #[test]
+    fn http_requests_preserve_custom_prompts_and_use_supported_json_modes() {
+        for (kind, model, json_mode) in [("deepseek","deepseek-flash",true), ("bailian","qwen3.8-max",true), ("bailian","qwen-long",true), ("bailian","qwen-doc-turbo",false), ("bailian","unlisted-model",false), ("custom","qwen3.8-max",false)] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let base_url = format!("http://{}",listener.local_addr().unwrap());
+            let handle = std::thread::spawn(move || {
+                let (mut stream,_) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut bytes = Vec::new();
+                let mut buffer = [0u8;4096];
+                let (header_end, body_len) = loop {
+                    let size = stream.read(&mut buffer).unwrap();
+                    assert!(size > 0);
+                    bytes.extend_from_slice(&buffer[..size]);
+                    if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&bytes[..end]).to_lowercase();
+                        let length = headers.lines().find_map(|line| line.strip_prefix("content-length:")).unwrap().trim().parse::<usize>().unwrap();
+                        break (end + 4, length);
+                    }
+                };
+                while bytes.len() < header_end + body_len {
+                    let size = stream.read(&mut buffer).unwrap();
+                    assert!(size > 0);
+                    bytes.extend_from_slice(&buffer[..size]);
+                }
+                let request: Value = serde_json::from_slice(&bytes[header_end..header_end + body_len]).unwrap();
+                let expected_format = if json_mode { Some(json!({"type":"json_object"})) } else { None };
+                assert_eq!(request.get("response_format"), expected_format.as_ref());
+                let system = request["messages"][0]["content"].as_str().unwrap();
+                assert!(system.starts_with("my custom rules\n\n"));
+                assert!(system.contains(OUTPUT_CONTRACT));
+                let body = json!({"choices":[{"finish_reason":"stop","message":{"content":"```json\n{\"assignments\":[{\"title\":\"A\",\"description\":null}]}\n```"}}]}).to_string();
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body);
+                stream.write_all(response.as_bytes()).unwrap();
+            });
+            let provider = ProviderConfig{id:"mock".into(),kind:kind.into(),base_url,model:model.into()};
+            let result = tauri::async_runtime::block_on(do_import_with_timeout(&provider,"test","my custom rules","sample",&[],Duration::from_secs(5))).unwrap();
+            handle.join().unwrap();
+            assert_eq!(result.assignments[0].title,"A");
+            assert!(result.assignments[0].description.is_empty());
+        }
     }
     #[test]
     fn editable_prompts_require_content_placeholder() {

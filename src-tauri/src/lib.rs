@@ -1,5 +1,6 @@
 mod db;
 mod files;
+mod import_sync;
 mod modules;
 
 use tauri::Manager;
@@ -25,8 +26,12 @@ pub fn run() {
             db::backup_database,
             db::restore_database,
             db::compact_database,
+            import_sync::preview_assignment_import,
+            import_sync::apply_assignment_import,
             files::link_file,
             files::link_files_batch,
+            files::link_module_files,
+            files::unlink_module_file,
             files::save_common_file,
             files::remove_common_file,
             files::open_file,
@@ -43,6 +48,7 @@ pub fn run() {
             modules::modules_directory,
             modules::open_modules_directory,
             modules::invoke_module,
+            modules::manage_builtin_module,
             modules::assignment_import::get_config,
             modules::assignment_import::save_provider,
             modules::assignment_import::delete_provider,

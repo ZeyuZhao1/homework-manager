@@ -3,7 +3,7 @@ name: Validate
 on:
   pull_request:
   push:
-    branches: [master]
+    branches: [main]
 
 permissions:
   contents: read
@@ -22,6 +22,7 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - run: pnpm install --frozen-lockfile
+      - run: pnpm repository:check
       - run: pnpm lint
       - run: pnpm build
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib

@@ -130,13 +130,15 @@ sequenceDiagram
 
 ### 4.2 输出清理
 
-后端允许服务商在 JSON 外包裹少量文字，但会提取首个 `{` 到最后一个 `}` 之间的对象。随后：
+后端按 JSON 语法读取一个完整结果，允许外围代码块和前后说明文字，也兼容直接返回作业数组或单个作业对象；不会从截断的外层结果中捞取内层草稿。随后：
 
-- JSON 必须能反序列化为 `AiResult`；
+- 统一转换为 `AiResult`；缺失或为 `null` 的字符串字段归一为空字符串，其他错误类型明确指出作业序号和字段名；
 - 删除标题为空的草稿；
 - 若最终没有草稿，返回错误；
 - `due_at` 必须严格符合 `%Y-%m-%dT%H:%M:%S`，否则改为 `null`；
 - 未知课程不自动猜测 ID。
+
+模型输出达到长度上限、拒答、内容拦截、空响应与 JSON 语法错误分别提示原因；错误提示不附带模型原文。独立思考字段、Gemini 的 `thought` 分段及兼容接口开头的完整 `<think>...</think>` 不作为作业数据解析。
 
 保存前 UI 仍允许用户修改所有业务字段。
 
@@ -229,7 +231,9 @@ POST {base_url}/chat/completions
 Authorization: Bearer <API Key>
 ```
 
-请求包含 system/user messages、模型名和 `temperature: 0.1`。结果从 `choices[0].message.content` 读取。
+请求包含 system/user messages、模型名和 `temperature: 0.1`。DeepSeek 及百炼的 `qwen3.8-max*`、`qwen3.8-flash*`、`qwen3.7-max*`、`qwen3.7-plus*`、`qwen3.7-flash*`、`qwen-long*` 启用 `response_format: {"type":"json_object"}`，其他模型和自定义接口保持原请求参数。启用范围依据 [DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/) 和[百炼结构化输出](https://help.aliyun.com/en/model-studio/qwen-structured-output)文档。
+
+结果从 `choices[0].message.content` 读取，兼容字符串和 `type: "text"` 分段数组；解析前检查 `finish_reason` 和拒答字段。
 
 ### 7.2 Gemini 原生路径
 
@@ -240,7 +244,7 @@ POST {base_url}/models/{model}:generateContent
 x-goog-api-key: <API Key>
 ```
 
-请求设置 `responseMimeType: application/json` 和 `temperature: 0.1`，文件以 `inline_data` 发送。结果拼接 `candidates[0].content.parts[*].text`。
+请求设置 `responseMimeType: application/json` 和 `temperature: 0.1`，文件以 `inline_data` 发送。检查 `finishReason` 后，拼接 `candidates[0].content.parts[*].text`，跳过标记 `thought: true` 的思考分段。
 
 ## 8. 提示词生命周期
 
@@ -274,6 +278,8 @@ x-goog-api-key: <API Key>
 
 附件不插入 `{content}`；它们通过对应服务商的文件/多模态字段单独发送。
 
+每次请求在已读取的系统提示词后追加应用固定的 JSON 输出契约，以兼容旧版或自定义提示词。这个约束只限定响应结构及未知值写法，不改写磁盘上的用户提示词。
+
 ## 9. 保存边界
 
 模块的 `saveDrafts` 把审核后的 `AiDraft` 转换为核心 `Assignment`：
@@ -302,19 +308,21 @@ x-goog-api-key: <API Key>
 运行模块相关测试：
 
 ```powershell
-cargo test --manifest-path src-tauri/Cargo.toml --lib modules::assignment_import::tests
+cargo test --manifest-path src-tauri/Cargo.toml --lib assignment_import::tests
 ```
 
 测试覆盖：
 
 - 多作业 JSON 与未知 DDL；
+- JSON 代码块、尾部说明、空值字段、数组/单对象兼容、截断与错误类型；
+- 文字分段与思考内容隔离、输出长度上限、拒答和空响应；
 - 未知课程和课程代码匹配；
 - qwen、DeepSeek、Gemini 文件能力；
 - qwen-doc-turbo 单文件限制；
 - Gemini 原生请求结构；
 - 提示词占位符和公共前缀；
 - 旧服务商、路由和提示词迁移，以及相同服务商 ID 对既有凭据的继续使用；
-- 模拟 HTTP 成功响应和超时。
+- 模拟 HTTP 成功响应、JSON 模式启用范围、自定义提示词保留和超时。
 
 没有真实 API Key 的测试只能验证本地协议、请求结构和错误处理，不能验证服务商账号权限、配额或最新模型可用性。
 

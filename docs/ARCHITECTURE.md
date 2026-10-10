@@ -1,6 +1,6 @@
 # 系统架构
 
-本文描述作业簿 `v0.4.0` 的运行时架构、领域模型、数据流和一致性边界。面向需要理解或修改实现的维护者；用户操作说明见项目根目录 [README.md](../README.md)，逐项接口见 [CORE_API.md](CORE_API.md)。
+本文描述作业簿当前 `main` 的运行时架构、领域模型、数据流和一致性边界。面向需要理解或修改实现的维护者；用户操作说明见项目根目录 [README.md](../README.md)，逐项接口见 [CORE_API.md](CORE_API.md)。
 
 ## 1. 设计目标
 
@@ -23,7 +23,9 @@ flowchart LR
     C --> FS[Windows 文件系统]
     C --> MH[模块宿主]
     MH --> BI[内置 AI 模块]
-    MH --> EX[外部模块 EXE]
+    MH --> R[内置周期作业模块]
+    R --> DB
+    MH --> EX[外部模块 EXE / PowerShell]
     BI --> KC[Windows 凭据管理器]
     BI --> AI[AI 服务商 HTTPS API]
 ```
@@ -60,7 +62,10 @@ Rust 实现按责任分为：
 - `db.rs`：领域记录、完整快照、核心 CRUD、备份/恢复；
 - `files.rs`：文件路径、关联、目录浏览、历史、改名与撤回；
 - `modules.rs`：内置/外部模块发现、启用状态和调用宿主；
-- `modules/assignment-import/backend.rs`：内置 AI 模块及服务商适配。
+- `import_sync.rs`：通用来源快照校验、导入差异预览和事务应用；
+- `modules/registry.rs`：两个内置模块的后端注册清单；
+- `modules/assignment-import/backend.rs`：内置 AI 模块及服务商适配；
+- `modules/recurring-assignments/backend.rs`：周期规则、私有表、调度与生命周期钩子。
 
 ### 2.3 SQLite
 
@@ -70,7 +75,7 @@ Rust 实现按责任分为：
 - `journal_mode=WAL`：改善读取和写入恢复能力；
 - `journal_size_limit=1048576`；
 - `wal_autocheckpoint=100`；
-- `user_version=4`。
+- `user_version=6`；版本 6 增加通用作业导入的课程映射、来源关联与忽略基线表。
 
 数据库是元数据和审计记录的事实来源，但不是实际学习文件的容器。
 
@@ -83,7 +88,7 @@ Rust 实现按责任分为：
 - 在课程根目录内浏览和搜索；
 - 原地重命名并同步数据库；
 - 用大小和修改时间保护撤回；
-- 使用系统默认程序打开文件。
+- 普通打开使用系统默认程序；带页码/章节的作业关联可先交给声明文档定位能力的外部模块。
 
 应用不会复制关联文件，也不会因为删除作业、课程或学期而删除磁盘文件。
 
@@ -92,7 +97,9 @@ Rust 实现按责任分为：
 模块宿主统一使用能力名分派：
 
 - 内置模块在同一进程中执行；
-- 外部模块按需启动独立进程，通过 JSON over stdio 执行；
+- 内置模块通过通用注册信息声明初始化、同步和作业生命周期钩子，模块私有管理请求由单一宿主入口转发；
+- 外部模块按需启动独立进程，通过 JSON over stdio 执行；入口可以是模块内原生可执行文件或 PowerShell 脚本；
+- `document.navigation.index` 在关联快照变化后接收最小文件清单，`document.navigation.open` 只在用户点击带位置的关联时接管打开；核心不包含格式解析规则；
 - 两者都受模块启用状态控制；
 - 外部模块还受清单、路径、能力、大小和超时检查。
 
@@ -129,6 +136,8 @@ erDiagram
 | `recent_values` | 表单曾用值 | `field`, `value`, `used_at` |
 | `settings` | 核心键值设置 | 主题、命名模板 |
 | `module_states` | 模块启用状态 | `module_id`, `enabled`, `updated_at` |
+
+周期模块另建 `recurring_semester_calendars`、`recurring_series` 与 `recurring_occurrences`；共享文件通过核心 `module_file_links` 关联。核心导入使用 `assignment_import_course_map`、`assignment_import_links` 和 `assignment_import_ignored` 管理来源及忽略基线。
 
 内置 AI 模块另建 `assignment_import_providers` 和 `assignment_import_settings`，避免把模块私有配置加入核心快照。
 
@@ -259,7 +268,27 @@ sequenceDiagram
 
 撤回时会同时检查：这是该文件最新未撤回记录、当前路径仍为新路径、原路径未被占用、文件大小和修改时间与改名时一致。
 
-### 6.4 备份与恢复
+### 6.4 模块化文档定位
+
+```mermaid
+sequenceDiagram
+    participant UI as React 文件关联
+    participant H as 通用模块宿主
+    participant M as 外部文档定位模块
+    participant F as 本地文件
+    UI->>H: snapshot 后 document.navigation.index(paths)
+    H->>M: JSON over stdio
+    M->>F: 只读目录/标题
+    M-->>H: indexed/cached/skipped
+    UI->>H: open_file(fileId, linkId)
+    H->>M: document.navigation.open(path,page,chapter)
+    M->>F: 用户触发的定位打开
+    M-->>H: handled/location_applied/warning
+```
+
+索引缓存属于模块私有文件，不进入 SQLite 或数据库备份。禁用或移除模块后，核心的文件关联和页码/章节字段仍完整保留，打开行为回退为系统默认程序。
+
+### 6.5 备份与恢复
 
 - 导出使用 SQLite backup API，不直接复制可能仍处于 WAL 状态的主文件；
 - 恢复先以只读方式打开来源数据库并执行兼容性检查，再替换当前连接的内容；
@@ -292,6 +321,12 @@ Tauri 标识符为 `app.homeworkbook.local`。Windows 上主要目录为：
 ```
 
 安装版和便携版由相同标识符解析 AppData，所以共享上述目录。
+
+## 通用外部作业导入与打印
+
+用户另行安装声明 `assignment.sync.snapshot` 的模块后，通用导入界面读取来源快照，并调用 `preview_assignment_import` 计算新建、关联与逐字段变化。用户确认后，`apply_assignment_import` 在核心数据库事务内建立课程、映射和来源关联。来源 ID 保证幂等，来源缺席不会触发删除。学校认证、抓取与网页解析不属于主程序，也不随仓库提供。
+
+`src/printing.tsx` 根据已启用模块的 `file.print` 能力提供文件按钮，并通过 `src/service.ts` 调用通用宿主。默认配置和可选认证由外部模块管理，核心不包含打印驱动、渲染器或学校认证实现。只在用户操作时传递选中文件路径；提交结果不保证物理打印完成。本仓库不附带打印模块。
 
 ## 9. 浏览器预览模式
 

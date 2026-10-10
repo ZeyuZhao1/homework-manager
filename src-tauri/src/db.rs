@@ -72,6 +72,18 @@ pub struct FileLink {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleFileLink {
+    pub id: String,
+    pub module_id: String,
+    pub owner_type: String,
+    pub owner_id: String,
+    pub owner_label: String,
+    pub file_id: String,
+    pub role: String,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenameEvent {
     pub id: String,
     pub file_id: String,
@@ -109,6 +121,7 @@ pub struct Snapshot {
     pub assignments: Vec<Assignment>,
     pub files: Vec<FileAsset>,
     pub links: Vec<FileLink>,
+    pub module_file_links: Vec<ModuleFileLink>,
     pub common_files: Vec<CommonFile>,
     pub renames: Vec<RenameEvent>,
     pub file_history: Vec<FileHistoryEvent>,
@@ -151,8 +164,12 @@ pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
          CREATE TABLE IF NOT EXISTS assignment_custom_fields (assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE, field_key TEXT NOT NULL, field_value TEXT NOT NULL, PRIMARY KEY(assignment_id,field_key));
          CREATE TABLE IF NOT EXISTS common_files (course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE, file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, kind TEXT NOT NULL, label TEXT NOT NULL, PRIMARY KEY(course_id,file_id));
          CREATE TABLE IF NOT EXISTS module_states (module_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL);
-         PRAGMA user_version=4;"
+         CREATE TABLE IF NOT EXISTS module_file_links (id TEXT PRIMARY KEY, module_id TEXT NOT NULL, owner_type TEXT NOT NULL, owner_id TEXT NOT NULL, owner_label TEXT NOT NULL DEFAULT '', file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, role TEXT NOT NULL DEFAULT 'reference', note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(module_id,owner_type,owner_id,file_id,role));
+         CREATE INDEX IF NOT EXISTS module_file_links_by_owner ON module_file_links(module_id,owner_type,owner_id);
+         "
     ).map_err(|e| e.to_string())?;
+    crate::import_sync::initialize(&conn)?;
+    conn.execute_batch("PRAGMA user_version=6").map_err(|e| e.to_string())?;
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM semesters", [], |r| r.get(0)).map_err(|e| e.to_string())?;
     if count == 0 {
         let root = PathBuf::from(r"D:\share\University\Year 1 Fall");
@@ -181,7 +198,7 @@ pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
 }
 
 pub fn prune_unused_files(conn: &Connection) -> Result<(), String> {
-    conn.execute("DELETE FROM file_assets WHERE id NOT IN (SELECT file_id FROM assignment_files) AND id NOT IN (SELECT file_id FROM rename_history) AND id NOT IN (SELECT file_id FROM common_files) AND id NOT IN (SELECT file_id FROM file_history)", []).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM file_assets WHERE id NOT IN (SELECT file_id FROM assignment_files) AND id NOT IN (SELECT file_id FROM module_file_links) AND id NOT IN (SELECT file_id FROM rename_history) AND id NOT IN (SELECT file_id FROM common_files) AND id NOT IN (SELECT file_id FROM file_history)", []).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -204,7 +221,8 @@ pub fn course_identifiers(conn: &Connection) -> Result<Vec<(String,String,String
 
 #[tauri::command]
 pub fn load_snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    crate::modules::before_snapshot(&mut conn)?;
     let semesters = conn.prepare("SELECT id,name,source_root FROM semesters ORDER BY name DESC").map_err(|e| e.to_string())?
         .query_map([], |r| Ok(Semester { id: r.get(0)?, name: r.get(1)?, source_root: r.get(2)? })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
@@ -240,6 +258,9 @@ pub fn load_snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
     let links = conn.prepare("SELECT id,assignment_id,file_id,role,page,chapter,problem,note FROM assignment_files").map_err(|e| e.to_string())?
         .query_map([], |r| Ok(FileLink { id:r.get(0)?,assignment_id:r.get(1)?,file_id:r.get(2)?,role:r.get(3)?,page:r.get(4)?,chapter:r.get(5)?,problem:r.get(6)?,note:r.get(7)? })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+    let module_file_links = conn.prepare("SELECT id,module_id,owner_type,owner_id,owner_label,file_id,role,note FROM module_file_links ORDER BY owner_label,created_at").map_err(|e| e.to_string())?
+        .query_map([], |r| Ok(ModuleFileLink { id:r.get(0)?,module_id:r.get(1)?,owner_type:r.get(2)?,owner_id:r.get(3)?,owner_label:r.get(4)?,file_id:r.get(5)?,role:r.get(6)?,note:r.get(7)? })).map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
     let common_files = conn.prepare("SELECT course_id,file_id,kind,label FROM common_files ORDER BY kind,label").map_err(|e| e.to_string())?
         .query_map([], |r| Ok(CommonFile { course_id:r.get(0)?, file_id:r.get(1)?, kind:r.get(2)?, label:r.get(3)? })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
@@ -256,7 +277,19 @@ pub fn load_snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
         let values = recent_values.entry(field).or_default();
         if values.len() < 12 { values.push(value); }
     }
-    Ok(Snapshot { semesters,courses,assignments,files,links,common_files,renames,file_history,settings:current_settings(&conn)?,recent_values })
+    Ok(Snapshot { semesters,courses,assignments,files,links,module_file_links,common_files,renames,file_history,settings:current_settings(&conn)?,recent_values })
+}
+
+pub(crate) fn create_generated_assignment(conn: &Connection, mut payload: Assignment) -> Result<String, String> {
+    payload.id = id_or_new(&payload.id);
+    if payload.title.trim().is_empty() || payload.course_id.trim().is_empty() { return Err("生成的作业缺少课程或标题".into()); }
+    let timestamp = now();
+    conn.execute("INSERT INTO assignments(id,course_id,title,description,due_at,status,submission_label,submission_url,submission_notes,source_name,source_text,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,'todo',?6,?7,?8,?9,?10,?11,?11)", params![payload.id,payload.course_id,payload.title.trim(),payload.description,payload.due_at,payload.submission_label,payload.submission_url,payload.submission_notes,payload.source_name,payload.source_text,timestamp]).map_err(|e| e.to_string())?;
+    for (key,value) in &payload.custom_fields {
+        conn.execute("INSERT INTO assignment_custom_fields(assignment_id,field_key,field_value) VALUES (?1,?2,?3)", params![payload.id,key,value]).map_err(|e| e.to_string())?;
+    }
+    for (field,value) in [("title",&payload.title),("submission_label",&payload.submission_label),("submission_url",&payload.submission_url),("submission_notes",&payload.submission_notes)] { remember_value(conn,field,value)?; }
+    Ok(payload.id)
 }
 
 pub fn remember_value(conn: &Connection, field: &str, value: &str) -> Result<(), String> {
@@ -330,6 +363,7 @@ pub fn save_assignment(state: State<'_, AppState>, mut payload: Assignment) -> R
         tx.execute("INSERT INTO assignment_custom_fields(assignment_id,field_key,field_value) VALUES (?1,?2,?3)", params![payload.id,key.trim(),value]).map_err(|e| e.to_string())?;
     }
     for (field,value) in [("title",&payload.title),("submission_label",&payload.submission_label),("submission_url",&payload.submission_url),("submission_notes",&payload.submission_notes)] { remember_value(&tx,field,value)?; }
+    crate::modules::assignment_saved(&tx, &payload.id)?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(payload.id)
 }
@@ -381,18 +415,20 @@ fn save_assignments_batch_impl(conn: &mut Connection, payload: BatchAssignmentIn
 
 #[tauri::command]
 pub fn delete_assignment(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    crate::modules::assignment_deleted(&tx, &id)?;
     let affected = {
-        let mut stmt = conn.prepare("SELECT l.id,l.file_id,f.path FROM assignment_files l JOIN file_assets f ON f.id=l.file_id WHERE l.assignment_id=?1").map_err(|e| e.to_string())?;
+        let mut stmt = tx.prepare("SELECT l.id,l.file_id,f.path FROM assignment_files l JOIN file_assets f ON f.id=l.file_id WHERE l.assignment_id=?1").map_err(|e| e.to_string())?;
         let rows = stmt.query_map([&id], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?
     };
     for (link_id,file_id,path) in affected {
-        crate::files::record_file_history(&conn,&file_id,&link_id,&id,"unlinked",&path,"因删除作业移除关联")?;
+        crate::files::record_file_history(&tx,&file_id,&link_id,&id,"unlinked",&path,"因删除作业移除关联")?;
     }
-    conn.execute("DELETE FROM assignments WHERE id=?1", [id]).map_err(|e| e.to_string())?;
-    prune_unused_files(&conn)?;
-    Ok(())
+    tx.execute("DELETE FROM assignments WHERE id=?1", [id]).map_err(|e| e.to_string())?;
+    prune_unused_files(&tx)?;
+    tx.commit().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -435,7 +471,7 @@ fn restore_impl(conn: &mut Connection, path: &str) -> Result<(), String> {
     let check: String = source.query_row("PRAGMA integrity_check", [], |r| r.get(0)).map_err(|e| e.to_string())?;
     if check != "ok" { return Err("备份数据库完整性检查失败".into()); }
     let version: i64 = source.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(|e| e.to_string())?;
-    if !(1..=4).contains(&version) { return Err("备份数据库版本不兼容".into()); }
+    if !(1..=6).contains(&version) { return Err("备份数据库版本不兼容".into()); }
     conn.restore(MAIN_DB, path, None::<fn(rusqlite::backup::Progress)>).map_err(|e| e.to_string())?;
     conn.execute_batch("PRAGMA foreign_keys=ON").map_err(|e| e.to_string())?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS recent_values (field TEXT NOT NULL, value TEXT NOT NULL, used_at TEXT NOT NULL, PRIMARY KEY(field,value));
@@ -444,7 +480,11 @@ fn restore_impl(conn: &mut Connection, path: &str) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS file_history (id TEXT PRIMARY KEY, file_id TEXT NOT NULL, link_id TEXT NOT NULL DEFAULT '', assignment_id TEXT NOT NULL DEFAULT '', assignment_title TEXT NOT NULL DEFAULT '', event_type TEXT NOT NULL, path TEXT NOT NULL, details TEXT NOT NULL DEFAULT '', file_size INTEGER, modified_at_ms INTEGER, occurred_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS file_history_by_file_time ON file_history(file_id, occurred_at DESC);
         CREATE TABLE IF NOT EXISTS module_states (module_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL);
-        PRAGMA user_version=4; PRAGMA journal_size_limit=1048576; PRAGMA wal_autocheckpoint=100;").map_err(|e| e.to_string())?;
+        CREATE TABLE IF NOT EXISTS module_file_links (id TEXT PRIMARY KEY, module_id TEXT NOT NULL, owner_type TEXT NOT NULL, owner_id TEXT NOT NULL, owner_label TEXT NOT NULL DEFAULT '', file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, role TEXT NOT NULL DEFAULT 'reference', note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(module_id,owner_type,owner_id,file_id,role));
+        CREATE INDEX IF NOT EXISTS module_file_links_by_owner ON module_file_links(module_id,owner_type,owner_id);
+        PRAGMA journal_size_limit=1048576; PRAGMA wal_autocheckpoint=100;").map_err(|e| e.to_string())?;
+    crate::import_sync::initialize(conn)?;
+    conn.execute_batch("PRAGMA user_version=6").map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -500,6 +540,10 @@ mod tests {
         let common: String = conn.query_row("SELECT kind FROM common_files",[],|row|row.get(0)).unwrap();
         assert_eq!(field,"第 3 周");
         assert_eq!(common,"textbook");
+        let version: i64 = conn.query_row("PRAGMA user_version",[],|row|row.get(0)).unwrap();
+        assert_eq!(version,6);
+        let import_tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('assignment_import_course_map','assignment_import_links','assignment_import_ignored')",[],|row|row.get(0)).unwrap();
+        assert_eq!(import_tables,3);
         drop(conn);
         std::fs::remove_file(db_path).unwrap();
         std::fs::remove_file(backup_path).unwrap();

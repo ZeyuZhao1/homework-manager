@@ -25,3 +25,18 @@ src-tauri/gen/schemas/
 *.njsproj
 *.sln
 *.sw?
+
+# Only the two maintained built-in modules belong in this repository
+/modules/*
+!/modules/assignment-import/
+!/modules/recurring-assignments/
+!/modules/registry.rs
+
+# Local application data and credentials
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+.env
+.env.*

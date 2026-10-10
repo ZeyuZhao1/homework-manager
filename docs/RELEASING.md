@@ -2,6 +2,8 @@
 
 项目使用语义化版本、Git 标签和 GitHub Actions 发布 Windows x64 资产。正式发布 workflow 位于 `.github/workflows/release.yml`。
 
+main 保存已通过维护验证的源代码；正式二进制以 Release 标签为准。main 的未发布变化记录在 CHANGELOG，不以覆盖 `v0.4.0` 资产的方式发布。
+
 ## 1. 版本约定
 
 版本格式为 `MAJOR.MINOR.PATCH`，Git 标签格式为 `vMAJOR.MINOR.PATCH`。
@@ -18,10 +20,11 @@
 | `src-tauri/tauri.conf.json` | `version` |
 | `src-tauri/Cargo.toml` | `[package].version` |
 | `modules/assignment-import/module.json` | 内置模块 `version` |
+| `modules/recurring-assignments/module.json` | 内置模块 `version` |
 
 更新 Rust 包版本后运行一次 Cargo 命令，让 `src-tauri/Cargo.lock` 中本项目版本同步。README 中“当前版本”、示例文件名和 CHANGELOG 也应更新。
 
-发布 workflow 会强制校验标签与 `package.json`、`tauri.conf.json` 一致。Cargo 和内置模块版本目前依靠发布检查清单保持一致。
+发布 workflow 会强制校验标签与 `package.json`、`tauri.conf.json` 一致。`pnpm repository:check` 同时校验 Cargo、Cargo.lock 和两个内置模块版本，并拒绝非白名单模块。
 
 ## 2. 发布前检查
 
@@ -45,6 +48,7 @@ git log -5 --oneline --decorate
 
 ```powershell
 pnpm install --frozen-lockfile
+pnpm repository:check
 pnpm lint
 pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml --lib
@@ -87,7 +91,7 @@ git push origin v0.4.1
 
 1. 检出标签对应提交；
 2. 安装 pnpm 11、Node.js 24 和 Rust stable；
-3. 校验标签与应用版本；
+3. 校验标签与应用版本，并检查仓库模块白名单、版本一致性及文档文件链接；
 4. 使用 frozen lockfile 安装依赖；
 5. 运行 lint；
 6. 运行 Rust 库测试；

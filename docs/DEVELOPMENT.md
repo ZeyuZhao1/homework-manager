@@ -83,10 +83,13 @@ pnpm dev
 | `pnpm desktop:build` | 生成 release EXE 和 NSIS 安装包 |
 | `cargo test --manifest-path src-tauri/Cargo.toml --lib` | 运行 Rust 库测试 |
 
+通用打印界面仅在安装兼容模块后可用。外部实现的协议、渲染与客户端认证应在其独立项目验证；本仓库的构建不验证实际打印、学校认证或网络接收。
+
 完整本地验证：
 
 ```powershell
 pnpm install --frozen-lockfile
+pnpm repository:check
 pnpm lint
 pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml --lib
@@ -119,7 +122,7 @@ pnpm desktop:build
 
 1. 新安装建表；
 2. 旧数据库升级；
-3. 版本 1–4 备份恢复后的补表；
+3. 版本 1–6 备份恢复后的补表；
 4. `PRAGMA user_version`；
 5. Snapshot 序列化兼容；
 6. Rust 测试中的最小测试 schema。
@@ -140,7 +143,7 @@ pnpm desktop:build
 
 ### 5.4 新增外部模块能力
 
-若能力可由独立 EXE 完成，优先保持外部模块协议：
+若能力可由独立进程完成，优先保持外部模块协议。入口可以是原生 EXE，也可以是无需编译的 PowerShell `.ps1`：
 
 1. 在 `MODULES.md` 定义输入/结果；
 2. 在模块清单声明能力；
@@ -149,6 +152,8 @@ pnpm desktop:build
 5. 添加资源限制和失败路径测试。
 
 外部模块当前不能动态注入 React UI。若需要完整 UI，只能新增编译期内置模块或在核心界面中增加通用能力 UI。
+
+PowerShell 模块使用 `runtime: "powershell"` 和 `entrypoint` 清单字段，由 Windows PowerShell 5.1 以非交互模式执行。脚本源码应使用 ASCII 或带 BOM 的 UTF-8，stdout 必须只有协议 JSON。协议、输入输出示例与手工验证方式见 [MODULES.md](../MODULES.md)。外部模块在独立仓库维护，安装到 AppData；本仓库仅跟踪两个内置模块。
 
 ## 6. 新增 Tauri 命令
 
@@ -184,7 +189,7 @@ pnpm desktop:build
 运行单个测试：
 
 ```powershell
-cargo test --manifest-path src-tauri/Cargo.toml --lib modules::assignment_import::tests::unknown_course_requires_review
+cargo test --manifest-path src-tauri/Cargo.toml --lib modules::builtin_registry::assignment_import::tests::unknown_course_requires_review
 ```
 
 涉及文件系统的测试应使用随机临时目录，并在完成后清理；不要依赖开发者真实课程目录。
@@ -223,6 +228,16 @@ pnpm build
 ### 8.3 API Key
 
 服务名为 `app.homeworkbook.local`，账户键使用服务商 UUID。应用只返回 `has_key`，不会把已保存密钥重新展示到前端。删除服务商会尝试删除对应凭据。
+
+## 内置模块与仓库边界
+
+- `modules/assignment-import/`：AI 解析、服务商与审核界面；
+- `modules/recurring-assignments/`：周期规则、私有表、调度、时间线及前端服务；
+- `modules/registry.rs`：编译期后端注册，前端由 `src/moduleRegistry.ts` 发现；
+- `src/ImportInbox.tsx` / `src-tauri/src/import_sync.rs`：通用外部导入审核；
+- `src/printing.tsx`：可选打印能力的通用界面。
+
+运行 `pnpm repository:check` 检查 Git 跟踪的模块白名单、应用/模块版本一致性和本地 Markdown 文件链接。`.gitignore` 阻止意外添加其他模块；检查脚本也会拒绝强制添加的非白名单模块。不要上传数据库、备份、实际课程文件或凭据。
 
 ## 9. 常见问题
 
