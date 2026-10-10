@@ -11,6 +11,9 @@
 ├── src/                         React/TypeScript 核心前端
 ├── src-tauri/                   Tauri/Rust 桌面后端与打包配置
 ├── modules/assignment-import/   内置 AI 作业导入模块
+├── modules/recurring-assignments/ 内置周期作业模块
+├── modules/registry.rs          后端内置模块清单
+├── scripts/                    仓库一致性检查
 ├── docs/                        架构、接口、开发和发布文档
 ├── .github/workflows/           校验与 Windows 发布流程
 ├── README.md                    用户与项目概览
@@ -121,8 +124,8 @@ UI -> service.method()
 
 - `PRAGMA foreign_keys=ON`；
 - WAL 模式；
-- 当前 `user_version=4`；
-- 恢复接受版本 1–4；
+- 当前 `user_version=6`；
+- 恢复接受版本 1–6；
 - 至少保留一个学期；
 - Snapshot 读取可能记录外部文件变化。
 
@@ -145,11 +148,11 @@ UI -> service.method()
 
 核心职责：
 
-- 初始化内置模块；
+- 通过 `modules/registry.rs` 初始化两个内置模块并调用通用生命周期钩子；
 - 外部 `module.json` 发现与校验；
 - 模块启用状态；
 - 内置能力分派；
-- 外部 EXE JSON over stdio 调用；
+- 外部 EXE / PowerShell JSON over stdio 调用；
 - 2 MB 输入、4 MB stdout、120 秒超时。
 
 外部进程直接以当前用户权限启动。宿主不使用 shell，但也没有 OS 沙箱。
@@ -207,6 +210,12 @@ Tauri 命令注册清单。定义命令但忘记在这里注册，会导致前�
 - 运行时提示词在 AppData 中，用户修改不可被无条件覆盖；
 - `prompts/legacy/` 用于识别“仍是旧默认”的安全升级场景。
 
+### 周期模块和通用宿主
+
+`modules/recurring-assignments/` 持有周期规则、私有表、调度、时间线与模块管理操作；核心通过 `manage_builtin_module` 转发。`src-tauri/src/import_sync.rs` 负责通用来源导入审核事务，`src/ImportInbox.tsx` 提供审核 UI。`src/printing.tsx` 提供外部打印能力界面，不包含打印实现。
+
+仓库只跟踪 AI 导入和周期作业两个模块。其他模块由用户独立安装到 AppData，不加入本仓库。
+
 ## 6. 数据模型速查
 
 ```text
@@ -243,7 +252,10 @@ Assignment 1 ── * assignment_custom_fields
 ### 模块私有态
 
 - `assignment_import_providers`；
-- `assignment_import_settings`。
+- `assignment_import_settings`；
+- `recurring_semester_calendars`、`recurring_series`、`recurring_occurrences`。
+
+核心另有 `module_file_links` 和通用导入的来源关联、课程映射及忽略基线表。
 
 API Key 不属于任何表。
 

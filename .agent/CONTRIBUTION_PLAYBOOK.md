@@ -215,6 +215,7 @@ UI event
 - `src-tauri/Cargo.toml`；
 - `src-tauri/Cargo.lock`；
 - `modules/assignment-import/module.json`；
+- `modules/recurring-assignments/module.json`；
 - README/CHANGELOG 示例。
 
 公开标签不可移动。workflow 成功后还要验证 Release 资产名称、大小、上传状态和 SHA-256 清单。

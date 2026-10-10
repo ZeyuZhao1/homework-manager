@@ -1,6 +1,6 @@
 # 核心接口参考
 
-本文记录作业簿 `v0.4.0` 前端与 Tauri 后端之间的接口。它不是网络 HTTP API；调用只发生在桌面应用的 WebView 与同一进程的 Rust 后端之间。
+本文记录作业簿当前 `main` 前端与 Tauri 后端之间的接口。它不是网络 HTTP API；调用只发生在桌面应用的 WebView 与同一进程的 Rust 后端之间。
 
 前端代码应优先调用 `src/service.ts`，不要在页面组件中直接使用 `invoke`。内置 AI 模块使用自己的 `modules/assignment-import/frontend/service.ts`，并在需要写入核心数据时回到核心服务。
 
@@ -300,6 +300,8 @@ interface RenamePreview {
 
 `invokeModule` 对外部模块应用 2 MB 请求、4 MB 输出和 120 秒超时。完整协议见 [MODULES.md](../MODULES.md)。
 
+关联文件的打印按钮通过现有 `invokeModule(moduleId, 'file.print', {paths: [file.path]})` 调用启用的打印模块，没有模块专属 Tauri 命令。默认参数通过可选 `file.print.configure` 的 `get` / `save` 操作读取和保存；可选 `file.print.authenticate` 只准备外部客户端认证，不承诺认证已完成。返回 `queued`、逐文件结果和 `warning`；浏览器预览明确拒绝本地打印。公共参数及失败语义见 [打印契约](../MODULES.md#55-fileprint)。
+
 前端在快照或模块清单变化后，会把已关联且未失效的文件最小清单发送给所有启用的 `document.navigation.index` 模块。`open_file` 只在调用方提供合法 `linkId` 且该关联填写了页码或章节时调用 `document.navigation.open`；模块未接管时回退到普通打开，并在 `OpenFileResult.warning` 中解释定位失败。
 
 `manage_builtin_module` 只供随应用编译的内置模块前端使用。周期作业的操作名、负载类型和预览实现全部位于 `modules/recurring-assignments/`，核心前端不直接调用这些操作。
@@ -311,7 +313,7 @@ interface RenamePreview {
 | `previewAssignmentImport(moduleId, snapshot)` | `preview_assignment_import` | 已启用且声明 `assignment.sync.snapshot` 的外部模块 ID、来源快照 | 课程建议映射、待审核的新作业及已关联作业差异；不写库 |
 | `applyAssignmentImport(payload)` | `apply_assignment_import` | 来源快照、课程选择、逐项审核决定及选中的字段 | 在一个事务中建立课程映射、创建/关联/更新作业及保存来源基线；返回处理项数 |
 
-类型定义在 `src/importSync.ts`。决定动作是 `create`、`link`、`update`、`ignore` 或 `defer`；`update` 的 `fields` 仅接受 `title`、`description`、`due_at`、`submission_url`、`status`。来源已提交时才可把本地状态改为 `submitted`。来源表按模块、账户、课程与作业 ID 定位；忽略本次版本后，相同数据不再重复提示。浏览器预览会明确提示本地模块不可用。
+类型定义在 `src/importSync.ts`。决定动作是 `create`、`link`、`update`、`ignore` 或 `defer`；`update` 的 `fields` 仅接受 `title`、`description`、`due_at`、`submission_url`、`status`。来源已提交时才可把本地状态改为 `submitted`。新建作业保留来源模块 ID 与提交链接，提交平台为空，不从来源猜测平台名。来源表按模块、账户、课程与作业 ID 定位；忽略本次版本后，相同数据不再重复提示。浏览器预览会明确提示本地模块不可用。
 
 ## 8. AI 作业导入模块接口
 

@@ -38,6 +38,7 @@ jobs:
             throw "Tag v$tagVersion must match package.json ($packageVersion) and tauri.conf.json ($tauriVersion)."
           }
       - run: pnpm install --frozen-lockfile
+      - run: pnpm repository:check
       - run: pnpm lint
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib
       - run: pnpm desktop:build

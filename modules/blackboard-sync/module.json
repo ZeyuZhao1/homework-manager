@@ -1,7 +1,0 @@
-{
-  "id": "local.blackboard-assignment-sync",
-  "name": "南科大 Blackboard 作业同步",
-  "version": "1.0.0",
-  "capabilities": ["assignment.sync.snapshot"],
-  "executable": "bb-import-host.exe"
-}

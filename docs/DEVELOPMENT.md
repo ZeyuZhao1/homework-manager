@@ -83,10 +83,13 @@ pnpm dev
 | `pnpm desktop:build` | 生成 release EXE 和 NSIS 安装包 |
 | `cargo test --manifest-path src-tauri/Cargo.toml --lib` | 运行 Rust 库测试 |
 
+通用打印界面仅在安装兼容模块后可用。外部实现的协议、渲染与客户端认证应在其独立项目验证；本仓库的构建不验证实际打印、学校认证或网络接收。
+
 完整本地验证：
 
 ```powershell
 pnpm install --frozen-lockfile
+pnpm repository:check
 pnpm lint
 pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml --lib
@@ -150,7 +153,7 @@ pnpm desktop:build
 
 外部模块当前不能动态注入 React UI。若需要完整 UI，只能新增编译期内置模块或在核心界面中增加通用能力 UI。
 
-PowerShell 模块使用 `runtime: "powershell"` 和 `entrypoint` 清单字段，由 Windows PowerShell 5.1 以非交互模式执行。脚本源码应使用 ASCII 或带 BOM 的 UTF-8，stdout 必须只有协议 JSON。可参考 [`modules/document-navigation`](../modules/document-navigation/README.md) 的安装、私有缓存和手工协议验证方式。
+PowerShell 模块使用 `runtime: "powershell"` 和 `entrypoint` 清单字段，由 Windows PowerShell 5.1 以非交互模式执行。脚本源码应使用 ASCII 或带 BOM 的 UTF-8，stdout 必须只有协议 JSON。协议、输入输出示例与手工验证方式见 [MODULES.md](../MODULES.md)。外部模块在独立仓库维护，安装到 AppData；本仓库仅跟踪两个内置模块。
 
 ## 6. 新增 Tauri 命令
 
@@ -186,7 +189,7 @@ PowerShell 模块使用 `runtime: "powershell"` 和 `entrypoint` 清单字段，
 运行单个测试：
 
 ```powershell
-cargo test --manifest-path src-tauri/Cargo.toml --lib modules::assignment_import::tests::unknown_course_requires_review
+cargo test --manifest-path src-tauri/Cargo.toml --lib modules::builtin_registry::assignment_import::tests::unknown_course_requires_review
 ```
 
 涉及文件系统的测试应使用随机临时目录，并在完成后清理；不要依赖开发者真实课程目录。
@@ -226,17 +229,15 @@ pnpm build
 
 服务名为 `app.homeworkbook.local`，账户键使用服务商 UUID。应用只返回 `has_key`，不会把已保存密钥重新展示到前端。删除服务商会尝试删除对应凭据。
 
-## Blackboard 同步模块开发
+## 内置模块与仓库边界
 
-精简扩展和原生消息主机位于 [`modules/blackboard-sync`](../modules/blackboard-sync/README.md)。扩展的纯逻辑测试不需学校账号；独立主机使用单独的 Cargo 清单。Windows 发布安装包由 `build.ps1` 生成，安装时才注册当前用户的 Chrome 原生消息主机。
+- `modules/assignment-import/`：AI 解析、服务商与审核界面；
+- `modules/recurring-assignments/`：周期规则、私有表、调度、时间线及前端服务；
+- `modules/registry.rs`：编译期后端注册，前端由 `src/moduleRegistry.ts` 发现；
+- `src/ImportInbox.tsx` / `src-tauri/src/import_sync.rs`：通用外部导入审核；
+- `src/printing.tsx`：可选打印能力的通用界面。
 
-```powershell
-node --test modules/blackboard-sync/tests/*.test.js
-cargo test --manifest-path modules/blackboard-sync/host/Cargo.toml
-./modules/blackboard-sync/build.ps1
-```
-
-浏览器预览不能模拟 Chrome 登录、原生消息或桌面 SQLite 审核事务。实机验收须在 Windows Chrome 加载解压扩展，并以有效南科大账号检查一次。
+运行 `pnpm repository:check` 检查 Git 跟踪的模块白名单、应用/模块版本一致性和本地 Markdown 文件链接。`.gitignore` 阻止意外添加其他模块；检查脚本也会拒绝强制添加的非白名单模块。不要上传数据库、备份、实际课程文件或凭据。
 
 ## 9. 常见问题
 

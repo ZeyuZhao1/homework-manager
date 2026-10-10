@@ -1,6 +1,6 @@
 # 系统架构
 
-本文描述作业簿 `v0.4.0` 的运行时架构、领域模型、数据流和一致性边界。面向需要理解或修改实现的维护者；用户操作说明见项目根目录 [README.md](../README.md)，逐项接口见 [CORE_API.md](CORE_API.md)。
+本文描述作业簿当前 `main` 的运行时架构、领域模型、数据流和一致性边界。面向需要理解或修改实现的维护者；用户操作说明见项目根目录 [README.md](../README.md)，逐项接口见 [CORE_API.md](CORE_API.md)。
 
 ## 1. 设计目标
 
@@ -23,6 +23,8 @@ flowchart LR
     C --> FS[Windows 文件系统]
     C --> MH[模块宿主]
     MH --> BI[内置 AI 模块]
+    MH --> R[内置周期作业模块]
+    R --> DB
     MH --> EX[外部模块 EXE / PowerShell]
     BI --> KC[Windows 凭据管理器]
     BI --> AI[AI 服务商 HTTPS API]
@@ -60,7 +62,10 @@ Rust 实现按责任分为：
 - `db.rs`：领域记录、完整快照、核心 CRUD、备份/恢复；
 - `files.rs`：文件路径、关联、目录浏览、历史、改名与撤回；
 - `modules.rs`：内置/外部模块发现、启用状态和调用宿主；
-- `modules/assignment-import/backend.rs`：内置 AI 模块及服务商适配。
+- `import_sync.rs`：通用来源快照校验、导入差异预览和事务应用；
+- `modules/registry.rs`：两个内置模块的后端注册清单；
+- `modules/assignment-import/backend.rs`：内置 AI 模块及服务商适配；
+- `modules/recurring-assignments/backend.rs`：周期规则、私有表、调度与生命周期钩子。
 
 ### 2.3 SQLite
 
@@ -131,6 +136,8 @@ erDiagram
 | `recent_values` | 表单曾用值 | `field`, `value`, `used_at` |
 | `settings` | 核心键值设置 | 主题、命名模板 |
 | `module_states` | 模块启用状态 | `module_id`, `enabled`, `updated_at` |
+
+周期模块另建 `recurring_semester_calendars`、`recurring_series` 与 `recurring_occurrences`；共享文件通过核心 `module_file_links` 关联。核心导入使用 `assignment_import_course_map`、`assignment_import_links` 和 `assignment_import_ignored` 管理来源及忽略基线。
 
 内置 AI 模块另建 `assignment_import_providers` 和 `assignment_import_settings`，避免把模块私有配置加入核心快照。
 
@@ -315,11 +322,11 @@ Tauri 标识符为 `app.homeworkbook.local`。Windows 上主要目录为：
 
 安装版和便携版由相同标识符解析 AppData，所以共享上述目录。
 
-## Blackboard 作业同步数据流
+## 通用外部作业导入与打印
 
-精简 Chrome 扩展在已授权的学校站点扫描当前学期作业，经限定扩展 ID 的 Chrome 原生消息主机，把本次成功确认的课程和作业元数据原子写入模块私有 `inbox.json`。校园密码只在 Windows 凭据管理器，收件箱没有 Cookie、密码或实际学习文件。扩展与本地主机均在独立模块 `modules/blackboard-sync/`，主程序不解析 Blackboard 页面。
+用户另行安装声明 `assignment.sync.snapshot` 的模块后，通用导入界面读取来源快照，并调用 `preview_assignment_import` 计算新建、关联与逐字段变化。用户确认后，`apply_assignment_import` 在核心数据库事务内建立课程、映射和来源关联。来源 ID 保证幂等，来源缺席不会触发删除。学校认证、抓取与网页解析不属于主程序，也不随仓库提供。
 
-通用导入界面通过已启用外部模块的 `assignment.sync.snapshot` 能力读取收件箱，再调用 `preview_assignment_import` 计算新建、关联与逐字段变化。用户确认后，`apply_assignment_import` 在一个核心数据库事务内建立课程、映射和作业来源关联。来源 ID 负责幂等；来源缺席不会触发删除。模块禁用只阻止主程序调用，Chrome 侧扫描可在扩展设置里暂停。
+`src/printing.tsx` 根据已启用模块的 `file.print` 能力提供文件按钮，并通过 `src/service.ts` 调用通用宿主。默认配置和可选认证由外部模块管理，核心不包含打印驱动、渲染器或学校认证实现。只在用户操作时传递选中文件路径；提交结果不保证物理打印完成。本仓库不附带打印模块。
 
 ## 9. 浏览器预览模式
 

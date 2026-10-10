@@ -358,7 +358,7 @@ fn apply(conn: &mut Connection, payload: ApplyImport) -> Result<usize, String> {
             }
             let id = Uuid::new_v4().to_string();
             let now = db::now();
-            tx.execute("INSERT INTO assignments(id,course_id,title,description,due_at,status,submission_label,submission_url,submission_notes,source_name,source_text,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,'todo','Blackboard',?6,'',?7,'',?8,?8)",params![id,course_id,remote.title.trim(),remote.description,remote.due_at,remote.url,payload.module_id,now]).map_err(|e|e.to_string())?;
+            tx.execute("INSERT INTO assignments(id,course_id,title,description,due_at,status,submission_label,submission_url,submission_notes,source_name,source_text,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,'todo','',?6,'',?7,'',?8,?8)",params![id,course_id,remote.title.trim(),remote.description,remote.due_at,remote.url,payload.module_id,now]).map_err(|e|e.to_string())?;
             id
         } else if decision.action == "link" || decision.action == "update" {
             let id = if let Some(id) = linked {
@@ -461,26 +461,26 @@ mod tests {
             account_key: "account".into(),
             checked_at: "2026-09-28T01:00:00Z".into(),
             courses: vec![RemoteCourse {
-                id: "bb-course".into(),
+                id: "remote-course".into(),
                 name: "Calculus".into(),
                 code: "MA117".into(),
                 term: "2026 秋".into(),
             }],
             assignments: vec![RemoteAssignment {
-                id: "bb-a".into(),
-                course_id: "bb-course".into(),
+                id: "remote-a".into(),
+                course_id: "remote-course".into(),
                 title: title.into(),
                 description: "Read chapter 1".into(),
                 due_at: None,
                 status: status.into(),
-                url: "https://bb.sustech.edu.cn/task".into(),
+                url: "https://lms.example.edu/task".into(),
             }],
             warnings: vec![],
         }
     }
     fn choice() -> CourseChoice {
         CourseChoice {
-            remote_course_id: "bb-course".into(),
+            remote_course_id: "remote-course".into(),
             course_id: "course".into(),
             semester_id: String::new(),
             new_name: String::new(),
@@ -488,8 +488,8 @@ mod tests {
     }
     fn decision(action: &str, assignment_id: &str, fields: &[&str]) -> ImportDecision {
         ImportDecision {
-            remote_course_id: "bb-course".into(),
-            remote_assignment_id: "bb-a".into(),
+            remote_course_id: "remote-course".into(),
+            remote_assignment_id: "remote-a".into(),
             action: action.into(),
             assignment_id: assignment_id.into(),
             fields: fields.iter().map(|s| s.to_string()).collect(),
@@ -520,6 +520,12 @@ mod tests {
         let id: String = conn
             .query_row("SELECT id FROM assignments", [], |r| r.get(0))
             .unwrap();
+        let (label, source): (String, String) = conn.query_row(
+            "SELECT submission_label,source_name FROM assignments WHERE id=?1", [&id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).unwrap();
+        assert!(label.is_empty(), "generic imports must not invent a submission platform");
+        assert_eq!(source, "test.sync");
         conn.execute(
             "UPDATE assignments SET title='My edited title' WHERE id=?1",
             [&id],
@@ -609,7 +615,7 @@ mod tests {
                 module_id: "test.sync".into(),
                 snapshot,
                 courses: vec![CourseChoice {
-                    remote_course_id: "bb-course".into(),
+                    remote_course_id: "remote-course".into(),
                     course_id: String::new(),
                     semester_id: "term".into(),
                     new_name: "New".into(),

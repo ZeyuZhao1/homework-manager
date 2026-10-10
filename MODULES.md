@@ -1,6 +1,6 @@
 # 本地功能模块协议
 
-本文档定义作业簿 `v0.4.0` 支持的模块机制。外部模块协议版本为 **1**，适用于用户安装的本地可执行程序或 PowerShell 脚本；仓库内的内置模块还可以使用编译期 Rust/React 扩展点。
+本文档定义当前 `main` 的模块机制；相对正式版 `v0.4.0` 的新增行为见 [更新日志](CHANGELOG.md)。外部模块协议版本为 **1**，适用于用户安装的本地可执行程序或 PowerShell 脚本；仓库内的内置模块还可以使用编译期 Rust/React 扩展点。
 
 模块系统的目标是让文档解析、命名建议、打印或其他辅助能力独立演进，同时把数据库写入、文件改名等高影响操作保留在主程序中。
 
@@ -25,7 +25,7 @@
 - React 操作入口、浮层和设置卡；
 - 模块独立的数据库表、配置和资源。
 
-当前内置模块包括 `builtin.ai.assignment-import` 与 `builtin.assignment.recurring`。内置模块的源码布局和接口见本文末尾的“内置模块开发”。
+本仓库仅包含两个内置模块： `builtin.ai.assignment-import` 与 `builtin.assignment.recurring`。内置模块的源码布局和接口见本文末尾的“内置模块开发”。
 
 ## 2. 外部模块目录与清单
 
@@ -318,7 +318,22 @@ stderr 当前没有单独的宿主大小协议；仍应限制日志量，避免�
 { "queued": 1 }
 ```
 
-`queued` 表示成功提交到打印流程的文件数，不保证物理打印已经完成。
+`queued` 表示成功提交到打印流程的文件数，不保证物理打印已经完成。用户从作业详情的单个关联文件触发；主程序只传这次选择的路径，不传数据库、作业正文或其他附件。入口只显示启用且声明 `file.print` 的模块，不自动重试打印。
+
+兼容的可选输入 `options`：
+
+```json
+{
+  "paths": ["D:\\courses\\homework.pdf"],
+  "options": { "printer": "打印机名称", "copies": 1, "pages": "1-3,5", "duplex": "long-edge", "color": "monochrome", "paper": "A4", "orientation": "portrait" }
+}
+```
+
+省略参数时由模块读取自己的默认值。`pages` 使用文件的实际页序（从 1 开始），空字符串表示全部；与关联中的教材印刷页码无关。`duplex` 接受 `simplex`、`long-edge`、`short-edge`，`color` 接受 `monochrome`、`color`，`paper` 接受 `A4`、`A3`、`Letter`，`orientation` 接受 `portrait`、`landscape`。返回可带 `files: [{path, queued, error?}]` 和 `warning`，用于表达部分成功与提交状态未知。发生错误后应先检查队列，再决定是否重试。
+
+可选 `file.print.configure` 供通用设置界面使用，输入为 `{ "operation": "get" }` 或 `{ "operation": "save", "config": {...} }`；结果为 `{config, printers: [{name, is_default}], warning?}`。`config` 包括上述打印参数与模块私有的 `renderer_path`（参考实现使用现有 Ghostscript 的绝对路径）。配置由模块独立保存，不写主数据库；仅用户打开设置时读取。`file.print.printers` 返回同形的 `printers` 清单。
+
+可选 `file.print.authenticate` 接受 `{}`，只在用户点击连接按钮时准备外部客户端的认证流程。结果可包含 `{mode, started, warning}`，客户端启动或复用不表示已认证成功。凭据、验证码、首次登录及网络要求由外部模块和客户端处理；主程序不包含特定学校实现。
 
 ### 5.6 `document.navigation.index`
 
@@ -369,7 +384,7 @@ stderr 当前没有单独的宿主大小协议；仍应限制日志量，避免�
 
 ### 5.8 当前 UI 覆盖范围
 
-`assignment.extract` 已有完整的选择、审核和持久化 UI。`assignment.sync.snapshot` 使用通用“导入待审核”界面。`document.navigation.index` 与 `document.navigation.open` 由文件关联界面的通用宿主集成，不依赖模块专属 UI。其他推荐能力已经可以通过前端的 `service.invokeModule(moduleId, capability, input)` 调用，但当前版本没有通用用户界面；为其增加入口需要修改并重新构建主程序。
+`assignment.extract` 已有完整的选择、审核和持久化 UI。`assignment.sync.snapshot` 使用通用“导入待审核”界面。`document.navigation.index` 与 `document.navigation.open` 由文件关联界面的通用宿主集成，不依赖模块专属 UI。`file.print` 和可选的配置/认证能力提供通用文件按钮及设置界面，独立模块可热安装；首次获得这些通用入口需要构建含本次改动的主程序。其他推荐能力仍可通过 `service.invokeModule(moduleId, capability, input)` 调用。
 
 ### 5.9 `assignment.sync.snapshot`
 
@@ -380,13 +395,13 @@ stderr 当前没有单独的宿主大小协议；仍应限制日志量，避免�
   "protocol": 1,
   "account_key": "不含密码的稳定账户标识",
   "checked_at": "2026-09-28T01:00:00Z",
-  "courses": [{ "id": "bb-course-id", "name": "Calculus", "code": "MA117", "term": "2026 秋" }],
-  "assignments": [{ "id": "bb-assignment-id", "course_id": "bb-course-id", "title": "Homework 1", "description": "...", "due_at": null, "status": "unknown", "url": "https://bb.sustech.edu.cn/..." }],
+  "courses": [{ "id": "remote-course-id", "name": "Calculus", "code": "MA117", "term": "2026 秋" }],
+  "assignments": [{ "id": "remote-assignment-id", "course_id": "remote-course-id", "title": "Homework 1", "description": "...", "due_at": null, "status": "unknown", "url": "https://lms.example.edu/assignments/1" }],
   "warnings": []
 }
 ```
 
-`status` 只接受 `unknown`、`submitted` 和 `graded`。来源模块应只返回本次成功确认的作业，不用缺席表示删除。核心按模块、账户、来源课程和来源作业 ID 关联，未关联的已提交项不新建；所有创建、课程映射和更新都须在审核后由核心事务执行。`preview_assignment_import` 和 `apply_assignment_import` 是通用接口，详见 [核心接口](docs/CORE_API.md)。参考实现见 [南科大 BB 模块](modules/blackboard-sync/README.md)。
+`status` 只接受 `unknown`、`submitted` 和 `graded`。来源模块应只返回本次成功确认的作业，不用缺席表示删除。核心按模块、账户、来源课程和来源作业 ID 关联，未关联的已提交项不新建；所有创建、课程映射和更新都须在审核后由核心事务执行。`preview_assignment_import` 和 `apply_assignment_import` 是通用接口，详见 [核心接口](docs/CORE_API.md)。本仓库不附带外部同步实现。
 
 ## 6. 安全与信任边界
 
@@ -489,7 +504,7 @@ export interface AppModule {
 
 内置模块 ID 必须以 `builtin.` 开头，并与前端 `AppModule.id`、后端描述符及 `module.json` 保持一致。内置模块可以建立自己的表，但不应把模块私有字段塞入核心 `Snapshot`；应通过模块自己的服务获取配置。
 
-AI 作业导入模块的完整实现说明见 [modules/assignment-import/README.md](modules/assignment-import/README.md)。
+两个内置模块分别见 [AI 作业导入](modules/assignment-import/README.md) 与 [周期作业](modules/recurring-assignments/README.md)。其他模块应独立维护并安装到 AppData，不放入本仓库的 `modules/`。宿主保留通用文档定位、打印及作业同步契约，具体实现不随主程序提供。
 
 ## 10. 宿主实现位置
 
@@ -502,7 +517,5 @@ AI 作业导入模块的完整实现说明见 [modules/assignment-import/README.
 | `src/service.ts` | `listModules`、`setModuleEnabled`、`invokeModule` 等前端服务 |
 | `modules/assignment-import/` | AI 作业导入模块实现 |
 | `modules/recurring-assignments/` | 周期规则、调度、时间线、抽屉和模块私有前后端服务 |
-| `modules/document-navigation/` | 可直接安装、无需编译的外部文档目录定位模块 |
-| `modules/blackboard-sync/` | 独立安装的南科大 BB 扩展和原生消息主机，仅输出待审核作业快照 |
 
 核心 Tauri 接口的完整清单见 [docs/CORE_API.md](docs/CORE_API.md)，系统边界和数据流见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
