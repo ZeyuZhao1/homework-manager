@@ -4,7 +4,7 @@
 
 作业簿不是把文件复制进封闭资料库的云端服务。实际 PDF、图片和文档继续保留在原文件夹中，应用只保存结构化作业数据、文件路径、关联关系和操作历史。只有用户主动执行 AI 识别或选择网络/学校打印时，相关内容才会发送到所选服务。
 
-最新正式发行版：[`v0.4.0`](https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.4.0)。`main` 包含后续维护与已验证的功能更新，尚未创建新的发行标签；变化见 [CHANGELOG.md](CHANGELOG.md)。正式发布目标为 Windows x64。
+当前发布版本：[`v0.5.0`](https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.5.0)。正式发布目标为 Windows x64；本次变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ![作业簿界面](src/assets/hero.png)
 
@@ -38,7 +38,7 @@
 若系统提示缺少 WebView2，请安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。未签名的个人发行版可能触发 SmartScreen；请只从本仓库的 Releases 页面下载，并核对 SHA-256。验证示例：
 
 ```powershell
-Get-FileHash .\homework-manager-v0.4.0-windows-x64-installer.exe -Algorithm SHA256
+Get-FileHash .\homework-manager-v0.5.0-windows-x64-installer.exe -Algorithm SHA256
 ```
 
 ## 核心使用流程

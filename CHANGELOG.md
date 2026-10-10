@@ -2,7 +2,7 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)，并以 Git 标签和 GitHub Release 作为正式发布记录。
 
-## [未发布]
+## [0.5.0] - 2026-10-10
 
 ### 新增与修复
 
@@ -51,5 +51,6 @@
 
 - 提供 Windows x64 安装版与便携版下载。
 
+[0.5.0]: https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.4.0
 [0.3.0]: https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.3.0
