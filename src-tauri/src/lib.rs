@@ -2,6 +2,7 @@ mod db;
 mod files;
 mod import_sync;
 mod modules;
+mod window;
 
 use tauri::Manager;
 
@@ -12,6 +13,9 @@ pub fn run() {
         .setup(|app| {
             let state = db::init(app.handle()).map_err(std::io::Error::other)?;
             app.manage(state);
+            if let Some(window) = app.get_webview_window("main") {
+                window::prepare_main_window(&window)?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -35,6 +39,7 @@ pub fn run() {
             files::save_common_file,
             files::remove_common_file,
             files::open_file,
+            files::open_file_directory,
             files::save_file_link,
             files::unlink_file,
             files::relink_file,

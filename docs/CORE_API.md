@@ -218,6 +218,7 @@ interface ModuleDescriptor {
 | `browseDirectory(courseId, relativePath)` | `browse_directory` | 课程 ID、相对路径 | `DirectoryEntry[]`；请求规范化后必须仍在课程根目录内；目录优先排序 |
 | `searchCourseFiles(courseId, query)` | `search_course_files` | 课程 ID、查询 | 少于 2 字符返回空；最大深度 12；最多 100 个文件 |
 | `openFile(fileId, linkId?)` | `open_file` | 文件 ID、可选关联 ID | 有关联位置时依次尝试已启用的 `document.navigation.open` 外部模块，否则用系统默认程序打开；缺失路径会失败 |
+| `openFileDirectory(fileId): Promise<void>` | `open_file_directory` | 文件 ID | 从当前文件记录读取路径，用系统文件浏览器打开其父目录；允许文件缺失，但目录必须存在；未知 ID 或目录缺失会失败；浏览器预览明确提示仅桌面可用 |
 | `relinkFile(fileId, path)` | `relink_file` | 文件 ID、新路径 | 新路径必须存在并为文件；更新当前路径并写 `relocated` 历史 |
 
 ```ts

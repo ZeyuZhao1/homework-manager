@@ -4,7 +4,7 @@
 
 作业簿不是把文件复制进封闭资料库的云端服务。实际 PDF、图片和文档继续保留在原文件夹中，应用只保存结构化作业数据、文件路径、关联关系和操作历史。只有用户主动执行 AI 识别或选择网络/学校打印时，相关内容才会发送到所选服务。
 
-当前发布版本：[`v0.5.0`](https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.5.0)。正式发布目标为 Windows x64；本次变化见 [CHANGELOG.md](CHANGELOG.md)。
+当前发布版本：[`v0.5.1`](https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.5.1)。正式发布目标为 Windows x64；本次变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ![作业簿界面](src/assets/hero.png)
 
@@ -38,7 +38,7 @@
 若系统提示缺少 WebView2，请安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。未签名的个人发行版可能触发 SmartScreen；请只从本仓库的 Releases 页面下载，并核对 SHA-256。验证示例：
 
 ```powershell
-Get-FileHash .\homework-manager-v0.5.0-windows-x64-installer.exe -Algorithm SHA256
+Get-FileHash .\homework-manager-v0.5.1-windows-x64-installer.exe -Algorithm SHA256
 ```
 
 ## 核心使用流程
@@ -46,6 +46,8 @@ Get-FileHash .\homework-manager-v0.5.0-windows-x64-installer.exe -Algorithm SHA2
 ### 1. 建立学期与课程
 
 首次启动时应用至少保留一个学期。课程可以设置课程名、课程代码和对应的磁盘文件夹。课程文件夹用于内置浏览和搜索，但应用不会在启动时扫描整个目录。
+
+应用启动时以窗口化模式居中显示，默认内容区域最大为 1200×800 逻辑像素；小屏幕或高缩放比例下会自动缩小，为任务栏和窗口四周留出空间。
 
 当前版本包含一个面向项目作者环境的首次启动兼容逻辑：若 `D:\share\University\Year 1 Fall` 存在，会创建“2026 秋季”并关联其中已存在的课程文件夹；否则只创建空学期，不访问该路径。所有内容都可在“设置”中修改。
 
@@ -73,6 +75,8 @@ Get-FileHash .\homework-manager-v0.5.0-windows-x64-installer.exe -Algorithm SHA2
 课程文件夹选择器支持逐层浏览和按文件名搜索。搜索至少输入两个字符，最多返回 100 项；它只在用户搜索时运行。教材、补充题集等可设为课程常用文件，之后一键关联到作业。
 
 应用只保存规范化后的绝对路径，不复制文件内容。若文件在应用外被移动，文件页会标记失效路径，并允许重新定位。
+
+右键点击作业详情中的关联文件，可选择“打开所在文件夹”，在系统文件浏览器中查看该文件的目录。左键点击文件名仍会打开文件；文件丢失但原文件夹仍存在时，也可打开原目录。键盘可使用菜单键或 Shift+F10 调出菜单，按 Esc 关闭。此系统操作仅在桌面应用中可用。
 
 安装声明 `file.print` 能力的外部模块后，关联文件旁才会显示打印按钮；可选的 `file.print.configure` 与 `file.print.authenticate` 提供默认设置和客户端认证入口。打印实现、支持格式与网络要求由所安装模块决定。关联中的教材页码不会自动作为打印页码，提交成功也不代表物理打印完成。
 

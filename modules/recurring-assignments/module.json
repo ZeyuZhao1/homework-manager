@@ -1,7 +1,7 @@
 {
   "id": "builtin.assignment.recurring",
   "name": "周期作业",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "capabilities": ["assignment.schedule"],
   "builtin": true
 }

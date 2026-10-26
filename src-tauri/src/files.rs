@@ -278,6 +278,21 @@ pub async fn open_file(state: State<'_, AppState>, file_id: String, link_id: Opt
     Ok(OpenFileResult { used_module:false, location_applied:false, warning:None })
 }
 
+fn file_directory(conn: &rusqlite::Connection, file_id: &str) -> Result<PathBuf, String> {
+    let path: String = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [file_id], |r| r.get(0)).map_err(|_| "文件关联不存在".to_string())?;
+    let directory = Path::new(&path).parent().filter(|path| path.is_absolute() && path.is_dir()).ok_or("所在文件夹不存在，请先重新定位文件")?;
+    Ok(directory.to_path_buf())
+}
+
+#[tauri::command]
+pub fn open_file_directory(state: State<'_, AppState>, file_id: String) -> Result<(), String> {
+    let directory = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        file_directory(&conn, &file_id)?
+    };
+    open::that(directory).map_err(|e| format!("无法打开所在文件夹：{e}"))
+}
+
 fn link_file_impl(conn: &rusqlite::Connection, payload: LinkInput) -> Result<String, String> {
     if !["prompt", "reference", "solution"].contains(&payload.role.as_str()) { return Err("无效的文件角色".into()); }
     let path = fs::canonicalize(&payload.path).map_err(|_| "文件不存在，请重新选择".to_string())?;
@@ -478,6 +493,28 @@ mod tests {
         LinkInput { id:String::new(),assignment_id:assignment_id.into(),path:path.to_string_lossy().to_string(),role:role.into(),page:String::new(),chapter:String::new(),problem:String::new(),note:String::new() }
     }
     fn naming(section: &str) -> NamingInput { NamingInput { material:"textbook".into(),sections:section.into(),version:"1".into(),scope_kind:"section".into() } }
+
+    #[test]
+    fn file_directory_uses_current_path_and_allows_missing_file() {
+        let dir = std::env::temp_dir().join(format!("homeworkbook-folder-test-{}", Uuid::new_v4()));
+        fs::create_dir(&dir).unwrap();
+        let source = dir.join("解答 with spaces.txt");
+        fs::write(&source, "temporary answer").unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE file_assets(id TEXT PRIMARY KEY,path TEXT UNIQUE);").unwrap();
+        conn.execute("INSERT INTO file_assets VALUES('f',?1)", [source.to_string_lossy().as_ref()]).unwrap();
+        assert_eq!(file_directory(&conn, "f").unwrap(), dir);
+        fs::remove_file(&source).unwrap();
+        assert_eq!(file_directory(&conn, "f").unwrap(), dir);
+        assert!(file_directory(&conn, "unknown").is_err());
+        let moved = dir.join("moved");
+        fs::create_dir(&moved).unwrap();
+        conn.execute("UPDATE file_assets SET path=?1 WHERE id='f'", [moved.join("renamed.txt").to_string_lossy().as_ref()]).unwrap();
+        assert_eq!(file_directory(&conn, "f").unwrap(), moved);
+        fs::remove_dir(&moved).unwrap();
+        assert!(file_directory(&conn, "f").is_err());
+        fs::remove_dir(&dir).unwrap();
+    }
 
     #[test]
     fn shared_files_conflicts_and_reopen_undo() {

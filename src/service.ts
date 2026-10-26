@@ -177,6 +177,7 @@ export const service = {
   async restore(path: string) { if (desktop) return invoke<void>('restore_database', { path }) },
   async compactDatabase() { if (desktop) return invoke<void>('compact_database') },
   async openFile(fileId: string, linkId?: string): Promise<OpenFileResult> { if (desktop) return invoke<OpenFileResult>('open_file', { fileId, linkId:linkId || null }); return { used_module:false, location_applied:false, warning:null } },
+  async openFileDirectory(fileId: string): Promise<void> { if (!desktop) throw new Error('请在桌面应用中打开所在文件夹'); return invoke<void>('open_file_directory', { fileId }) },
   async invokeModule<T>(moduleId: string, capability: string, input: unknown): Promise<T> { if (!desktop) throw new Error('浏览器预览不运行本地模块'); return invoke<T>('invoke_module', { moduleId, capability, input }) },
   async previewAssignmentImport(moduleId: string, snapshot: RemoteSnapshot): Promise<ImportPreview> { if (!desktop) throw new Error('浏览器预览不运行本地模块'); return invoke<ImportPreview>('preview_assignment_import', { moduleId, snapshot }) },
   async applyAssignmentImport(payload: ApplyImport): Promise<number> { if (!desktop) throw new Error('浏览器预览不运行本地模块'); return invoke<number>('apply_assignment_import', { payload }) },
