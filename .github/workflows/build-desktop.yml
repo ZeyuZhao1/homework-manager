@@ -83,7 +83,9 @@ jobs:
             eval "$(printf "%s" "ci-test-keyring-password" | gnome-keyring-daemon --unlock --components=secrets)"
             cargo test --locked --manifest-path src-tauri/Cargo.toml --target "$NATIVE_TARGET" --lib native_credential_roundtrip -- --ignored
           '
-      - run: pnpm desktop:build --target ${{ matrix.target }} -- --locked
+      # Invoke the local CLI directly: pnpm script forwarding on Windows can
+      # consume the separator that Tauri needs before Cargo arguments.
+      - run: node node_modules/@tauri-apps/cli/tauri.js build --target ${{ matrix.target }} -- --locked
       - name: Validate Debian package metadata
         if: runner.os == 'Linux'
         shell: bash

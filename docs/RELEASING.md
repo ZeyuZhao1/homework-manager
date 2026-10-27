@@ -25,7 +25,7 @@ pnpm lint
 pnpm test
 pnpm build
 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
-pnpm desktop:build -- --locked
+node node_modules/@tauri-apps/cli/tauri.js build -- --locked
 ```
 
 确保没有无关改动，本地包含远端最新代码，目标标签未存在。单个平台本地通过不能替代其他平台验证。CI 会在 Windows x64/ARM64、macOS ARM64、Linux x64/ARM64 上原生执行测试、真实凭据往返测试、打包及架构检查；仍需在目标桌面环境执行安装、启动、文件对话框、剪贴板、备份恢复和卸载烟雾测试。

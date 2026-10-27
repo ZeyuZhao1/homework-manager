@@ -6,6 +6,8 @@
 
 ### 跨平台核心与分发
 
+- 修复 Windows CI 中 pnpm 脚本转发消耗参数分隔符导致 `--locked` 被 Tauri 错误解析的问题；各平台构建改用 Node 直接调用本地 Tauri CLI。
+
 - 核心增加 macOS ARM64、Linux x64/ARM64、Windows ARM64 原生构建目标，保留 Windows x64；打印及依赖 PowerShell 的模块不在本轮适配范围。
 - 按系统启用真实凭据后端，Linux 使用 Secret Service；增加独立的原生凭据往返测试，禁止回退到模拟存储或明文文件。
 - 修复非 Windows 课程目录路径拼接、Windows 专用初始化边界、Wayland 定位失败阻断启动；macOS 使用系统窗口控件。

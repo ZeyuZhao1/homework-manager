@@ -51,8 +51,10 @@ pnpm lint
 pnpm test
 pnpm build
 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
-pnpm desktop:build -- --locked
+node node_modules/@tauri-apps/cli/tauri.js build -- --locked
 ```
+
+需要传入 Cargo 参数时直接调用项目内的 Tauri CLI，保留 `-- --locked`；不要依赖 Windows 下 pnpm 脚本的分隔符转发行为。带目标的示例：`node node_modules/@tauri-apps/cli/tauri.js build --target aarch64-pc-windows-msvc -- --locked`。
 
 Tauri 自动合并 `tauri.<平台>.conf.json`，无需手动修改 NSIS 为 DMG/DEB。一般构建写入 `src-tauri/target/release/`；显式传入 `--target <triple>` 时写入 `src-tauri/target/<triple>/release/`。
 
