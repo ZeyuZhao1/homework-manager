@@ -437,3 +437,7 @@ try {
 6. 添加 Rust 单元测试，必要时补前端测试；
 7. 更新本文及 [ARCHITECTURE.md](ARCHITECTURE.md)；
 8. 若涉及模块公共能力，同时更新 [MODULES.md](../MODULES.md)。
+
+### AI 导入粘贴图片
+
+`assignmentImportService.savePastedImage(file: File): Promise<string>` 调用 `save_pasted_image(data: number[]): string`。后端只接受最多 20 MB 且具有 PNG、JPEG 或 WebP 文件头的数据，将其以随机名称保存在应用模块目录的 `assignment-import/clipboard/`，返回绝对路径。不接收调用方指定的保存路径，不上传、不写入关联记录；创建作业时仍经核心批量保存接口建立关联。浏览器预览仅生成演示路径。

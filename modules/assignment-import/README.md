@@ -349,3 +349,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib assignment_import::tests
 ### 修改提示词
 
 保留固定规则在前、运行时日期/课程/公告在后的结构，以提高支持前缀缓存服务商的复用机会。缓存是否命中由模型和服务商决定，不能在产品文案中保证费用下降。
+
+## 粘贴输入
+
+来源输入框支持直接粘贴文字和 PNG、JPEG、WebP 图片（每张最多 20 MB），显示图片预览并允许移除。图片由 `save_pasted_image` 命令保存到 AppData 的 `modules/assignment-import/clipboard/`，使用随机文件名且不覆盖已有文件。浏览器预览只演示附件，不写磁盘。只有用户点击“开始识别”才发送内容；确认创建后，粘贴图片与所选文件一起关联为题目材料。移除附件或取消导入不会删除已保存的图片，数据库备份也不包含这些图片。

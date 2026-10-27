@@ -10,6 +10,47 @@ use tauri::State;
 
 pub const ID: &str = "builtin.ai.assignment-import";
 
+fn store_pasted_image(directory: &Path, data: &[u8]) -> Result<String, String> {
+    if data.len() > 20 * 1024 * 1024 { return Err("粘贴图片不能超过 20 MB".into()); }
+    let extension = if data.starts_with(b"\x89PNG\r\n\x1a\n") { "png" }
+        else if data.starts_with(&[0xff, 0xd8, 0xff]) { "jpg" }
+        else if data.starts_with(b"RIFF") && data.get(8..12) == Some(b"WEBP") { "webp" }
+        else { return Err("请粘贴 PNG、JPEG 或 WebP 图片".into()); };
+    fs::create_dir_all(directory).map_err(|e| format!("无法创建图片目录：{e}"))?;
+    let path = directory.join(format!("pasted-{}.{}", uuid::Uuid::new_v4(), extension));
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e| e.to_string())?;
+    if let Err(error) = file.write_all(data) {
+        drop(file);
+        let _ = fs::remove_file(&path);
+        return Err(format!("保存粘贴图片失败：{error}"));
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn save_pasted_image(state: State<'_, AppState>, data: Vec<u8>) -> Result<String, String> {
+    store_pasted_image(&state.modules_dir.join("assignment-import").join("clipboard"), &data)
+}
+
+#[cfg(test)]
+mod clipboard_tests {
+    use super::*;
+    #[test]
+    fn pasted_images_have_unique_local_paths_and_reject_invalid_data() {
+        let dir = std::env::temp_dir().join(format!("clipboard-test-{}", uuid::Uuid::new_v4()));
+        assert!(store_pasted_image(&dir, b"not an image").is_err());
+        assert!(!dir.exists());
+        let data = b"\x89PNG\r\n\x1a\nexample";
+        let first = store_pasted_image(&dir, data).unwrap();
+        let second = store_pasted_image(&dir, data).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(fs::read(first).unwrap(), data);
+        assert!(store_pasted_image(&dir, &vec![0; 20 * 1024 * 1024 + 1]).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+
 pub fn registration() -> crate::modules::BuiltinModuleRegistration {
     crate::modules::BuiltinModuleRegistration {
         descriptor,

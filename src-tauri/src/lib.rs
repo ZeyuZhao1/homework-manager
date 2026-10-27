@@ -55,6 +55,7 @@ pub fn run() {
             modules::invoke_module,
             modules::manage_builtin_module,
             modules::assignment_import::get_config,
+            modules::assignment_import::save_pasted_image,
             modules::assignment_import::save_provider,
             modules::assignment_import::delete_provider,
             modules::assignment_import::save_routing,

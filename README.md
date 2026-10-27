@@ -4,7 +4,7 @@
 
 作业簿不是把文件复制进封闭资料库的云端服务。实际 PDF、图片和文档继续保留在原文件夹中，应用只保存结构化作业数据、文件路径、关联关系和操作历史。只有用户主动执行 AI 识别或选择网络/学校打印时，相关内容才会发送到所选服务。
 
-当前发布版本：[`v0.5.1`](https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.5.1)。正式发布目标为 Windows x64；本次变化见 [CHANGELOG.md](CHANGELOG.md)。
+当前发布版本：[`v0.5.2`](https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.5.2)。正式发布目标为 Windows x64；本次变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ![作业簿界面](src/assets/hero.png)
 
@@ -38,7 +38,7 @@
 若系统提示缺少 WebView2，请安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。未签名的个人发行版可能触发 SmartScreen；请只从本仓库的 Releases 页面下载，并核对 SHA-256。验证示例：
 
 ```powershell
-Get-FileHash .\homework-manager-v0.5.1-windows-x64-installer.exe -Algorithm SHA256
+Get-FileHash .\homework-manager-v0.5.2-windows-x64-installer.exe -Algorithm SHA256
 ```
 
 ## 核心使用流程
@@ -47,7 +47,7 @@ Get-FileHash .\homework-manager-v0.5.1-windows-x64-installer.exe -Algorithm SHA2
 
 首次启动时应用至少保留一个学期。课程可以设置课程名、课程代码和对应的磁盘文件夹。课程文件夹用于内置浏览和搜索，但应用不会在启动时扫描整个目录。
 
-应用启动时以窗口化模式居中显示，默认内容区域最大为 1200×800 逻辑像素；小屏幕或高缩放比例下会自动缩小，为任务栏和窗口四周留出空间。
+顶部使用随主题变化的应用标题栏，支持拖动、最小化、最大化/还原和关闭；课程列表保留滚动能力但隐藏滚动条。应用启动时以窗口化模式居中显示，默认内容区域最大为 1200×800 逻辑像素；小屏幕或高缩放比例下会自动缩小，为任务栏和窗口四周留出空间。
 
 当前版本包含一个面向项目作者环境的首次启动兼容逻辑：若 `D:\share\University\Year 1 Fall` 存在，会创建“2026 秋季”并关联其中已存在的课程文件夹；否则只创建空学期，不访问该路径。所有内容都可在“设置”中修改。
 
@@ -76,7 +76,7 @@ Get-FileHash .\homework-manager-v0.5.1-windows-x64-installer.exe -Algorithm SHA2
 
 应用只保存规范化后的绝对路径，不复制文件内容。若文件在应用外被移动，文件页会标记失效路径，并允许重新定位。
 
-右键点击作业详情中的关联文件，可选择“打开所在文件夹”，在系统文件浏览器中查看该文件的目录。左键点击文件名仍会打开文件；文件丢失但原文件夹仍存在时，也可打开原目录。键盘可使用菜单键或 Shift+F10 调出菜单，按 Esc 关闭。此系统操作仅在桌面应用中可用。
+右键点击作业详情中的关联文件，可选择“统一命名”；安装打印模块后，菜单中还提供“打印”和“打印选项与配置”。这些操作不再固定显示在文件名右侧。也可选择“打开所在文件夹”，在系统文件浏览器中查看该文件的目录。左键点击文件名仍会打开文件；文件丢失但原文件夹仍存在时，也可打开原目录。键盘可使用菜单键或 Shift+F10 调出菜单，按 Esc 关闭。此系统操作仅在桌面应用中可用。
 
 安装声明 `file.print` 能力的外部模块后，关联文件旁才会显示打印按钮；可选的 `file.print.configure` 与 `file.print.authenticate` 提供默认设置和客户端认证入口。打印实现、支持格式与网络要求由所安装模块决定。关联中的教材页码不会自动作为打印页码，提交成功也不代表物理打印完成。
 
@@ -119,7 +119,7 @@ AI 导入由内置模块 `builtin.ai.assignment-import` 提供。使用流程是
 
 1. 在设置中添加服务商、模型、地址和 API Key；
 2. 为“作业识别”选择一个服务商；
-3. 粘贴公告，可选附加 PDF、DOCX 或图片；
+3. 在输入框直接粘贴公告文字或截图（Ctrl+V），也可选择 PDF、DOCX 或图片；
 4. 点击“开始识别”后才会发送本次内容；
 5. 在审核抽屉中修改课程、标题、DDL 和提交信息；
 6. 确认后批量写入，附件作为题目材料关联，原文件不移动。

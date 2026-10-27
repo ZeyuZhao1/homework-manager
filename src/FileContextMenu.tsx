@@ -5,7 +5,7 @@ import { FolderOpen } from 'lucide-react'
 import { service } from './service'
 import type { FileAsset } from './types'
 
-export function FileContextMenu({ file, className, children }: { file?: FileAsset; className: string; children: ReactNode }) {
+export function FileContextMenu({ file, className, children, menuItems }: { file?: FileAsset; className: string; children: ReactNode; menuItems?: ReactNode }) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const itemRef = useRef<HTMLButtonElement>(null)
@@ -39,7 +39,7 @@ export function FileContextMenu({ file, className, children }: { file?: FileAsse
 
   const show = (x: number, y: number) => {
     previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    setPosition({ x: Math.max(8, Math.min(x, window.innerWidth - 228)), y: Math.max(8, Math.min(y, window.innerHeight - 56)) })
+    setPosition({ x: Math.max(8, Math.min(x, window.innerWidth - 228)), y: Math.max(8, Math.min(y, window.innerHeight - 190)) })
   }
 
   return <div className={className} tabIndex={file ? 0 : undefined}
@@ -58,12 +58,16 @@ export function FileContextMenu({ file, className, children }: { file?: FileAsse
     {children}
     {position ? createPortal(<div ref={menuRef} className="file-context-menu" role="menu" aria-label="关联文件操作"
       style={{ left: position.x, top: position.y }}
+      onClick={() => setPosition(null)}
       onContextMenu={event => { event.preventDefault(); event.stopPropagation() }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPosition(null) }}
       onKeyDown={event => {
         if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
           event.preventDefault()
-          itemRef.current?.focus()
+          const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') || [])
+          const current = items.indexOf(document.activeElement as HTMLButtonElement)
+          const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
+          items[index]?.focus()
         }
       }}>
       <button ref={itemRef} role="menuitem" onClick={() => {
@@ -71,6 +75,7 @@ export function FileContextMenu({ file, className, children }: { file?: FileAsse
         previousFocus.current?.focus()
         if (file) void service.openFileDirectory(file.id).catch(error => window.alert(`打开所在文件夹失败：${error instanceof Error ? error.message : String(error)}`))
       }}><FolderOpen size={16} />打开所在文件夹</button>
+      {menuItems}
     </div>, document.body) : null}
   </div>
 }

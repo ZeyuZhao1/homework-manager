@@ -10,6 +10,12 @@ function previewConfig(): ModuleConfig {
 function persist(config: ModuleConfig) { localStorage.setItem(previewKey, JSON.stringify(config)) }
 
 export const assignmentImportService = {
+  async savePastedImage(file: File): Promise<string> {
+    if (file.size > 20 * 1024 * 1024) throw new Error('粘贴图片不能超过 20 MB')
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) throw new Error('请粘贴 PNG、JPEG 或 WebP 图片')
+    if (!isTauri()) return `preview-pasted/${crypto.randomUUID()}.${file.type.split('/')[1]}`
+    return invoke<string>('save_pasted_image', { data: Array.from(new Uint8Array(await file.arrayBuffer())) })
+  },
   async config(): Promise<ModuleConfig> { return isTauri() ? invoke<ModuleConfig>('get_config') : previewConfig() },
   async saveProvider(payload: ProviderInput): Promise<string> {
     if (isTauri()) return invoke<string>('save_provider', { payload })

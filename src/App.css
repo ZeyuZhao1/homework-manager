@@ -96,3 +96,12 @@ input,textarea,select,.helper-text,.source-detail p,.file-page-main small,.drawe
 .file-context-menu{position:fixed;z-index:120;width:220px;max-width:calc(100vw - 16px);padding:5px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 .file-context-menu button{display:flex;align-items:center;gap:9px;width:100%;min-height:36px;padding:7px 10px;border:0;border-radius:4px;background:transparent;color:inherit;text-align:left;font-size:12px;cursor:pointer}
 .file-context-menu button:hover,.file-context-menu button:focus-visible{background:var(--selected);color:var(--blue);outline:none}
+
+#root:has(.app-titlebar){display:flex;flex-direction:column;overflow:hidden}
+#root:has(.app-titlebar)>.app-shell,#root:has(.app-titlebar)>.loading-screen{flex:1;height:auto;min-height:0}
+.app-titlebar{height:38px;flex:none;display:flex;align-items:center;justify-content:space-between;background:var(--sidebar);color:var(--muted);border-bottom:1px solid var(--border);user-select:none}
+.titlebar-drag{flex:1;height:100%;display:flex;align-items:center;gap:9px;padding-left:17px;font-size:12px}
+.titlebar-drag>*{pointer-events:none}
+.titlebar-controls{display:flex;height:100%}.titlebar-controls button{display:grid;place-items:center;width:46px;border:0;background:transparent;color:inherit}.titlebar-controls button:hover{background:var(--hover);color:var(--text)}.titlebar-controls .window-close:hover{background:#c42b1c;color:white}
+.course-nav{scrollbar-width:none}.course-nav::-webkit-scrollbar{display:none}
+.pasted-image-preview{width:64px;height:48px;object-fit:contain;border-radius:4px;background:var(--surface);flex:none}

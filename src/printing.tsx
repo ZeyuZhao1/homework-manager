@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { ChevronDown, LoaderCircle, Printer } from 'lucide-react'
 import { service } from './service'
 import type { FileAsset, ModuleDescriptor } from './types'
@@ -91,14 +92,14 @@ export function PrintSettingsDialog({ module, onClose }: { module: ModuleDescrip
   </Modal>
 }
 
-export function PrintFileActions({ file, modules }: { file?: FileAsset; modules: ModuleDescriptor[] }) {
+export function PrintFileActions({ file, modules, renderActions }: { file?: FileAsset; modules: ModuleDescriptor[]; renderActions?: (actions: ReactNode) => ReactNode }) {
   const [selectedId, setSelectedId] = useState('')
   const [busy, setBusy] = useState(false)
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [settingsModule, setSettingsModule] = useState<ModuleDescriptor | null>(null)
   const [result, setResult] = useState<string | null>(null)
   const module = modules.find(item => item.id === selectedId) || modules[0]
-  if (!module) return null
+  if (!module) return renderActions ? renderActions(null) : null
   const print = async () => {
     if (!file || file.missing || busy || !module.enabled) return
     if (!service.isDesktop) { setResult('浏览器预览无法执行打印，请使用桌面应用。'); return }
@@ -112,10 +113,13 @@ export function PrintFileActions({ file, modules }: { file?: FileAsset; modules:
     } catch (reason) { setResult(`打印请求未正常完成：${errorText(reason)}\n提交状态可能不明，请检查打印队列后再决定是否重试。`) }
     finally { pendingFiles.delete(file.path); setBusy(false) }
   }
+  const actions = <>
+    <button className={renderActions ? undefined : "icon-button tiny"} role={renderActions ? "menuitem" : undefined} title={service.isDesktop ? `打印当前文件 · ${module.name}` : '打印仅在桌面应用中可用'} aria-label={`打印当前文件 · ${module.name}`} disabled={!file || file.missing || busy || !service.isDesktop} onClick={() => { void print() }}>{busy ? <LoaderCircle size={15} /> : <Printer size={15} />}{renderActions ? (busy ? "正在提交打印…" : "打印") : null}</button>
+    <button className={renderActions ? undefined : "icon-button tiny"} role={renderActions ? "menuitem" : undefined} title="打印选项与配置" aria-label="打印选项与配置" disabled={busy} onClick={() => setOptionsOpen(true)}><ChevronDown size={13} />{renderActions ? "打印选项与配置" : null}</button>
+  </>
   return <>
-    <button className="icon-button tiny" title={service.isDesktop ? `打印当前文件 · ${module.name}` : '打印仅在桌面应用中可用'} aria-label={`打印当前文件 · ${module.name}`} disabled={!file || file.missing || busy || !service.isDesktop} onClick={() => { void print() }}>{busy ? <LoaderCircle size={15} /> : <Printer size={15} />}</button>
-    <button className="icon-button tiny" title="打印选项与配置" aria-label="打印选项与配置" disabled={busy} onClick={() => setOptionsOpen(true)}><ChevronDown size={13} /></button>
-    {optionsOpen ? <Modal title="打印选项" onClose={() => setOptionsOpen(false)}><p className="modal-intro">选择负责打印的模块。点击文件旁的打印按钮，将使用该模块保存的设置。</p>{modules.map(item => <div className="module-row" key={item.id}><label className="checkbox-label"><input type="radio" name="print-module" checked={module.id === item.id} onChange={() => setSelectedId(item.id)} />{item.name}</label>{item.capabilities.includes('file.print.configure') ? <button className="button button-quiet" onClick={() => { setOptionsOpen(false); setSettingsModule(item) }}>打印配置</button> : null}</div>)}</Modal> : null}
+    {renderActions ? renderActions(actions) : actions}
+    {optionsOpen ? <Modal title="打印选项" onClose={() => setOptionsOpen(false)}><p className="modal-intro">选择负责打印的模块。选择右键菜单中的“打印”，将使用该模块保存的设置。</p>{modules.map(item => <div className="module-row" key={item.id}><label className="checkbox-label"><input type="radio" name="print-module" checked={module.id === item.id} onChange={() => setSelectedId(item.id)} />{item.name}</label>{item.capabilities.includes('file.print.configure') ? <button className="button button-quiet" onClick={() => { setOptionsOpen(false); setSettingsModule(item) }}>打印配置</button> : null}</div>)}</Modal> : null}
     {settingsModule ? <PrintSettingsDialog module={settingsModule} onClose={() => setSettingsModule(null)} /> : null}
     {result ? <Modal title="打印结果" onClose={() => setResult(null)} footer={<button className="button button-primary" onClick={() => setResult(null)}>知道了</button>}><p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} role="status">{result}</p></Modal> : null}
   </>
