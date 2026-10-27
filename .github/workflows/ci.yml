@@ -4,25 +4,11 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  validate:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm repository:check
-      - run: pnpm lint
-      - run: pnpm build
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+  desktop:
+    uses: ./.github/workflows/build-desktop.yml

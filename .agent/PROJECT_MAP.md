@@ -15,7 +15,7 @@
 ├── modules/registry.rs          后端内置模块清单
 ├── scripts/                    仓库一致性检查
 ├── docs/                        架构、接口、开发和发布文档
-├── .github/workflows/           校验与 Windows 发布流程
+├── .github/workflows/           校验与多平台原生发布流程
 ├── README.md                    用户与项目概览
 ├── MODULES.md                   外部模块协议
 └── package.json                 前端与 Tauri 脚本
@@ -179,7 +179,7 @@ Tauri 命令注册清单。定义命令但忘记在这里注册，会导致前�
 
 - 内置模块描述符和 `assignment.extract` 分派；
 - 模块表初始化和旧配置迁移；
-- Windows 凭据读写；
+- 系统原生凭据读写；
 - 提示词初始化、迁移和占位符；
 - 文件类型/模型能力校验；
 - 百炼、DeepSeek、自定义 OpenAI 兼容请求；
@@ -329,7 +329,7 @@ UI/core -> invoke_module -> enabled/capability/path checks
 
 ## 10. 已知技术边界
 
-- 正式发布仅 Windows x64；
+- 平台构建目标与待验证范围见 `docs/PLATFORMS.md`；
 - 没有账号、云同步或跨设备同步；
 - Snapshot 是全量读取，数据规模很大时需要分页演进；
 - schema 迁移目前以兼容建表/更新为主，复杂演进需要显式迁移框架；
@@ -339,3 +339,5 @@ UI/core -> invoke_module -> enabled/capability/path checks
 - 教材页码/题号模型匹配只有预留契约；
 - lint 有现存 React warning，不等于检查失败。
 
+
+跨平台构建、原生凭据后端、runner 与打包配置以 [平台支持](../docs/PLATFORMS.md) 为准。

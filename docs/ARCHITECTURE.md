@@ -20,13 +20,13 @@ flowchart LR
     S -->|Tauri invoke| C[Tauri 命令层]
     S -->|浏览器模式| P[LocalStorage 预览状态]
     C --> DB[SQLite 核心状态]
-    C --> FS[Windows 文件系统]
+    C --> FS[操作系统文件系统]
     C --> MH[模块宿主]
     MH --> BI[内置 AI 模块]
     MH --> R[内置周期作业模块]
     R --> DB
     MH --> EX[外部模块 EXE / PowerShell]
-    BI --> KC[Windows 凭据管理器]
+    BI --> KC[系统原生凭据存储]
     BI --> AI[AI 服务商 HTTPS API]
 ```
 
@@ -347,7 +347,7 @@ Tauri 标识符为 `app.homeworkbook.local`。Windows 上主要目录为：
 
 ## 10. 安全边界
 
-- API Key 由 `keyring` 的 Windows 原生后端保存，不写入 SQLite；
+- API Key 由 `keyring` 按目标平台选择 Windows Credential Manager、macOS Keychain 或 Linux Secret Service 后端保存，不写入 SQLite；
 - AI 服务地址必须是 HTTPS，只有 `localhost` 和 `127.0.0.1` 允许 HTTP；
 - 课程目录浏览会规范化请求路径并检查仍位于课程根目录中；
 - 外部模块可执行路径必须规范化后仍位于模块目录；
@@ -372,3 +372,5 @@ Tauri 标识符为 `app.homeworkbook.local`。Windows 上主要目录为：
 修改公共数据结构或模块能力时，应同步更新 [CORE_API.md](CORE_API.md)、[MODULES.md](../MODULES.md) 和相关测试。
 
 自定义标题栏由 `main.tsx` 在应用内容上方挂载，加载状态也保留窗口控制；Tauri 关闭系统装饰并仅额外授权最小化、切换最大化、关闭和拖动。关联文件菜单通过渲染回调使用打印组件的操作，打印选项、配置和结果弹窗保留在菜单之外，避免菜单关闭导致打印状态丢失。
+
+核心原生构建目标、各系统数据根目录和发布矩阵见 [平台支持](PLATFORMS.md)。Wayland 的几何设置失败只记录启动诊断，主窗口仍会显示；macOS 平台配置启用原生控件与 Overlay 标题栏。

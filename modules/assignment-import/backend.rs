@@ -96,7 +96,33 @@ fn key_entry(id: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("app.homeworkbook.local", id).map_err(|e| e.to_string())
 }
 fn provider_key(id: &str) -> Result<String, String> {
-    key_entry(id)?.get_password().map_err(|_| "此服务商尚未保存 API Key".to_string())
+    key_entry(id)?.get_password().map_err(credential_error)
+}
+
+fn credential_error(error: keyring::Error) -> String {
+    match error {
+        keyring::Error::NoEntry => "此服务商尚未保存 API Key".into(),
+        _ => "无法访问系统凭据存储；请解锁凭据管理器或钥匙串。Linux 需要运行并解锁 Secret Service（如 GNOME Keyring 或兼容的 KWallet），不会回退到明文保存。".into(),
+    }
+}
+
+#[cfg(test)]
+mod credential_tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires an unlocked native OS credential store"]
+    fn native_credential_roundtrip() {
+        let entry = key_entry(&format!("ci-smoke-{}", uuid::Uuid::new_v4())).unwrap();
+        assert!(!entry.get_credential().is::<keyring::mock::MockCredential>(), "native platform must not use the mock credential store");
+        // Synthetic test data only; never read or overwrite a user's provider key.
+        entry.set_password("synthetic-cross-platform-test").unwrap();
+        let result = entry.get_password();
+        let cleanup = entry.delete_credential();
+        assert_eq!(result.unwrap(), "synthetic-cross-platform-test");
+        cleanup.unwrap();
+        assert!(matches!(entry.get_password(), Err(keyring::Error::NoEntry)));
+    }
 }
 
 fn table_exists(conn: &rusqlite::Connection, name: &str) -> Result<bool, String> {
@@ -160,7 +186,7 @@ pub fn save_provider(state: State<'_, AppState>, mut payload: ProviderInput) -> 
     let url = reqwest::Url::parse(payload.base_url.trim()).map_err(|_| "服务地址无效")?;
     if url.scheme() != "https" && !(url.scheme() == "http" && matches!(url.host_str(), Some("localhost" | "127.0.0.1"))) { return Err("服务地址必须使用 HTTPS".into()); }
     payload.id = id_or_new(&payload.id);
-    if !payload.api_key.trim().is_empty() { key_entry(&payload.id)?.set_password(payload.api_key.trim()).map_err(|e| e.to_string())?; }
+    if !payload.api_key.trim().is_empty() { key_entry(&payload.id)?.set_password(payload.api_key.trim()).map_err(credential_error)?; }
     else if provider_key(&payload.id).is_err() { return Err("请填写 API Key".into()); }
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     conn.execute("INSERT INTO assignment_import_providers(id,name,kind,base_url,model) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET name=excluded.name,kind=excluded.kind,base_url=excluded.base_url,model=excluded.model", params![payload.id,payload.name.trim(),payload.kind,url.as_str().trim_end_matches('/'),payload.model.trim()]).map_err(|e| e.to_string())?;

@@ -11,6 +11,7 @@
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
+    "test": "node --experimental-strip-types --test scripts/*.test.mjs",
     "repository:check": "node scripts/check-repository.mjs"
   },
   "dependencies": {

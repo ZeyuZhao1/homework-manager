@@ -1,0 +1,19 @@
+{
+  "app": {
+    "windows": [{
+      "label": "main",
+      "title": "作业簿",
+      "width": 1200,
+      "height": 800,
+      "minWidth": 980,
+      "minHeight": 650,
+      "center": true,
+      "visible": false,
+      "decorations": true,
+      "titleBarStyle": "Overlay",
+      "hiddenTitle": true,
+      "backgroundColor": "#f8fafc"
+    }]
+  },
+  "bundle": { "targets": ["dmg"], "macOS": { "minimumSystemVersion": "11.0", "signingIdentity": "-" } }
+}

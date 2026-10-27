@@ -2,7 +2,7 @@
 
 ## 支持范围
 
-仅当前最新发布版本接受安全修复。该应用为 Windows 本地桌面应用，SQLite 数据保存在当前用户的 AppData 目录，API Key 保存至 Windows 凭据管理器。
+仅当前最新发布版本接受安全修复。该应用为本地桌面应用，SQLite 数据保存在 Tauri 解析的当前用户应用数据目录，API Key 仅保存至系统原生凭据存储。跨平台构建及验证范围见 [平台支持](docs/PLATFORMS.md)。
 
 ## 报告漏洞
 
@@ -22,7 +22,7 @@ Get-FileHash .\homework-manager-v0.4.0-windows-x64-installer.exe -Algorithm SHA2
 
 - 实际学习文件保留在用户目录中；数据库只记录路径和元数据。
 - AI 功能只有在用户点击开始识别后才向所选服务商发送文字和附件。
-- API Key 存入 Windows 凭据管理器，不进入数据库备份。
-- 外部模块是用户自行安装的本地可执行文件，以当前 Windows 用户权限运行，并不处于操作系统沙箱中。
+- API Key 存入 Windows Credential Manager、macOS Keychain 或 Linux Secret Service，不回退到模拟存储或明文文件，不进入数据库备份。
+- 外部模块是用户自行安装的本地可执行文件，以当前操作系统用户权限运行，并不处于操作系统沙箱中。
 
 安装外部模块前应核实来源和哈希。模块协议的路径限制和超时只能保护宿主调用流程，不能阻止恶意程序访问当前用户有权访问的资源。

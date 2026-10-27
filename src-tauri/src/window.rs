@@ -16,10 +16,17 @@ fn centered_position(origin: PhysicalPosition<i32>, area: PhysicalSize<u32>, win
 }
 
 pub fn prepare_main_window(window: &WebviewWindow) -> tauri::Result<()> {
-    let monitor = match window.current_monitor()? {
-        Some(monitor) => Some(monitor),
-        None => window.primary_monitor()?,
-    };
+    // Wayland compositors may reject positioning/monitor queries. Never leave
+    // the configured initially-hidden window invisible because of that.
+    if let Err(error) = configure_main_window(window) {
+        eprintln!("Window geometry could not be configured: {error}");
+    }
+    window.show()
+}
+
+fn configure_main_window(window: &WebviewWindow) -> tauri::Result<()> {
+    let monitor = window.current_monitor().ok().flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
     if let Some(monitor) = monitor {
         let area = monitor.work_area();
         let outer = window.outer_size()?;
@@ -34,7 +41,7 @@ pub fn prepare_main_window(window: &WebviewWindow) -> tauri::Result<()> {
     } else {
         window.center()?;
     }
-    window.show()
+    Ok(())
 }
 
 #[cfg(test)]

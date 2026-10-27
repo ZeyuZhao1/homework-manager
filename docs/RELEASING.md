@@ -1,187 +1,102 @@
 # 发布指南
 
-项目使用语义化版本、Git 标签和 GitHub Actions 发布 Windows x64 资产。正式发布 workflow 位于 `.github/workflows/release.yml`。
+项目使用语义化版本、不可变 Git 标签和 GitHub Actions 发布原生桌面资产。正式流程为 `.github/workflows/release.yml`，复用 `.github/workflows/build-desktop.yml`；目标由 `scripts/desktop-targets.mjs` 定义。支持范围、原生 runner 和签名限制见 [平台支持](PLATFORMS.md)。旧发行版仍以原有 Release 资产为准，不移动公开标签。
 
-main 保存已通过维护验证的源代码；正式二进制以 Release 标签为准。main 的未发布变化记录在 CHANGELOG，不以覆盖 `v0.4.0` 资产的方式发布。
+## 1. 版本与发布前检查
 
-## 1. 版本约定
+同步以下文件中的应用/模块版本：
 
-版本格式为 `MAJOR.MINOR.PATCH`，Git 标签格式为 `vMAJOR.MINOR.PATCH`。
+- `package.json`；
+- `src-tauri/tauri.conf.json`；
+- `src-tauri/Cargo.toml` 与 `src-tauri/Cargo.lock`；
+- `modules/assignment-import/module.json`；
+- `modules/recurring-assignments/module.json`；
+- README 的当前版本与示例、CHANGELOG。
 
-- `MAJOR`：不兼容的数据、协议或使用方式变更；
-- `MINOR`：向后兼容的新功能；
-- `PATCH`：向后兼容的修复和小改进。
+平台 Tauri 配置只覆盖平台差异，不重复声明应用版本。标签必须采用 `vMAJOR.MINOR.PATCH`，与应用版本一致。
 
-发布前至少同步：
-
-| 文件 | 字段 |
-| --- | --- |
-| `package.json` | `version` |
-| `src-tauri/tauri.conf.json` | `version` |
-| `src-tauri/Cargo.toml` | `[package].version` |
-| `modules/assignment-import/module.json` | 内置模块 `version` |
-| `modules/recurring-assignments/module.json` | 内置模块 `version` |
-
-更新 Rust 包版本后运行一次 Cargo 命令，让 `src-tauri/Cargo.lock` 中本项目版本同步。README 中“当前版本”、示例文件名和 CHANGELOG 也应更新。
-
-发布 workflow 会强制校验标签与 `package.json`、`tauri.conf.json` 一致。`pnpm repository:check` 同时校验 Cargo、Cargo.lock 和两个内置模块版本，并拒绝非白名单模块。
-
-## 2. 发布前检查
-
-### 2.1 工作区和历史
-
-```powershell
+```bash
 git status --short --branch
 git fetch origin --tags
 git log -5 --oneline --decorate
-```
-
-确认：
-
-- 在预期发布分支；
-- 工作区没有无关改动；
-- 本地分支已包含远端最新提交；
-- 目标标签和 Release 尚不存在；
-- CHANGELOG 已记录用户可见变化。
-
-### 2.2 完整本地验证
-
-```powershell
 pnpm install --frozen-lockfile
 pnpm repository:check
 pnpm lint
+pnpm test
 pnpm build
-cargo test --manifest-path src-tauri/Cargo.toml --lib
-pnpm desktop:build
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+pnpm desktop:build -- --locked
 ```
 
-检查本地产物：
+确保没有无关改动，本地包含远端最新代码，目标标签未存在。单个平台本地通过不能替代其他平台验证。CI 会在 Windows x64/ARM64、macOS ARM64、Linux x64/ARM64 上原生执行测试、真实凭据往返测试、打包及架构检查；仍需在目标桌面环境执行安装、启动、文件对话框、剪贴板、备份恢复和卸载烟雾测试。
 
-```text
-src-tauri/target/release/homework-manager.exe
-src-tauri/target/release/bundle/nsis/*.exe
+## 2. 创建新版本
+
+仅在用户明确授权提交、推送与发布后执行。例如未来发布 `0.6.0`：
+
+```bash
+git add <本次发布文件>
+git commit -m "Release v0.6.0"
+git tag -a v0.6.0 -m "Release v0.6.0"
+git push --atomic origin HEAD:main refs/tags/v0.6.0
 ```
 
-建议在干净 Windows 环境至少验证一次安装、启动、数据库创建和卸载流程。涉及升级迁移时，还应从上一个正式版本启动同一数据库进行检查。
+推送标签后：
 
-### 2.3 文档和数据兼容
+1. 解析标签，检查版本，并固定该标签提交的完整 SHA；
+2. 五个原生 runner 检出同一 SHA，检查本机 Node/Rust 架构；
+3. 安装依赖，检查仓库、前端 lint、Node 测试和 Rust 测试；
+4. 单独运行 `native_credential_roundtrip`，Linux 在独立 D-Bus / GNOME Keyring 会话中执行；
+5. 根据平台 Tauri 配置构建 NSIS、DMG、DEB / AppImage；
+6. 检查 PE/ELF/Mach-O 架构，收集对应平台的安装包并上传 Actions artifact；
+7. **仅全部构建成功后**合并所有平台资产，验证完整清单和非空文件，生成一个 `SHA256SUMS.txt`；
+8. 由唯一的 publish job 创建同一个 GitHub Release 并上传所有资产。
 
-逐项确认：
+构建任务只有 `contents: read` 权限，只有 publish 任务获得 `contents: write`。同标签发布使用 concurrency 串行运行，避免并发任务争抢上传。
 
-- README 的下载、能力矩阵、数据路径和限制仍准确；
-- `docs/CORE_API.md` 与 Tauri 命令/类型一致；
-- `MODULES.md` 与模块宿主限制一致；
-- 数据库 `user_version` 和恢复兼容范围正确；
-- 新增网络请求、凭据或文件副作用已记录；
-- 新的默认提示词不会覆盖用户修改。
+## 3. 发布资产
 
-## 3. 创建正式发布
-
-以发布 `0.4.1` 为例：
-
-```powershell
-git add -A
-git commit -m "Release v0.4.1"
-git push origin main
-git tag -a v0.4.1 -m "Release v0.4.1"
-git push origin v0.4.1
-```
-
-推送 `v*` 标签会触发 Release Windows app workflow。workflow 在 `windows-latest` 上：
-
-1. 检出标签对应提交；
-2. 安装 pnpm 11、Node.js 24 和 Rust stable；
-3. 校验标签与应用版本，并检查仓库模块白名单、版本一致性及文档文件链接；
-4. 使用 frozen lockfile 安装依赖；
-5. 运行 lint；
-6. 运行 Rust 库测试；
-7. 执行 `pnpm desktop:build`；
-8. 复制并统一命名便携 EXE 和 NSIS 安装包；
-9. 生成 `SHA256SUMS.txt`；
-10. 创建 GitHub Release 并生成发布说明。
-
-## 4. 发布资产
-
-每个正式版本应有且只有以下三项：
+版本 `<版本>` 预期有九项程序/安装包，外加一个统一校验清单：
 
 ```text
 homework-manager-v<版本>-windows-x64-installer.exe
 homework-manager-v<版本>-windows-x64-portable.exe
+homework-manager-v<版本>-windows-arm64-installer.exe
+homework-manager-v<版本>-windows-arm64-portable.exe
+homework-manager-v<版本>-macos-arm64.dmg
+homework-manager-v<版本>-linux-x64.deb
+homework-manager-v<版本>-linux-x64.AppImage
+homework-manager-v<版本>-linux-arm64.deb
+homework-manager-v<版本>-linux-arm64.AppImage
 SHA256SUMS.txt
 ```
 
-workflow 计算两个可执行文件的 SHA-256，清单格式为：
+`prepare-release-assets.mjs` 要求架构匹配、各平台只有一份预期安装包；聚合步骤拒绝缺失、多余、空文件或其他版本的资产。清单格式为 `<小写 SHA-256>  <文件名>`，按文件名排序。
 
-```text
-<小写哈希>  <文件名>
+macOS 当前使用 ad-hoc 签名，未配置 Developer ID 或 Apple 公证，不应把它描述为已公证安装包。Windows 安装包也未配置发行证书。签名和公证需要额外配置凭据，本轮不会索取或伪造这些信息。
+
+## 4. 发布后验证
+
+确认 workflow 为 success，五个平台使用同一目标 SHA，Release 不是 draft/prerelease，十项资产完整且非空。下载后验证校验清单：
+
+```bash
+sha256sum -c SHA256SUMS.txt
 ```
 
-## 5. 发布后验证
+macOS 可使用 `shasum -a 256 <文件>`，Windows 使用 `Get-FileHash <文件> -Algorithm SHA256`，与清单逐项比较。
 
-在 GitHub Actions 和 Release 页面确认：
+安装烟雾测试至少覆盖：新建与编辑作业、关联临时材料、打开文件和目录、重命名及撤回、AI 密钥保存后重启读取、粘贴截图、周期作业、导出/恢复数据库，以及窗口控制。Linux 应验证 X11 和 Wayland，macOS 验证原生窗口控件。跨系统恢复后原文件绝对路径通常失效，需要重新定位；数据库备份不包含凭据或实际文件。
 
-- workflow 结论为 success；
-- job 使用的 `headSha` 是目标标签提交；
-- Release 不是 draft 或 prerelease（除非计划如此）；
-- 三项资产都处于 uploaded 状态，文件大小非零；
-- 标签和 Release 名称一致；
-- 自动生成的发布说明没有遗漏重要迁移或已知问题。
+## 5. 失败与重建
 
-下载资产后验证哈希：
+任一平台失败时，其他成功平台的 Actions artifacts 仍可用于排查；不会提前生成部分平台的 Release。先修复问题并重新运行 CI。源码变更应使用新的版本与标签，不移动已公开标签。
 
-```powershell
-Get-FileHash .\homework-manager-v0.4.1-windows-x64-installer.exe -Algorithm SHA256
-Get-FileHash .\homework-manager-v0.4.1-windows-x64-portable.exe -Algorithm SHA256
+仅当源码标签正确、失败原因是 runner/下载/上传的暂时故障时，允许重新构建同一不可变标签：
+
+```bash
+gh workflow run release.yml --ref v0.6.0 -f release_tag=v0.6.0
 ```
 
-至少对安装版执行一次烟雾测试：
+执行 workflow 的 ref 与输入标签必须相同。旧标签仍使用其提交中的旧 workflow，不应把本轮多平台脚本强行用于缺少这些脚本的旧版本。上传失败可能留下不完整 Release，此时先标记为预发布并调查，不能把构建阶段的完整性门禁描述为 GitHub 多文件上传的原子事务。
 
-1. 启动应用；
-2. 打开现有数据库或创建测试数据；
-3. 新建/编辑作业；
-4. 关联一个临时文件；
-5. 打开设置和模块列表；
-6. 导出数据库备份；
-7. 关闭并重新启动，确认数据存在。
-
-## 6. 重新构建已有标签
-
-workflow 支持手动输入 `release_tag`。只有在源码标签正确但 runner 或上传暂时失败时使用，不应借此用不同源码覆盖同一版本。
-
-使用 GitHub CLI 时必须把执行 ref 指向同一个标签：
-
-```powershell
-gh workflow run release.yml --ref v0.4.1 -f release_tag=v0.4.1
-```
-
-workflow 配置了 `overwrite_files: true`，会覆盖同名资产。因此重新构建前应确认标签没有移动、workflow 文件未发生影响产物的变化，并在 Release 说明中保留必要的审计记录。
-
-## 7. 失败处理
-
-### 版本校验失败
-
-不要移动已经公开的标签。若标签尚未公开且 workflow 未产生 Release，可修正版本文件、创建新提交，并使用新的补丁版本标签。公开后发现问题则发布新的补丁版本。
-
-### lint、测试或构建失败
-
-在同版本源码上本地复现对应命令。修复后提升版本并重新走完整流程，不要只上传本地产物绕过验证。
-
-### Release 创建失败但构建成功
-
-先确认 GitHub 权限和临时服务状态。若标签源码仍正确，可以按“重新构建已有标签”重新运行 workflow。
-
-### 资产不完整或哈希不符
-
-立即把 Release 标记为 prerelease 或暂时隐藏，并调查产物来源。不要手工替换其中一部分资产；应让同一次 workflow 重新生成全部三项，或发布新的补丁版本。
-
-## 8. 回滚策略
-
-桌面发行不能真正收回已经下载的二进制。发现严重问题时：
-
-1. 在受影响 Release 顶部标明问题和升级建议；
-2. 必要时将其标记为 prerelease 或删除公开 Release；
-3. 保留 Git 标签和问题记录以便追溯；
-4. 修复后发布新的补丁版本；
-5. 若涉及数据库变更，优先提供向前修复，不要求用户手工删除数据库。
-
-不要强制重写公开标签，也不要修改旧 Release 使其看起来像原本就是另一份源码。
+发布后发现问题时保留标签与审计记录，在 Release 中说明问题，并发布新的修复版本。不要删除用户数据库或重写历史作为回滚方式。

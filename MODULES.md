@@ -405,7 +405,7 @@ stderr 当前没有单独的宿主大小协议；仍应限制日志量，避免�
 
 ## 6. 安全与信任边界
 
-外部模块是用户主动安装和信任的本地程序，不是沙箱插件。它以当前 Windows 用户权限运行，因此理论上可以访问该用户可访问的文件和网络。
+外部模块是用户主动安装和信任的本地程序，不是沙箱插件。它以当前操作系统用户权限运行，因此理论上可以访问该用户可访问的文件和网络。
 
 宿主提供的保护包括：
 
@@ -519,3 +519,7 @@ export interface AppModule {
 | `modules/recurring-assignments/` | 周期规则、调度、时间线、抽屉和模块私有前后端服务 |
 
 核心 Tauri 接口的完整清单见 [docs/CORE_API.md](docs/CORE_API.md)，系统边界和数据流见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+
+## 跨平台范围
+
+核心应用的原生构建支持范围见 [平台文档](docs/PLATFORMS.md)。外部模块需匹配操作系统和 CPU 架构；本轮不适配打印、学校客户端及依赖 PowerShell 的模块。宿主现有 `pwsh` 启动分支不代表脚本或所依赖程序已经跨平台兼容，内置 AI 导入和周期作业不依赖 PowerShell。

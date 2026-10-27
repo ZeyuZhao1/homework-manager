@@ -173,16 +173,18 @@ pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM semesters", [], |r| r.get(0)).map_err(|e| e.to_string())?;
     if count == 0 {
         let root = PathBuf::from(r"D:\share\University\Year 1 Fall");
+        let use_legacy_root = cfg!(windows) && root.is_dir();
         let semester_id = Uuid::new_v4().to_string();
-        conn.execute("INSERT INTO semesters(id,name,source_root) VALUES (?1,'2026 秋季',?2)", params![semester_id, if root.is_dir() { root.to_string_lossy().to_string() } else { String::new() }]).map_err(|e| e.to_string())?;
+        conn.execute("INSERT INTO semesters(id,name,source_root) VALUES (?1,'2026 秋季',?2)", params![semester_id, if use_legacy_root { root.to_string_lossy().to_string() } else { String::new() }]).map_err(|e| e.to_string())?;
         for folder in ["思政", "Calculus", "Earth Science", "Linear Algebra", "Physics"] {
             let path = root.join(folder);
-            if path.is_dir() {
+            if use_legacy_root && path.is_dir() {
                 let code = match folder { "Calculus" => "MA117", "Linear Algebra" => "MA113", "Physics" => "PHY105", _ => "" };
                 conn.execute("INSERT INTO courses(id,semester_id,name,code,folder_path) VALUES (?1,?2,?3,?4,?5)", params![Uuid::new_v4().to_string(), semester_id, folder, code, path.to_string_lossy().to_string()]).map_err(|e| e.to_string())?;
             }
         }
     }
+    #[cfg(windows)]
     for (folder,code) in [("Calculus","MA117"),("Linear Algebra","MA113"),("Physics","PHY105")] {
         let course_path = PathBuf::from(r"D:\share\University\Year 1 Fall").join(folder).to_string_lossy().to_string();
         conn.execute("UPDATE courses SET code=?1 WHERE name=?2 AND code='' AND folder_path=?3", params![code,folder,course_path]).map_err(|e| e.to_string())?;

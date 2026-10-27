@@ -8,7 +8,7 @@ import { roleLabels, statusLabels } from './types'
 import type { Assignment, Course, FileAsset, FileHistoryEvent, FileLink, FileRole, ModuleDescriptor, Status } from './types'
 
 export function errorText(error: unknown) { return error instanceof Error ? error.message : String(error) }
-export function fileName(path: string) { return path.split(/[\\/]/).at(-1) || path }
+export function fileName(path: string) { return (path.startsWith('/') ? path.split('/') : path.split(/[\\/]/)).at(-1) || path }
 export function dateLabel(value: string | null) {
   if (!value) return '—'
   const date = new Date(value)

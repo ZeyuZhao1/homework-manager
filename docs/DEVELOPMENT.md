@@ -6,7 +6,7 @@
 
 ## 1. 环境要求
 
-当前开发和发布流程以 Windows x64 为准：
+核心应用可原生构建 Windows x64/ARM64、macOS ARM64、Linux x64/ARM64；完整依赖、凭据要求与 runner 矩阵见 [平台支持](PLATFORMS.md)。以下清单是 Windows x64 的开发环境示例：
 
 - Windows 10/11；
 - Git；
@@ -44,7 +44,7 @@ Rust 依赖会在第一次 `cargo test` 或 Tauri 构建时由 Cargo 下载。`r
 pnpm desktop:dev
 ```
 
-Tauri 会先执行 `pnpm dev`，Vite 固定监听 `127.0.0.1:1420`，随后启动桌面窗口。该模式使用真实 AppData、SQLite、文件系统和 Windows 凭据管理器。
+Tauri 会先执行 `pnpm dev`，Vite 固定监听 `127.0.0.1:1420`，随后启动桌面窗口。该模式使用真实 AppData、SQLite、文件系统和 系统原生凭据存储。
 
 开发数据库默认位于：
 
@@ -65,7 +65,7 @@ pnpm dev
 - 不使用真实 SQLite；
 - 不访问课程目录或文件元数据；
 - 文件选择和系统打开操作为空实现；
-- 不读取 Windows 凭据；
+- 不读取系统凭据；
 - 不启动外部模块；
 - AI 返回演示草稿。
 
@@ -77,6 +77,7 @@ pnpm dev
 | --- | --- |
 | `pnpm dev` | 启动 Vite 浏览器预览 |
 | `pnpm build` | TypeScript project build 后生成 Vite 生产资源 |
+| `pnpm test` | 路径与多平台发布脚本的 Node 测试 |
 | `pnpm lint` | 使用 oxlint 检查 `src`、`modules` 和 `vite.config.ts` |
 | `pnpm preview` | 预览已经生成的 `dist` |
 | `pnpm desktop:dev` | 启动 Tauri 桌面开发模式 |
@@ -91,6 +92,7 @@ pnpm dev
 pnpm install --frozen-lockfile
 pnpm repository:check
 pnpm lint
+pnpm test
 pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 pnpm desktop:build
@@ -200,6 +202,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib modules::builtin_registry:
 
 ```powershell
 pnpm lint
+pnpm test
 pnpm build
 ```
 
@@ -259,7 +262,7 @@ pnpm build
 
 ### AI 配置存在但提示没有 Key
 
-数据库只保存服务商元数据，密钥在 Windows 凭据管理器。换 Windows 账户、恢复数据库或迁移到新设备后需要重新输入 API Key。
+数据库只保存服务商元数据，密钥在 系统原生凭据存储。换 Windows 账户、恢复数据库或迁移到新设备后需要重新输入 API Key。
 
 ### 浏览器预览正常但桌面失败
 
@@ -270,8 +273,13 @@ pnpm build
 ```powershell
 git diff --check
 pnpm lint
+pnpm test
 pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
 若改动影响打包，再运行 `pnpm desktop:build`。PR 描述应包含用户可见变化、数据/文件副作用、验证命令和必要的迁移说明。
+
+## 多平台原生 CI
+
+`ci.yml` 与 `release.yml` 复用 `build-desktop.yml`，每个平台均原生执行 Rust 测试、系统凭据往返测试和桌面打包，并验证二进制架构。Windows/macOS/Linux 的安装包目标分别由平台 Tauri 配置控制。常规 Rust 单测默认忽略需要解锁凭据存储的 `native_credential_roundtrip`；该测试由 CI 另外执行。详见 [平台支持](PLATFORMS.md) 和 [发布指南](RELEASING.md)。

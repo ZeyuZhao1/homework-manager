@@ -35,12 +35,12 @@
 
 - 产品名：作业簿（Homework Manager）；
 - 当前发布版本：`0.5.0`；更新记录见 CHANGELOG；
-- 正式平台：Windows x64；
+- 核心构建平台：Windows x64/ARM64、macOS ARM64、Linux x64/ARM64（实机验证范围见平台文档）；
 - 前端：React 19、TypeScript、Vite；
 - 桌面框架：Tauri 2；
 - 后端：Rust；
 - 数据库：bundled SQLite via rusqlite；
-- 凭据：Windows Credential Manager via keyring；
+- 凭据：Windows Credential Manager / macOS Keychain / Linux Secret Service via keyring；
 - 包管理：pnpm 11；
 - Node.js：24；
 - 发布：GitHub Actions 标签 workflow。
@@ -115,3 +115,5 @@
 - [CONTRIBUTION_PLAYBOOK.md](CONTRIBUTION_PLAYBOOK.md)：按任务类型实施与验证；
 - [REVIEW_CHECKLIST.md](REVIEW_CHECKLIST.md)：代码评审、风险优先级和交付前检查。
 
+
+跨平台构建、原生凭据后端、runner 与打包配置以 [平台支持](../docs/PLATFORMS.md) 为准。

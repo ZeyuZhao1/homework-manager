@@ -1,0 +1,104 @@
+name: Build native desktop apps
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ''
+      release_tag:
+        type: string
+        default: ''
+    outputs:
+      commit:
+        description: Exact source commit used by every platform
+        value: ${{ jobs.resolve.outputs.commit }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+      commit: ${{ steps.targets.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - id: targets
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: node scripts/desktop-targets.mjs --github-output
+
+  build:
+    needs: resolve
+    name: ${{ matrix.id }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    env:
+      # linuxdeploy/AppImage tools can run without a FUSE mount on hosted runners.
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm install --global pnpm@11
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Verify native runner and toolchain
+        run: node scripts/check-native-host.mjs ${{ matrix.id }}
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libdbus-1-dev gnome-keyring dbus-x11 xdg-utils
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm repository:check
+      - run: pnpm lint
+      - run: pnpm test
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }} --lib
+      - name: Verify native credential storage (Windows/macOS)
+        if: runner.os != 'Linux'
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }} --lib native_credential_roundtrip -- --ignored
+      - name: Verify Secret Service (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
+        run: |
+          dbus-run-session -- bash -euo pipefail -c '
+            eval "$(printf "%s" "ci-test-keyring-password" | gnome-keyring-daemon --unlock --components=secrets)"
+            cargo test --locked --manifest-path src-tauri/Cargo.toml --target "$NATIVE_TARGET" --lib native_credential_roundtrip -- --ignored
+          '
+      - run: pnpm desktop:build --target ${{ matrix.target }} -- --locked
+      - name: Validate Debian package metadata
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
+        run: |
+          for package in src-tauri/target/"$NATIVE_TARGET"/release/bundle/deb/*.deb; do
+            dpkg-deb --info "$package"
+          done
+      - name: Check executable architecture and collect installers
+        run: node scripts/prepare-release-assets.mjs ${{ matrix.id }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: desktop-${{ matrix.id }}
+          path: release-assets/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14

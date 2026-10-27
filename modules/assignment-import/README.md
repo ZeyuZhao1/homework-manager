@@ -103,7 +103,7 @@ interface AiResult {
 sequenceDiagram
     participant UI as 模块 UI
     participant B as backend.rs
-    participant K as Windows 凭据管理器
+    participant K as 系统原生凭据存储（Windows Credential Manager、macOS Keychain、Linux Secret Service）
     participant P as 提示词目录
     participant M as 模型 API
     participant C as 核心保存接口
@@ -166,7 +166,7 @@ assignment_import_settings
 - `assignment_provider_id`：实际用于 `assignment.extract`；
 - `material_provider_id`：为未来教材内容匹配预留，当前不发起调用。
 
-API Key 不在这两个表中。它使用 `keyring` 写入 Windows 凭据管理器：
+API Key 不在这两个表中。它使用 `keyring` 写入 系统原生凭据存储（Windows Credential Manager、macOS Keychain、Linux Secret Service）：
 
 - service：`app.homeworkbook.local`；
 - username/account：服务商 UUID。
@@ -353,3 +353,5 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib assignment_import::tests
 ## 粘贴输入
 
 来源输入框支持直接粘贴文字和 PNG、JPEG、WebP 图片（每张最多 20 MB），显示图片预览并允许移除。图片由 `save_pasted_image` 命令保存到 AppData 的 `modules/assignment-import/clipboard/`，使用随机文件名且不覆盖已有文件。浏览器预览只演示附件，不写磁盘。只有用户点击“开始识别”才发送内容；确认创建后，粘贴图片与所选文件一起关联为题目材料。移除附件或取消导入不会删除已保存的图片，数据库备份也不包含这些图片。
+
+核心模块不依赖 PowerShell。密钥后端按 Rust 目标平台启用；Linux 需已解锁的 Secret Service，不可用时返回错误，绝不降级到明文存储。系统目录和构建方法见 [平台支持](../../docs/PLATFORMS.md)。

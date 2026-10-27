@@ -1,10 +1,10 @@
 # 作业簿（Homework Manager）
 
-面向 Windows 的本地优先大学作业管理应用。它把学期、课程、作业、提交信息和学习文件组织在一个桌面界面中，并通过可选的 AI 模块从课程公告或附件中提取作业草稿。
+基于 Tauri 的本地优先大学作业管理应用，核心功能支持 Windows、macOS 和 Linux 的原生构建。它把学期、课程、作业、提交信息和学习文件组织在一个桌面界面中，并通过可选的 AI 模块从课程公告或附件中提取作业草稿。
 
 作业簿不是把文件复制进封闭资料库的云端服务。实际 PDF、图片和文档继续保留在原文件夹中，应用只保存结构化作业数据、文件路径、关联关系和操作历史。只有用户主动执行 AI 识别或选择网络/学校打印时，相关内容才会发送到所选服务。
 
-当前发布版本：[`v0.5.2`](https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.5.2)。正式发布目标为 Windows x64；本次变化见 [CHANGELOG.md](CHANGELOG.md)。
+当前发布版本：[`v0.5.2`](https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.5.2)。该已发布版本的正式目标为 Windows x64；main 的多平台适配与构建目标见 [平台支持](docs/PLATFORMS.md)。本次变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ![作业簿界面](src/assets/hero.png)
 
@@ -21,7 +21,7 @@
 - **通用作业导入审核**：可读取兼容外部模块提供的作业快照，审核后创建、关联或更新作业；本仓库不附带学校同步模块。
 - **周期作业**：内置周期模块支持定时、序列、教学周与自定义日期，提供周期时间线和共享文件。
 - **可扩展模块系统**：内置模块与用户安装的本地进程模块使用能力名和版本化 JSON 协议协作。
-- **本地数据与可恢复性**：SQLite 数据库支持导出、恢复和压缩；API Key 存入 Windows 凭据管理器。
+- **本地数据与可恢复性**：SQLite 数据库支持导出、恢复和压缩；API Key 存入系统安全凭据存储（Windows 凭据管理器、macOS Keychain、Linux Secret Service）。
 
 ## 下载与安装
 
@@ -49,7 +49,7 @@ Get-FileHash .\homework-manager-v0.5.2-windows-x64-installer.exe -Algorithm SHA2
 
 顶部使用随主题变化的应用标题栏，支持拖动、最小化、最大化/还原和关闭；课程列表保留滚动能力但隐藏滚动条。应用启动时以窗口化模式居中显示，默认内容区域最大为 1200×800 逻辑像素；小屏幕或高缩放比例下会自动缩小，为任务栏和窗口四周留出空间。
 
-当前版本包含一个面向项目作者环境的首次启动兼容逻辑：若 `D:\share\University\Year 1 Fall` 存在，会创建“2026 秋季”并关联其中已存在的课程文件夹；否则只创建空学期，不访问该路径。所有内容都可在“设置”中修改。
+当前版本包含一个面向项目作者环境的首次启动兼容逻辑（仅 Windows）：若 `D:\share\University\Year 1 Fall` 存在，会创建“2026 秋季”并关联其中已存在的课程文件夹；否则只创建空学期，不访问该路径。所有内容都可在“设置”中修改。
 
 ### 2. 创建和推进作业
 
@@ -78,7 +78,7 @@ Get-FileHash .\homework-manager-v0.5.2-windows-x64-installer.exe -Algorithm SHA2
 
 右键点击作业详情中的关联文件，可选择“统一命名”；安装打印模块后，菜单中还提供“打印”和“打印选项与配置”。这些操作不再固定显示在文件名右侧。也可选择“打开所在文件夹”，在系统文件浏览器中查看该文件的目录。左键点击文件名仍会打开文件；文件丢失但原文件夹仍存在时，也可打开原目录。键盘可使用菜单键或 Shift+F10 调出菜单，按 Esc 关闭。此系统操作仅在桌面应用中可用。
 
-安装声明 `file.print` 能力的外部模块后，关联文件旁才会显示打印按钮；可选的 `file.print.configure` 与 `file.print.authenticate` 提供默认设置和客户端认证入口。打印实现、支持格式与网络要求由所安装模块决定。关联中的教材页码不会自动作为打印页码，提交成功也不代表物理打印完成。
+安装声明 `file.print` 能力的外部模块后，关联文件旁才会显示右键菜单中的打印操作；可选的 `file.print.configure` 与 `file.print.authenticate` 提供默认设置和客户端认证入口。打印实现、支持格式与网络要求由所安装模块决定。关联中的教材页码不会自动作为打印页码，提交成功也不代表物理打印完成。
 
 ### 4. 文档定位、统一命名与撤回
 
@@ -149,11 +149,13 @@ AI 导入由内置模块 `builtin.ai.assignment-import` 提供。使用流程是
 
 ## 数据、隐私与备份
 
+下表以 Windows 目录为例；macOS、Linux 数据位置和凭据存储要求见[平台支持](docs/PLATFORMS.md)。
+
 | 数据 | 位置 | 是否进入数据库备份 |
 | --- | --- | --- |
 | 学期、课程、作业、设置、文件路径和历史 | `%APPDATA%\app.homeworkbook.local\homework.db` | 是 |
 | SQLite WAL 临时文件 | 数据库同目录 | 由 SQLite 管理 |
-| AI 服务商 API Key | Windows 凭据管理器，服务名 `app.homeworkbook.local` | 否 |
+| AI 服务商 API Key | 对应系统的安全凭据存储，服务名 `app.homeworkbook.local` | 否 |
 | 可编辑提示词 | `%APPDATA%\app.homeworkbook.local\modules\assignment-import\prompts` | 否 |
 | 外部模块及其文件 | `%APPDATA%\app.homeworkbook.local\modules\<模块目录>` | 否 |
 | 实际学习文件 | 用户原始目录 | 否 |
@@ -222,6 +224,8 @@ React 19 + TypeScript + Vite
 
 ### 环境要求
 
+以下为 Windows 环境要求；macOS、Linux 依赖及五个平台的构建矩阵见[平台支持](docs/PLATFORMS.md)。
+
 - Windows 10/11 x64；
 - Node.js 24+；
 - pnpm 11+；
@@ -248,6 +252,7 @@ pnpm dev
 
 ```powershell
 pnpm lint
+pnpm test
 pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 pnpm desktop:build
@@ -257,7 +262,8 @@ pnpm desktop:build
 
 ## 当前边界
 
-- 仅正式发布 Windows x64；移动平台图标存在于 Tauri 模板中，但没有对应发布或验证流程。
+- main 的核心构建目标为 Windows x64/ARM64、macOS ARM64、Linux x64/ARM64；新平台是否已有发行包以 Release 资产为准。移动平台不在本轮支持范围。
+- 打印和依赖 PowerShell 的外部模块尚未进行跨平台适配。macOS 包当前仅 ad-hoc 签名，Linux 构建基线为 Ubuntu 24.04；详见平台文档。
 - 应用不内置账号同步、云数据库或跨设备同步。
 - 外部模块由用户自行安装和信任；协议提供路径限制、能力检查和资源上限，但不是操作系统级沙箱。
 - 文档定位、打印与外部作业同步需要用户另行安装兼容模块；支持协议不代表应用自带这些实现。

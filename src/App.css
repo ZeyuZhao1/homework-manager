@@ -105,3 +105,4 @@ input,textarea,select,.helper-text,.source-detail p,.file-page-main small,.drawe
 .titlebar-controls{display:flex;height:100%}.titlebar-controls button{display:grid;place-items:center;width:46px;border:0;background:transparent;color:inherit}.titlebar-controls button:hover{background:var(--hover);color:var(--text)}.titlebar-controls .window-close:hover{background:#c42b1c;color:white}
 .course-nav{scrollbar-width:none}.course-nav::-webkit-scrollbar{display:none}
 .pasted-image-preview{width:64px;height:48px;object-fit:contain;border-radius:4px;background:var(--surface);flex:none}
+.app-titlebar.native-controls .titlebar-drag{padding-left:85px}
