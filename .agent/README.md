@@ -34,7 +34,7 @@
 ## 2. 项目现状
 
 - 产品名：作业簿（Homework Manager）；
-- 当前发布版本：`0.5.0`；更新记录见 CHANGELOG；
+- 当前发布版本：`0.6.0`；更新记录见 CHANGELOG；
 - 核心构建平台：Windows x64/ARM64、macOS ARM64、Linux x64/ARM64（实机验证范围见平台文档）；
 - 前端：React 19、TypeScript、Vite；
 - 桌面框架：Tauri 2；

@@ -81,4 +81,4 @@ CI 的 Linux 任务在独立 `dbus-run-session` 内启动并解锁 GNOME Keyring
 
 本地开发库安装在独立 sysroot，首次 AppImage 打包的 GTK 插件因此找不到系统模块目录；对已构建的二进制单独执行打包时，使用 `PKG_CONFIG_SYSROOT_DIR=/ APPIMAGE_EXTRACT_AND_RUN=1 pnpm tauri bundle --debug --bundles appimage` 后成功。workflow 安装标准系统开发包，不使用该本地 sysroot。
 
-三个平台配置通过 Tauri JSON Schema 检查，三个 workflow 通过 actionlint。macOS、Windows ARM64 和 Linux ARM64 的完整原生构建尚需 GitHub runner 执行，各平台图形界面、安装与用户流程仍需实机验证。GitHub 原生矩阵的执行结果以 Actions 记录为准；提交到 main 只触发构建与 artifact 上传，正式发布仍需新的版本标签。
+三个平台配置通过 Tauri JSON Schema 检查，三个 workflow 通过 actionlint。用户已反馈 main 的 GitHub Actions 构建成功；各平台图形界面、安装与用户流程仍需实机验证。GitHub 原生矩阵的执行结果以 Actions 记录为准；提交到 main 只触发构建与 artifact 上传，正式发布仍需新的版本标签。

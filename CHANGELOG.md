@@ -2,18 +2,17 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)，并以 Git 标签和 GitHub Release 作为正式发布记录。
 
-## [Unreleased]
+## [0.6.0] - 2026-10-27
 
 ### 跨平台核心与分发
 
 - 修复 Windows CI 中 pnpm 脚本转发消耗参数分隔符导致 `--locked` 被 Tauri 错误解析的问题；各平台构建改用 Node 直接调用本地 Tauri CLI。
-
 - 核心增加 macOS ARM64、Linux x64/ARM64、Windows ARM64 原生构建目标，保留 Windows x64；打印及依赖 PowerShell 的模块不在本轮适配范围。
 - 按系统启用真实凭据后端，Linux 使用 Secret Service；增加独立的原生凭据往返测试，禁止回退到模拟存储或明文文件。
 - 修复非 Windows 课程目录路径拼接、Windows 专用初始化边界、Wayland 定位失败阻断启动；macOS 使用系统窗口控件。
 - 使用合法的 Linux 软件包标识并显式声明各平台图标，支持 DEB、AppImage 和 DMG 的打包要求。
 - CI 与发布复用五平台原生构建矩阵，校验二进制架构，全部成功后统一发布九项资产和 SHA-256 清单。新增路径、产物收集和完整性测试。
-- 新平台包尚需 GitHub runner 完整构建和图形界面实机验证，macOS 当前仅 ad-hoc 签名。
+- 五平台原生构建纳入 GitHub Actions 验证；图形界面与安装流程仍需实机验证，macOS 当前仅 ad-hoc 签名。
 
 ## [0.5.2] - 2026-10-27
 

@@ -4,7 +4,7 @@
 
 作业簿不是把文件复制进封闭资料库的云端服务。实际 PDF、图片和文档继续保留在原文件夹中，应用只保存结构化作业数据、文件路径、关联关系和操作历史。只有用户主动执行 AI 识别或选择网络/学校打印时，相关内容才会发送到所选服务。
 
-当前发布版本：[`v0.5.2`](https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.5.2)。该已发布版本的正式目标为 Windows x64；main 的多平台适配与构建目标见 [平台支持](docs/PLATFORMS.md)。本次变化见 [CHANGELOG.md](CHANGELOG.md)。
+当前发布版本：[`v0.6.0`](https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.6.0)。原生构建目标为 Windows x64/ARM64、macOS ARM64、Linux x64/ARM64，系统要求与限制见 [平台支持](docs/PLATFORMS.md)。本次变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ![作业簿界面](src/assets/hero.png)
 
@@ -29,16 +29,19 @@
 
 | 资产 | 用途 |
 | --- | --- |
-| `homework-manager-v<版本>-windows-x64-installer.exe` | 推荐使用的 NSIS 安装程序，会创建开始菜单入口 |
-| `homework-manager-v<版本>-windows-x64-portable.exe` | 无需安装，可直接运行；仍使用当前 Windows 账户的 AppData 数据 |
-| `SHA256SUMS.txt` | 两个可执行文件的 SHA-256 校验值 |
+| `homework-manager-v<版本>-windows-<x64或arm64>-installer.exe` | 对应架构的 Windows NSIS 安装程序 |
+| `homework-manager-v<版本>-windows-<x64或arm64>-portable.exe` | 对应架构的 Windows 便携程序 |
+| `homework-manager-v<版本>-macos-arm64.dmg` | Apple Silicon Mac 安装包；当前仅 ad-hoc 签名，未公证 |
+| `homework-manager-v<版本>-linux-<x64或arm64>.deb` | 对应架构的 Debian/Ubuntu 安装包 |
+| `homework-manager-v<版本>-linux-<x64或arm64>.AppImage` | 对应架构的 AppImage；glibc 兼容基线见平台文档 |
+| `SHA256SUMS.txt` | 所有九项发布资产的 SHA-256 校验值 |
 
 安装版和便携版使用同一数据库。移动便携版 EXE 不会迁移数据。
 
 若系统提示缺少 WebView2，请安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。未签名的个人发行版可能触发 SmartScreen；请只从本仓库的 Releases 页面下载，并核对 SHA-256。验证示例：
 
 ```powershell
-Get-FileHash .\homework-manager-v0.5.2-windows-x64-installer.exe -Algorithm SHA256
+Get-FileHash .\homework-manager-v0.6.0-windows-x64-installer.exe -Algorithm SHA256
 ```
 
 ## 核心使用流程
