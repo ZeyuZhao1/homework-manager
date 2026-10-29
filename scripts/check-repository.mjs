@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, existsSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
 
-const files = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean)
+const files = [...new Set(execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean))]
 const allowedModules = new Set(['assignment-import', 'recurring-assignments'])
 const errors = []
 for (const file of files.filter(file => file.startsWith('modules/'))) {

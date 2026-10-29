@@ -6,6 +6,7 @@ mod modules;
 mod printing;
 mod window;
 mod sync;
+mod service_config;
 
 use tauri::Manager;
 
@@ -26,6 +27,7 @@ pub fn run() {
             drive::register_drive_files,
             sync::sync_recurring_action,
             sync::sync_status,
+            sync::sync_open_service_config_directory,
             sync::sync_pair_start,
             sync::sync_pair_poll,
             sync::sync_bootstrap,

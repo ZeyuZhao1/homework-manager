@@ -2,9 +2,13 @@
 
 基于 Tauri 的本地优先大学作业管理应用，核心功能支持 Windows、macOS 和 Linux 的原生构建。它把学期、课程、作业、提交信息和学习文件组织在一个桌面界面中，并通过可选的 AI 模块从课程公告或附件中提取作业草稿。
 
-作业簿不是把文件复制进封闭资料库的云端服务。实际 PDF、图片和文档继续保留在原文件夹中，应用只保存结构化作业数据、文件路径、关联关系和操作历史。只有用户主动执行 AI 识别或选择网络/学校打印时，相关内容才会发送到所选服务。
+作业簿不是把文件复制进封闭资料库的云端服务。实际 PDF、图片和文档继续保留在原文件夹中，应用只保存结构化作业数据、文件路径、关联关系和操作历史。只有用户主动执行 AI 识别、选择联网模块或启用自己的云同步服务时，才会按相应确认流程发送相关数据；附件内容每次上传都需单独确认。
 
 当前发布版本：[`v0.6.0`](https://github.com/ZeyuZhao1/homework-manager/releases/tag/v0.6.0)。原生构建目标为 Windows x64/ARM64、macOS ARM64、Linux x64/ARM64，系统要求与限制见 [平台支持](docs/PLATFORMS.md)。本次变化见 [CHANGELOG.md](CHANGELOG.md)。
+
+**多设备同步与网页版需要使用者自行部署。** 每位使用者在自己的 Cloudflare 账户中创建服务、私有 R2 桶和设备授权；本仓库与公开安装包不提供维护者的云服务地址、凭据或基础设施使用权。桌面本地功能无需部署。开始前请阅读[Cloudflare 自托管指南](deploy/cloudflare/README.md)。
+
+桌面服务地址由用户数据目录的独立 `services.json` 控制，修改后无需重新编译，GitHub 安装包正常更新会保留已有配置。设备密钥仍留在系统凭据库，格式与迁移方式见[客户端服务配置](docs/SERVICE_CONFIG.md)（未发布功能）。
 
 ![作业簿界面](src/assets/hero.png)
 
@@ -228,7 +232,9 @@ React 19 + TypeScript + Vite
 ├── modules/assignment-import/   内置 AI 作业导入模块
 ├── modules/recurring-assignments/ 内置周期作业模块
 ├── modules/registry.rs           内置模块后端注册清单
-├── scripts/                      仓库结构、版本与文档链接检查
+├── cloud/                        可选 Worker 服务源码与合成本地模拟配置
+├── deploy/cloudflare/            自托管指南与占位模板（实际配置在仓库外）
+├── scripts/                      私有配置生成、部署及仓库检查
 ├── docs/                        架构、接口、开发和发布文档
 ├── .github/workflows/           校验与 Windows 发布工作流
 └── MODULES.md                   外部模块协议规范

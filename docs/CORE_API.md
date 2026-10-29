@@ -464,7 +464,8 @@ try {
 
 | Tauri 命令 | 参数及行为 |
 | --- | --- |
-| `sync_status` | 读取本地开关、连接、队列、游标、错误和基线数量，不请求网络 |
+| `sync_status` | 读取本地开关、连接、队列、游标、错误、基线数量及 `service_config_path`；从 `services.json` 解析服务，换源后不复用旧授权，不请求网络 |
+| `sync_open_service_config_directory` | 仅打开固定用户配置目录；配置损坏时仍可用，不接受任意路径，不请求网络 |
 | `sync_pair_start` | `serverUrl,deviceName`，申请短时配对，轮询秘密保存在系统凭据库 |
 | `sync_pair_poll` | 领取配对结果并保存设备凭据，前端不接收 Token |
 | `sync_bootstrap` | `serverUrl,deviceName,bootstrapSecret`，首台设备初始化；Secret 不持久化 |
@@ -478,6 +479,8 @@ try {
 | `sync_upload_file` | `fileId,confirmed`，只有本次明确确认才读取并上传实际内容 |
 | `sync_download_file` | `fileId,path,confirmed`，下载到不覆盖的绝对路径并更新本机定位及历史 |
 | `sync_remove_cloud_file` | `fileId`，移除云端内容可用性，不删除元数据或本地文件 |
+
+`DesktopSyncStatus.service_config_path` 是仅本机使用的文件位置，不进入云协议。服务地址配置与设备授权源地址分别保存；配对/初始化按用户明确操作保存所选服务，普通状态读取及安装升级只在文件缺失时初始化，不修改已有配置。格式与故障语义见[客户端服务配置](SERVICE_CONFIG.md)。
 
 `FileAsset` 增加可选 `name` 和 `cloud_available`。远端文件没有本机定位时，内部用 `cloud://` 占位，界面展示逻辑名称；占位不交给本地文件打开程序。服务端字段覆盖顺序不使用无时区的本机 `updated_at`。完整范围和隐私限制见 [云同步指南](SYNC.md)。
 

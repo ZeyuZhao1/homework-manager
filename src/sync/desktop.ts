@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
 import type { PairResult, SyncDevice, SyncStatus } from './protocol'
-export interface DesktopSyncStatus extends SyncStatus { baseline_counts?: Record<string, number> }
+export interface DesktopSyncStatus extends SyncStatus { baseline_counts?: Record<string, number>; service_config_path?: string }
 let inFlight: Promise<DesktopSyncStatus> | undefined
 function synchronize() {
   if (!inFlight) inFlight = invoke<DesktopSyncStatus>('sync_now').finally(() => { inFlight = undefined })
@@ -9,6 +9,7 @@ function synchronize() {
 }
 export const desktopSync = {
   status: () => invoke<DesktopSyncStatus>('sync_status'),
+  openServiceConfiguration: () => invoke<void>('sync_open_service_config_directory'),
   start: (serverUrl: string, deviceName: string) => invoke<{ pair_id: string; code: string; expires_at: string }>('sync_pair_start', { serverUrl, deviceName }),
   poll: () => invoke<PairResult>('sync_pair_poll'),
   bootstrap: (serverUrl: string, deviceName: string, bootstrapSecret: string) => invoke<DesktopSyncStatus>('sync_bootstrap', { serverUrl, deviceName, bootstrapSecret }),

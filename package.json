@@ -16,6 +16,7 @@
     "cloud:dev": "pnpm --dir cloud dev",
     "cloud:check": "pnpm --dir cloud check",
     "cloud:test": "pnpm --dir cloud test",
+    "cloud:setup": "node scripts/cloud-setup.mjs",
     "cloud:deploy": "node scripts/cloud-deploy.mjs"
   },
   "dependencies": {

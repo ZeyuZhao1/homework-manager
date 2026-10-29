@@ -49,5 +49,9 @@ src-tauri/gen/schemas/
 **/wrangler.production.*
 **/cloudflare.private.*
 **/*.secrets.json
+**/client_secret_*.json
+**/.generated-homework-cloud/
+**/services.json
+**/sync-device.json
 private/
 .private/

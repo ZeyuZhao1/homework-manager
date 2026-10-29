@@ -4,7 +4,11 @@
 
 使用自动化编程 Agent 贡献时，还应先阅读根目录 [AGENTS.md](../AGENTS.md) 和 [.agent 协作手册](../.agent/README.md)。
 
-项目同时包含可选云端工作区 `cloud/`。`pnpm install --frozen-lockfile` 安装两个工作区依赖；构建 Worker 所需的 `esbuild`、`workerd` 安装脚本由 `pnpm-workspace.yaml` 明确允许。网页构建仍为 `pnpm build`，云端类型与本地 SQLite/R2 集成测试分别为 `pnpm cloud:check`、`pnpm cloud:test`。个人部署仅通过仓库外配置进行，不能在公开 CI 使用私人凭据；详见 [云同步指南](SYNC.md)。
+项目同时包含可选云端工作区 `cloud/`。`pnpm install --frozen-lockfile` 安装两个工作区依赖；构建 Worker 所需的 `esbuild`、`workerd` 安装脚本由 `pnpm-workspace.yaml` 明确允许。网页构建仍为 `pnpm build`，云端类型与本地 SQLite/R2 集成测试分别为 `pnpm cloud:check`、`pnpm cloud:test`。个人部署仅通过仓库外配置进行，不能在公开 CI 使用私人凭据；使用方式见 [云同步指南](SYNC.md)，独立部署步骤见 [Cloudflare 自托管指南](../deploy/cloudflare/README.md)。
+
+`cloud/` 只包含服务实现与本地模拟；`deploy/cloudflare/` 包含公开占位模板和运维说明。`pnpm cloud:setup --dir <仓库外绝对目录>` 生成未填写的个人配置，`pnpm cloud:deploy --config <仓库外配置>` 必须显式选择自己的部署；`--secret SECRET_NAME` 使用交互输入，不接受密钥值参数。公开源码、CI、测试和通用客户端不能依赖维护者的部署。
+
+桌面客户端配置是独立的 `services.json`，格式见[客户端服务配置](SERVICE_CONFIG.md)，公开模板位于 `deploy/client/services.example.json`。实现入口 `src-tauri/src/service_config.rs`；设备状态和地址绑定在 `sync.rs`，令牌留在原生凭据库。不要把实际客户端配置复制进源码或安装资源。
 
 ## 1. 环境要求
 

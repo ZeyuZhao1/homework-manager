@@ -80,6 +80,7 @@ pub struct Status {
     cursor: i64,
     last_synced_at: Option<String>,
     error: Option<String>,
+    service_config_path: String,
     pub baseline_counts: Value,
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -509,7 +510,10 @@ fn config_path(state: &AppState) -> Result<PathBuf, String> {
         .ok_or("数据目录无效")?
         .join("sync-device.json"))
 }
-fn read_config(state: &AppState) -> Result<Config, String> {
+fn service_config_path(state: &AppState) -> Result<PathBuf, String> {
+    Ok(config_path(state)?.with_file_name("services.json"))
+}
+fn read_device_config(state: &AppState) -> Result<Config, String> {
     let p = config_path(state)?;
     if !p.exists() {
         return Ok(Config::default());
@@ -517,22 +521,40 @@ fn read_config(state: &AppState) -> Result<Config, String> {
     serde_json::from_slice(&std::fs::read(p).map_err(|_| "无法读取本机同步设置")?)
         .map_err(|_| "本机同步设置损坏，请断开后重新配对".into())
 }
-fn write_config(state: &AppState, c: &Config) -> Result<(), String> {
-    let p = config_path(state)?;
-    let temp = p.with_extension("tmp");
-    let bytes = serde_json::to_vec(c).map_err(|_| "无法保存同步设置")?;
-    std::fs::write(&temp, bytes).map_err(|_| "无法保存同步设置")?;
-    // Windows rename cannot replace an existing destination.
-    if p.exists() {
-        std::fs::remove_file(&p).map_err(|_| "无法替换同步设置")?;
+fn read_config(state: &AppState) -> Result<Config, String> {
+    let c = read_device_config(state)?;
+    let selected = crate::service_config::load_or_create(&service_config_path(state)?, &c.server_url)?;
+    let bound_origin = if c.server_url.is_empty() { String::new() } else { validate_url(&c.server_url)? };
+    if bound_origin == selected.sync.server_url {
+        return Ok(Config { server_url: bound_origin, ..c });
     }
-    std::fs::rename(temp, p).map_err(|_| "无法保存同步设置".into())
+    // Never retarget an existing bearer credential or pending pairing to another origin.
+    Ok(Config {
+        server_url: selected.sync.server_url,
+        device_name: c.device_name,
+        error: if !c.device_id.is_empty() || !c.pair_id.is_empty() {
+            Some("服务地址已变更，旧授权已停用；请重新配对并确认同步范围".into())
+        } else { None },
+        ..Config::default()
+    })
+}
+fn write_config(state: &AppState, c: &Config) -> Result<(), String> {
+    if !c.server_url.is_empty() {
+        let selected = crate::service_config::load_or_create(&service_config_path(state)?, "")?;
+        if selected.sync.server_url != c.server_url {
+            return Err("服务配置已改变，已停止保存旧设备连接".into());
+        }
+    }
+    let p = config_path(state)?;
+    let bytes = serde_json::to_vec(c).map_err(|_| "无法保存同步设置")?;
+    crate::service_config::atomic_write(&p, &bytes)
 }
 fn key(id: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("app.homeworkbook.local.sync", id)
         .map_err(|_| "无法访问系统凭据存储".into())
 }
 fn secret(id: &str) -> Result<String, String> {
+    if id.is_empty() { return Err("请先配对设备".into()); }
     key(id)?
         .get_password()
         .map_err(|_| "请解锁系统凭据存储或重新配对设备".into())
@@ -543,27 +565,13 @@ fn save_secret(id: &str, value: &str) -> Result<(), String> {
         .map_err(|_| "无法保存到系统凭据存储；不会回退到明文".into())
 }
 fn forget_secret(id: &str) {
+    if id.is_empty() { return; }
     if let Ok(k) = key(id) {
         let _ = k.delete_credential();
     }
 }
 fn validate_url(raw: &str) -> Result<String, String> {
-    let u = reqwest::Url::parse(raw).map_err(|_| "同步服务地址无效")?;
-    let loopback = matches!(
-        u.host_str(),
-        Some("localhost" | "127.0.0.1" | "[::1]" | "::1")
-    );
-    if !(u.scheme() == "https" || (u.scheme() == "http" && loopback))
-        || !u.username().is_empty()
-        || u.password().is_some()
-        || u.query().is_some()
-        || u.fragment().is_some()
-        || u.host_str().is_none()
-        || u.path() != "/"
-    {
-        return Err("请输入 HTTPS 服务源地址（本机开发可用 HTTP），不得含路径、凭据或参数".into());
-    }
-    Ok(u.as_str().trim_end_matches('/').into())
+    crate::service_config::normalize_origin(raw)
 }
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
@@ -634,6 +642,7 @@ fn counts(conn: &Connection) -> Result<Value, String> {
     Ok(Value::Object(result))
 }
 fn ensure_active(state: &AppState, expected: &Config) -> Result<(), String> {
+    if expected.device_id.is_empty() { return Err("请先配对设备".into()); }
     let actual = read_config(state)?;
     if actual.device_id != expected.device_id || actual.server_url != expected.server_url {
         return Err("设备连接已改变，已停止本轮同步".into());
@@ -663,7 +672,7 @@ fn status(state: &AppState) -> Result<Status, String> {
         .query_row("SELECT count(*) FROM sync_outbox", [], |r| r.get(0))
         .map_err(sql_error)?;
     Ok(Status {
-        enabled,
+        enabled: enabled && !c.device_id.is_empty(),
         server_url: c.server_url,
         connected: !c.device_id.is_empty(),
         device_id: c.device_id,
@@ -672,12 +681,19 @@ fn status(state: &AppState) -> Result<Status, String> {
         cursor,
         last_synced_at: c.last_synced_at,
         error: c.error,
+        service_config_path: service_config_path(state)?.to_string_lossy().into_owned(),
         baseline_counts: counts(&conn)?,
     })
 }
 #[tauri::command]
 pub fn sync_status(state: State<'_, AppState>) -> Result<Status, String> {
     status(&state)
+}
+#[tauri::command]
+pub fn sync_open_service_config_directory(state: State<'_, AppState>) -> Result<(), String> {
+    let path = service_config_path(&state)?;
+    // This also works when services.json is malformed so the user can repair it.
+    open::that(path.parent().ok_or("数据目录无效")?).map_err(|_| "无法打开服务配置文件夹".into())
 }
 #[tauri::command]
 pub async fn sync_pair_start(
@@ -696,6 +712,7 @@ pub async fn sync_pair_start(
         device_name: device_name.trim().into(),
         ..Config::default()
     };
+    crate::service_config::select_origin(&service_config_path(&state)?, &c.server_url)?;
     let v = request(
         &c,
         reqwest::Method::POST,
@@ -714,6 +731,10 @@ pub async fn sync_pair_start(
     Ok(json!({"pair_id":pair.pair_id,"code":pair.code,"expires_at":pair.expires_at}))
 }
 fn accept_device(state: &AppState, mut c: Config, result: &PairResult) -> Result<(), String> {
+    let active = read_config(state)?;
+    if active.server_url != c.server_url || !active.device_id.is_empty() {
+        return Err("服务配置或设备连接已改变，请重新配对".into());
+    }
     let device = result.device.as_ref().ok_or("配对响应缺少设备")?;
     let token = result.token.as_ref().ok_or("配对响应缺少凭据")?;
     if device.id.is_empty() || token.is_empty() {
@@ -770,6 +791,7 @@ pub async fn sync_bootstrap(
         device_name: device_name.trim().into(),
         ..Config::default()
     };
+    crate::service_config::select_origin(&service_config_path(&state)?, &c.server_url)?;
     let v=request(&c,reqwest::Method::POST,"/api/bootstrap",Some(json!({"bootstrap_secret":bootstrap_secret,"device_name":c.device_name,"client_type":"desktop"})),false).await?;
     let r = PairResult {
         state: "approved".into(),
@@ -1530,7 +1552,11 @@ pub async fn sync_recurring_action(
     Ok(value)
 }
 fn disconnect(state: &AppState) -> Result<(), String> {
-    let c = read_config(state)?;
+    let c = read_device_config(state)?;
+    let service_path = service_config_path(state)?;
+    if !service_path.exists() {
+        crate::service_config::load_or_create(&service_path, &c.server_url)?;
+    }
     forget_secret(&c.device_id);
     if !c.pair_id.is_empty() {
         forget_secret(&format!("pair:{}", c.pair_id));
@@ -1776,6 +1802,60 @@ mod tests {
             has_more: false,
             server_time: "2026-10-28T00:00:00Z".into(),
         }
+    }
+    #[test]
+    fn runtime_origin_changes_never_reuse_old_device_or_pair_authorization() {
+        let directory = std::env::temp_dir().join(format!("sync-services-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let state = AppState { db: std::sync::Mutex::new(database()), modules_dir: directory.join("modules") };
+        enable(&state.db.lock().unwrap());
+        let original = Config { server_url: "https://old.example.test".into(), device_id: "old-device".into(), device_name: "Existing laptop".into(), pair_id: "old-pair".into(), ..Config::default() };
+        std::fs::write(config_path(&state).unwrap(), serde_json::to_vec(&original).unwrap()).unwrap();
+        // An upgrade retains an existing pairing and only seeds the missing endpoint file.
+        assert_eq!(read_config(&state).unwrap().device_id, "old-device");
+        assert!(status(&state).unwrap().enabled);
+        let service_path = service_config_path(&state).unwrap();
+        let bytes = std::fs::read(&service_path).unwrap();
+        read_config(&state).unwrap();
+        assert_eq!(std::fs::read(&service_path).unwrap(), bytes);
+        std::fs::write(&service_path, r#"{"version":1,"sync":{"server_url":"https://new.example.test"}}"#).unwrap();
+        let selected = read_config(&state).unwrap();
+        assert_eq!(selected.server_url, "https://new.example.test");
+        assert!(selected.device_id.is_empty()); assert!(selected.pair_id.is_empty());
+        let current = status(&state).unwrap();
+        assert!(!current.enabled && !current.connected);
+        assert!(ensure_active(&state, &original).is_err());
+        assert!(write_config(&state, &original).is_err());
+        // Reject before looking up a key or sending any authenticated request to the new service.
+        let result = tauri::async_runtime::block_on(request(&selected, reqwest::Method::GET, "/api/devices", None, true));
+        assert_eq!(result.unwrap_err(), "请先配对设备");
+        // Invalid configuration is an error, never an implicit fallback to the old address.
+        std::fs::write(&service_path, "broken-sentinel").unwrap();
+        assert!(read_config(&state).is_err());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn disconnection_and_database_restore_keep_user_service_selection() {
+        let directory = std::env::temp_dir().join(format!("sync-services-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let state = AppState { db: std::sync::Mutex::new(database()), modules_dir: directory.join("modules") };
+        let path = service_config_path(&state).unwrap();
+        crate::service_config::select_origin(&path, "https://personal.example.test").unwrap();
+        let before = std::fs::read(&path).unwrap();
+        // Restore resets pairing state but cannot overwrite the user's independent service file.
+        after_restore(&state).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let c = read_config(&state).unwrap();
+        assert_eq!(c.server_url, "https://personal.example.test");
+        assert!(c.device_id.is_empty());
+        // A legacy installation may restore a backup before its first status read.
+        std::fs::remove_file(&path).unwrap();
+        let legacy = Config { server_url: "https://legacy.example.test".into(), ..Config::default() };
+        std::fs::write(config_path(&state).unwrap(), serde_json::to_vec(&legacy).unwrap()).unwrap();
+        after_restore(&state).unwrap();
+        assert_eq!(read_config(&state).unwrap().server_url, "https://legacy.example.test");
+        std::fs::remove_dir_all(&directory).unwrap();
     }
     #[test]
     fn disabled_capture_and_path_fields_never_leave_device() {

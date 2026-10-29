@@ -2,7 +2,9 @@
 
 本文描述作业簿当前 `main` 的运行时架构、领域模型、数据流和一致性边界。面向需要理解或修改实现的维护者；用户操作说明见项目根目录 [README.md](../README.md)，逐项接口见 [CORE_API.md](CORE_API.md)。
 
-可选个人云同步在保留下述本地核心的基础上增加 `src-tauri/src/sync.rs`、`src/sync/` 与 `cloud/`。桌面 SQLite 事务触发器采集白名单字段到 outbox，Worker 的个人 SQLite Durable Object 原子记录操作、顺序与墓碑，R2 只保存明确确认上传的内容。生产网页通过同源 API 在线读写；设计与迁移协议见 [SYNC_DESIGN.md](SYNC_DESIGN.md)，部署和行为见 [SYNC.md](SYNC.md)。
+可选个人云同步在保留下述本地核心的基础上增加 `src-tauri/src/sync.rs`、`src/sync/` 与 `cloud/`。桌面 SQLite 事务触发器采集白名单字段到 outbox，Worker 的个人 SQLite Durable Object 原子记录操作、顺序与墓碑，R2 只保存明确确认上传的内容。生产网页通过同源 API 在线读写；设计与迁移协议见 [SYNC_DESIGN.md](SYNC_DESIGN.md)，行为见 [SYNC.md](SYNC.md)。每位使用者在自己的 Cloudflare 账户部署独立个人空间，`deploy/cloudflare/` 仅提供[占位模板与自托管指南](../deploy/cloudflare/README.md)，真实部署配置与管理身份始终位于仓库外。
+
+桌面运行时源地址由 `src-tauri/src/service_config.rs` 读取用户数据目录的 `services.json`，已授权设备的源地址仍钉在独立设备状态中，Token 只在系统凭据库。配置换源后返回未连接状态，不能把旧凭据带到新源。普通读取与升级不重写已有服务文件；缺失时才从旧设备状态迁移。此文件不参与业务同步或数据库备份，详见[配置契约](SERVICE_CONFIG.md)。
 
 ## 1. 设计目标
 

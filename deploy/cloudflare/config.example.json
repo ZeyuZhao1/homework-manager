@@ -1,0 +1,8 @@
+{
+  "name": "<YOUR_WORKER_NAME>",
+  "account_id": "<YOUR_ACCOUNT_ID>",
+  "workers_dev": true,
+  "preview_urls": false,
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "<YOUR_R2_BUCKET_NAME>" }],
+  "vars": { "PUBLIC_ORIGIN": "https://<YOUR_WORKER_NAME>.<YOUR_WORKERS_SUBDOMAIN>.workers.dev" }
+}

@@ -27,11 +27,15 @@ export function SyncSettings() {
   const [message, setMessage] = useState('')
   const [failed, setFailed] = useState(false)
   const load = async () => {
-    if (service.isDesktop) { const next = await desktopSync.status(); setStatus(next); setUrl(current => next.server_url || current); if (next.device_name) setName(next.device_name); if (!next.device_id) setDevices([]) }
+    if (service.isDesktop) {
+      try { const next = await desktopSync.status(); setStatus(next); setUrl(next.server_url); if (next.device_name) setName(next.device_name); if (!next.device_id) { setDevices([]); setDevicesLoaded(false) } return next }
+      catch (error) { setStatus(null); setUrl(''); setDevices([]); setDevicesLoaded(false); throw error }
+    }
     else if (service.isCloud) { setDevices((await webSync.request<{ devices: SyncDevice[] }>('/devices')).devices); setDevicesLoaded(true) }
   }
   const loadDevices = async () => { setDevices(service.isDesktop ? (await desktopSync.devices()).devices : (await webSync.request<{ devices: SyncDevice[] }>('/devices')).devices); setDevicesLoaded(true) }
   const run = async (work: () => Promise<unknown>, success = '操作完成') => { setBusy(true); setMessage(''); setFailed(false); try { await work(); await load(); setMessage(success) } catch (e) { setFailed(true); setMessage(e instanceof Error ? e.message : '操作失败') } finally { setBusy(false) } }
+  const reloadConfiguration = async () => { const next = await load(); if (next?.server_url !== status?.server_url) setPair(null); window.dispatchEvent(new Event('homeworkbook:sync-settings-changed')) }
   const recovery = async (provider: 'github' | 'google') => { const target = new URL(url.trim()); if (target.protocol !== 'https:' && !(target.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(target.hostname))) throw new Error('个人服务需要 HTTPS 地址'); target.pathname = `/api/recovery/${provider}/start`; target.search = '?intent=login'; target.hash = ''; await service.openUrl(target.toString()) }
   useEffect(() => { void Promise.resolve().then(load).catch(e => { setFailed(true); setMessage(e.message) }) }, [])
   useEffect(() => {
@@ -45,7 +49,7 @@ export function SyncSettings() {
   const baselineEntries = Object.entries(status?.baseline_counts || {})
   const baselineTotal = baselineEntries.reduce((sum, [, count]) => sum + count, 0)
   return <section className="settings-card sync-settings" aria-label="个人多设备同步">
-    <div className="settings-card-title"><div><h2>个人多设备同步</h2><p>{service.isDesktop ? '让课程、作业和周期计划在你的设备间保持同步。' : '当前浏览器通过已授权的个人云端会话在线使用。'}</p></div><span className={`sync-badge ${service.isCloud || status?.enabled ? 'is-active' : ''}`}>{service.isCloud ? '在线使用' : status?.enabled ? '已开启' : status?.connected ? '已暂停' : '未开启'}</span></div>
+    <div className="settings-card-title"><div><h2>个人多设备同步</h2><p>{service.isDesktop ? '连接你自己部署的 Cloudflare 服务，在设备间同步。' : '当前浏览器通过已授权的个人云端会话在线使用。'}</p></div><span className={`sync-badge ${service.isCloud || status?.enabled ? 'is-active' : ''}`}>{service.isCloud ? '在线使用' : status?.enabled ? '已开启' : status?.connected ? '已暂停' : '未开启'}</span></div>
     {service.isDesktop && status ? <div className="sync-status-panel" role="status">
       <div className="sync-status-heading"><strong>{status.enabled ? '此设备正在同步' : status.connected ? '已配对，同步已暂停' : '连接你的个人服务'}</strong><span>{status.connected ? '已配置设备授权' : '尚未配对'}</span></div>
       <dl className="sync-status-stats"><div><dt>待发送更改</dt><dd>{status.pending}<small> 项</small></dd></div><div><dt>最近同步</dt><dd className="sync-status-date">{status.last_synced_at ? new Date(status.last_synced_at).toLocaleString() : '尚未同步'}</dd></div></dl>
@@ -53,6 +57,7 @@ export function SyncSettings() {
     <p className="helper-text sync-privacy-note">本地路径、系统凭据和外部模块留在设备上。附件内容每次单独确认后上传；云端变更不会改动本地文件。</p>
     {pendingBaselines.length ? <p className="inline-error" role="status">正在等待 {pendingBaselines.map(device => device.name).join('、')} 完成首次导入，云端周期生成暂时暂停。请让该设备联网完成同步；若设备已经遗失，可刷新下方设备列表并撤销其授权后核对计划。</p> : null}
     {service.isDesktop ? <>
+      <details className="sync-baseline sync-config"><summary><span>服务配置文件</span><span className="sync-detail-hint">管理</span></summary><p className="helper-text">{status?.service_config_path || '用户数据目录中的 services.json'}<br />安装更新保留此文件。切换到新服务需重新配对。</p><div className="sync-actions"><button className="button button-quiet" disabled={busy} onClick={() => void run(() => desktopSync.openServiceConfiguration(), '已打开配置文件夹')}>打开文件夹</button><button className="button button-quiet" disabled={busy} onClick={() => void run(reloadConfiguration, '已读取服务配置')}>重新读取</button></div></details>
       {status?.error ? <p className="inline-error">{status.error}</p> : null}
       {!status?.device_id ? <div className="sync-section sync-connect-form">
         <div className="form-grid"><label className="form-field span-2">个人服务地址<input type="url" placeholder="https://your-private-service.example" value={url} onChange={e => setUrl(e.target.value)} autoComplete="off" spellCheck={false} /></label><label className="form-field span-2">设备名称<input value={name} onChange={e => setName(e.target.value)} /></label></div>

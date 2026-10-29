@@ -12,6 +12,8 @@
 
 ## 初次连接与设备授权
 
+桌面从用户数据目录的 `services.json` 读取服务地址；已有连接自动迁移，普通升级不覆盖此文件。可在同步设置打开配置目录并重新读取，详见[客户端服务配置](SERVICE_CONFIG.md)。此文件不保存任何访问凭据；换到新服务仍需重新配对。
+
 1. 在你自己的 Cloudflare 账户部署私有服务，并设置一次性初始化 Secret。部署配置和凭据必须留在仓库外。
 2. 在首台桌面的“设置 → 个人多设备同步”输入私有服务地址，选择首次初始化，输入初始化 Secret。也可以先在网页版初始化。
 3. 桌面显示准备同步的实体数量；确认开启后才建立同步基线。实际附件不随此确认上传。
@@ -42,66 +44,21 @@
 
 桌面 AI Key 仍只保存在系统凭据库。已授权网页可在“设置 → AI 作业导入 → 添加／编辑服务商”直接填写、替换 API Key；留空保留已有值，也可单独清除。网页只显示已配置状态，不回显原密钥。密钥使用 AES-GCM 随机 IV 加密后，存于 R2 独立私有前缀；加密主密钥 `AI_CREDENTIAL_ENCRYPTION_KEY` 仅存 Worker Secret。密钥不进入业务数据库、业务备份、同步实体、浏览器持久存储或 GitHub，也不自动同步至桌面凭据库。
 
-旧 `AI_PROVIDER_KEYS` Secret 仍可作为兼容来源；网页保存的值优先，清除操作留下禁用标记，避免旧值自动恢复。部署者应安全保留主密钥；更换或遗失主密钥后，已有加密内容无法解密，需要重新填写服务商密钥。个人测试部署已自动配置主密钥，日常管理无需进入后台数据库。
+旧 `AI_PROVIDER_KEYS` Secret 仍可作为兼容来源；网页保存的值优先，清除操作留下禁用标记，避免旧值自动恢复。部署者应安全保留主密钥；更换或遗失主密钥后，已有加密内容无法解密，需要重新填写服务商密钥。新部署需由部署者设置自己的主密钥，之后可直接在网页管理服务商密钥，无需进入后台数据库。
 
 网页识别前的文件内容仍需独立确认上传。识别只产生待审核草稿，确认保存后才创建作业。网页请求携带当前浏览器时区，用于解释相对日期。
 
 GitHub 和 Google 恢复入口均受私有部署配置控制。请在仍有授权设备时，先授权一个浏览器，再在该浏览器设置中绑定恢复身份。桌面 Bearer 授权不会自动登录浏览器。恢复验证提供商的稳定账号 ID，不通过同名或相同显示昵称认领空间。
 
-## 私有部署
+## 自行部署
 
-公共文件 `cloud/wrangler.jsonc` 只用于本地模拟，所有资源名都是合成示例。真实账号 ID、Worker 名、桶名、域名、路由、OAuth 客户端配置必须写在仓库外的私有 JSON 中。私有网络地址不会编入公开桌面包；由用户运行时配置。已授权设备在访问时仍能看到实际域名。
+请按[使用自己的 Cloudflare 部署同步服务](../deploy/cloudflare/README.md)完成账户准备、私有配置、构建部署、Secrets、首台设备初始化和 OAuth 注册。可复制模板位于 `deploy/cloudflare/`，服务源码与本地模拟位于 `cloud/`。
 
-私有配置最小形状如下；所有尖括号均需替换，实际文件必须位于仓库外：
+本仓库不提供默认云服务或维护者的基础设施使用权。每位使用者部署自己的单人空间，填入自己的服务地址；所有设备仅在该空间授权后共享数据。实际账号、域名、资源名称和凭据始终保存在仓库外，不编入公开客户端或 CI。
 
-```json
-{
-  "name": "<YOUR_PRIVATE_WORKER_NAME>",
-  "account_id": "<YOUR_ACCOUNT_ID>",
-  "workers_dev": false,
-  "routes": [{ "pattern": "<YOUR_PRIVATE_DOMAIN>", "custom_domain": true }],
-  "r2_buckets": [{ "binding": "FILES", "bucket_name": "<YOUR_PRIVATE_BUCKET>" }],
-  "vars": { "PUBLIC_ORIGIN": "https://<YOUR_PRIVATE_DOMAIN>" }
-}
-```
+GitHub / Google 身份恢复均可独立启用。需要先通过设备配对进入自己的网页，再绑定自己的身份；桌面授权不会自动登录浏览器。登录/绑定使用短时单次 state、PKCE 与 HttpOnly Cookie，按不可变提供商 ID 识别账号；提供商失败只显示固定提示，不展示原始响应或凭据。未绑定身份不能认领空间。解绑不撤销已有设备，设备需另行撤销。
 
-```bash
-pnpm install --frozen-lockfile
-pnpm build
-pnpm cloud:deploy --config /absolute/outside-checkout/cloud.json --dry-run
-```
-
-部署脚本将代码位置与静态资源位置补齐，并在私有配置旁生成权限受限的配置文件；不会把实际值写回仓库。去掉 `--dry-run` 才会执行真实部署。部署需要你账户中已经创建的私有桶及相应权限。
-
-使用默认测试地址时，可在私有配置中设置 `workers_dev: true` 并移除 `routes`，将 `PUBLIC_ORIGIN` 设为实际 HTTPS 地址。请为测试新建独立 Worker 和桶。
-
-仅能通过管理 API 部署、无法完成 Static Assets 上传时，可运行 `node scripts/build-embedded-worker.mjs --out /absolute/outside-checkout/worker.js`，将当前 `dist` 打包进模块。该备用方式仍使用同一服务、Durable Object 和 R2；上传模块时需设置同样的绑定、迁移、Secret 和定时计划。它会增加 Worker 包大小，常规部署仍优先使用 Static Assets。
-
-以下值应使用 Worker Secret，不写入 `vars`。通过受保护的交互输入或仓库外 Secret 文件配置；不要把值作为命令行参数、日志或提交内容：
-
-| 名称 | 用途 |
-| --- | --- |
-| `BOOTSTRAP_SECRET` | 首次初始化授权，初始化后不能再次认领已有空间 |
-| `AI_CREDENTIAL_ENCRYPTION_KEY` | 必需：32 字节随机主密钥，以 64 位十六进制保存，用于网页凭据加密 |
-| `AI_PROVIDER_KEYS` | 可选旧版兼容：服务商 ID 到网页专用 AI Key 的 JSON 对象 |
-| `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET` | 可选 GitHub 恢复 OAuth 应用 |
-| `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET` | 可选 Google 恢复 OAuth 应用 |
-
-### GitHub / Google 账号登录
-
-两种提供商均可独立启用；客户端显示配置状态，已授权网页还会显示绑定状态。没有配置完整 Client ID、Client Secret 与 HTTPS `PUBLIC_ORIGIN` 的提供商不会提供可点击登录入口。
-
-1. 在 [GitHub OAuth Apps](https://github.com/settings/developers) 新建 OAuth App，Homepage URL 使用自己的服务根地址，Authorization callback URL 使用该地址加 `/api/recovery/github/callback`。生成并安全保存 Client Secret。
-2. 在 [Google Auth Platform](https://console.cloud.google.com/auth/overview) 选择项目，配置 Branding 与 Audience；个人测试时将自己的账号加入 Test users。创建 **Web application** 类型客户端，Authorized redirect URIs 使用服务地址加 `/api/recovery/google/callback`。本实现从后端交换授权码，无需填写 JavaScript origins。
-3. 将对应 `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`、`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` 配置为私有 Worker Secrets；实际域名和 OAuth 配置保存在仓库外。不要提交下载的客户端配置或把凭据写入 `vars`。
-4. 首次通过设备配对进入网页，在“设置 → 个人多设备同步 → 账号与登录”绑定自己的账号。以后在未授权设备上选择“使用 GitHub / Google 登录”；未预先绑定的身份不能认领空间。
-5. 可在同一设置页解除绑定；现有设备会话保留，该身份不能再登录新设备。若要撤销旧设备，请另外使用设备列表的“撤销”。
-
-首次绑定必须在已有网页会话中完成；桌面端按钮打开外部浏览器登录入口，不会把桌面授权传给浏览器。登录/绑定使用短时单次 state、PKCE 与 HttpOnly Cookie，按不可变提供商 ID 识别账号；不保存提供商访问令牌。取消、过期、未绑定、账号冲突、服务端凭据校验、授权码交换及账号读取失败等情况返回应用内固定提示，不展示提供商原始错误。提供商请求采用 Workers 支持的 `manual` 重定向模式并拒绝 3xx，不把授权凭据转发给重定向目标。备用域名上的登录会转到 `PUBLIC_ORIGIN`，配对与绑定应在该正式地址完成。
-
-注册入口和流程依据 [GitHub 官方授权文档](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)及 [Google Web Server OAuth 文档](https://developers.google.com/identity/protocols/oauth2/web-server)。真实提供商授权仍需完成私有注册、配置及本人账号回调验证。
-
-公开 CI 只运行本地 Worker/SQLite/R2 模拟，不持有私人 Cloudflare 凭据，不部署服务。`pnpm repository:check` 会检查公开候选配置、运行文件和 CI 是否混入私人部署信息；它不能代替对任意新增源码或日志的人工作业审查。
+公开 CI 只运行本地 Worker/SQLite/R2 模拟，不持有个人 Cloudflare 管理凭据，也不部署服务。`pnpm repository:check` 检查公开候选文件、云端配置与 workflow 中的隐私风险；任意自定义域名及日志仍需人工审查。
 
 ## 开发验证
 
