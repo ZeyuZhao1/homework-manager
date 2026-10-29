@@ -1,0 +1,31 @@
+/* Desktop remains a table; phones use one calm, two-line list. */
+.assignment-mobile-summary{display:none}
+.assignment-table .assignment-row:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+@media(max-width:780px){
+.assignment-table-wrap{border:0;border-radius:14px;background:var(--surface);overflow:hidden;margin-top:14px}
+.assignment-table-wrap .assignment-table{display:block;min-width:0}
+.assignment-table-wrap .assignment-table thead{display:none}
+.assignment-table-wrap .assignment-table tbody{display:block}
+.assignment-table-wrap .assignment-table tr.assignment-row{position:relative;display:block;min-width:0;min-height:92px;padding:17px 18px;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent}
+.assignment-table-wrap .assignment-table tr.assignment-row:last-child{border-bottom:0}
+.assignment-table-wrap .assignment-table tr.assignment-row.selected{background:transparent;border-color:var(--border)}
+.assignment-table-wrap .assignment-table tr.assignment-row:active{background:var(--hover)}
+.assignment-table-wrap .assignment-table .assignment-row>td{border:0;padding:0;overflow:visible;white-space:normal}
+.assignment-table-wrap .assignment-table .assignment-row>td:not(:first-child){display:none}
+.assignment-table-wrap .assignment-table .assignment-row>td:first-child{display:block}
+.assignment-table-wrap .assignment-row .table-title,.assignment-table-wrap .assignment-row .recurring-title{gap:7px;min-height:24px;align-items:center;font-size:16px;line-height:1.5;padding-right:66px}
+.assignment-table-wrap .assignment-row .table-title>svg{display:none}
+.assignment-table-wrap .assignment-row .table-title>span,.assignment-table-wrap .assignment-row .recurring-title strong{white-space:normal;overflow-wrap:anywhere;font-size:16px;font-weight:650}
+.assignment-table-wrap .assignment-row .recurring-title>div{min-width:0}
+.assignment-table-wrap .assignment-row .recurring-title small{display:none}
+.assignment-table-wrap .assignment-row .recurring-icon{width:17px;height:20px;flex:none;border-radius:0;background:transparent;color:var(--muted)}
+.assignment-table-wrap .assignment-mobile-summary{display:block;margin-top:7px}
+.assignment-card-context{display:flex;align-items:baseline;justify-content:space-between;gap:12px;min-width:0;font-size:13px;line-height:21px;color:var(--muted)}
+.assignment-card-course{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.assignment-card-due{flex:none;font-variant-numeric:tabular-nums;white-space:nowrap}
+.assignment-card-extra{font-size:12px}
+.assignment-card-state{position:absolute;right:18px;top:18px}
+.assignment-table-wrap .assignment-card-state .status,.assignment-table-wrap .assignment-card-state .series-state{font-size:12px;line-height:20px;padding:1px 7px;font-weight:500;border-radius:5px}
+.assignment-card-state .status-todo{background:transparent}
+}
+@media(max-width:360px){.assignment-table-wrap .assignment-table tr.assignment-row{padding-inline:14px}.assignment-card-state{right:14px}.assignment-card-extra{display:none}.assignment-card-context{font-size:13px}}

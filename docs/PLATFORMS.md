@@ -1,6 +1,8 @@
 # 桌面平台与原生构建
 
-本轮适配覆盖核心作业管理、周期作业、文件关联/浏览/重命名、备份恢复、AI 导入与粘贴图片。打印模块、学校客户端及依赖 PowerShell 的模块不在本轮适配范围；外部原生模块需要匹配当前操作系统和 CPU 架构。
+平台适配覆盖核心作业管理、周期作业、文件关联/浏览/重命名、备份恢复、AI 导入、粘贴图片及内置系统打印。外部打印模块、学校客户端及依赖 PowerShell 的模块仍需独立适配；外部原生模块需要匹配当前操作系统和 CPU 架构。
+
+系统打印通过 Tauri/Wry 使用 Windows WebView2、macOS `NSPrintOperation`（macOS 11+）及 Linux WebKitGTK `PrintOperation` 的打印对话框。打印机及参数由系统负责；Linux 需要图形会话及系统中可用的打印服务/队列。支持格式及文档大小限制见 [文件操作说明](../README.md)。跨平台 API 接入不代表所有原生对话框与真实打印已实机验证。
 
 这里描述的是源码及 workflow 的构建目标，不代表尚未运行的 GitHub 构建或各平台图形界面已经通过实机验证。已发布版本的实际支持范围以其 Release 资产为准。
 
@@ -30,6 +32,8 @@
 | Linux | `${XDG_DATA_HOME:-~/.local/share}/app.homeworkbook.local` | Secret Service（如 GNOME Keyring 或兼容的 KWallet） |
 
 `homework.db`、`modules/` 和粘贴图片均相对于该目录保存。跨系统恢复数据库不会迁移原文件，也不会重写旧绝对路径；需要复制材料并重新定位文件。密钥不进入数据库备份，在另一台设备上需重新配置。
+
+客户端服务地址位于同目录的 `services.json`，独立于程序安装位置；正常安装更新不覆盖已有文件。`sync-device.json` 记录设备身份及授权所绑定的服务，Token 仍留在上表的凭据库。跨设备复制服务文件不复制授权；详见[客户端服务配置](SERVICE_CONFIG.md)。
 
 Linux 必须运行并解锁 Secret Service；不可用时 AI 密钥保存/读取会失败，不回退到模拟后端或明文文件。手动录入和文件管理仍可使用。
 

@@ -57,6 +57,17 @@ pub struct FileAsset {
     pub id: String,
     pub path: String,
     pub missing: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub cloud_available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drive_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drive_resource_key: Option<String>,
+    #[serde(default)]
+    pub drive_unavailable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,6 +155,8 @@ pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
     std::fs::create_dir_all(&modules_dir).map_err(|e| e.to_string())?;
     let path = data_dir.join("homework.db");
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
+    let schema_version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+    if schema_version > 8 { return Err("数据库由较新版本创建，请升级应用".into()); }
     conn.execute_batch(
         "PRAGMA foreign_keys=ON;
          PRAGMA journal_mode=WAL;
@@ -169,7 +182,7 @@ pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
          "
     ).map_err(|e| e.to_string())?;
     crate::import_sync::initialize(&conn)?;
-    conn.execute_batch("PRAGMA user_version=6").map_err(|e| e.to_string())?;
+
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM semesters", [], |r| r.get(0)).map_err(|e| e.to_string())?;
     if count == 0 {
         let root = PathBuf::from(r"D:\share\University\Year 1 Fall");
@@ -196,6 +209,7 @@ pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
         INSERT OR IGNORE INTO recent_values(field,value,used_at) SELECT 'submission_notes',trim(submission_notes),updated_at FROM assignments WHERE trim(submission_notes)<>'';").map_err(|e| e.to_string())?;
     prune_unused_files(&conn)?;
     crate::modules::initialize(&conn, &data_dir)?;
+    crate::sync::migrate(&conn)?;
     Ok(AppState { db: Mutex::new(conn), modules_dir })
 }
 
@@ -241,10 +255,10 @@ pub fn load_snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
         custom_fields.entry(id).or_default().insert(key,value);
     }
     for assignment in &mut assignments { assignment.custom_fields = custom_fields.remove(&assignment.id).unwrap_or_default(); }
-    let files = conn.prepare("SELECT id,path FROM file_assets ORDER BY path").map_err(|e| e.to_string())?
-        .query_map([], |r| { let path: String = r.get(1)?; Ok(FileAsset { id:r.get(0)?, missing: !std::path::Path::new(&path).is_file(), path }) }).map_err(|e| e.to_string())?
+    let files = conn.prepare("SELECT f.id,f.path,s.name,s.cloud_version IS NOT NULL,s.drive_id,s.drive_resource_key,coalesce(s.drive_unavailable,0),s.mime FROM file_assets f LEFT JOIN sync_files s ON s.id=f.id ORDER BY f.path").map_err(|e| e.to_string())?
+        .query_map([], |r| { let path: String = r.get(1)?; Ok(FileAsset { id:r.get(0)?, missing: !path.starts_with("gdrive:") && !std::path::Path::new(&path).is_file(), path, name:r.get(2)?, cloud_available:r.get(3)?, drive_id:r.get(4)?, drive_resource_key:r.get(5)?, drive_unavailable:r.get(6)?, mime:r.get(7)? }) }).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
-    for file in files.iter().filter(|file| !file.missing) {
+    for file in files.iter().filter(|file| !file.missing && file.drive_id.is_none()) {
         let Ok(metadata) = std::fs::metadata(&file.path) else { continue };
         let Ok(modified) = metadata.modified() else { continue };
         let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) else { continue };
@@ -391,6 +405,7 @@ fn save_assignments_batch_impl(conn: &mut Connection, payload: BatchAssignmentIn
         if !["todo","doing","done","submitted"].contains(&item.status.as_str()) { return Err("无效的作业状态".into()); }
     }
     let paths = payload.paths.iter().map(|path| {
+        if path.starts_with("gdrive:") { return Err("批量作业导入仅支持本机文件".into()); }
         let canonical = std::fs::canonicalize(path).map_err(|_| format!("文件不存在：{path}"))?;
         if !canonical.is_file() { return Err(format!("请选择文件：{path}")); }
         Ok(crate::files::normal_path(&canonical))
@@ -457,26 +472,59 @@ pub fn backup_database(state: State<'_, AppState>, path: String) -> Result<(), S
 
 fn backup_impl(conn: &Connection, path: &str) -> Result<(), String> {
     if path.trim().is_empty() { return Err("请选择备份路径".into()); }
-    conn.backup(MAIN_DB, path, None).map_err(|e| e.to_string())
+    conn.backup(MAIN_DB, path, None).map_err(|e| e.to_string())?;
+    // A backup is data, not a transferable session or a replayable device queue.
+    let backup = Connection::open(path).map_err(|e| e.to_string())?;
+    let has_sync: bool = backup.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='sync_runtime')", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+    if has_sync { backup.execute_batch("UPDATE sync_runtime SET enabled=0,replaying=0,cursor=0,baseline_done=0,baseline_pending=0; DELETE FROM sync_outbox; DELETE FROM sync_shadow;").map_err(|e| e.to_string())?; }
+    Ok(())
 }
 
 #[tauri::command]
 pub fn restore_database(state: State<'_, AppState>, path: String) -> Result<(), String> {
     let mut conn = state.db.lock().map_err(|e| e.to_string())?;
     restore_impl(&mut conn, &path)?;
-    let data_dir = state.modules_dir.parent().ok_or("模块目录无效")?;
-    crate::modules::initialize(&conn, data_dir)
+    drop(conn);
+    crate::sync::after_restore(&state)
 }
+
+fn validate_restore_schema(source: &Connection) -> Result<(), String> {
+    // These tables/columns existed before optional module and audit extensions.
+    for (table, required) in [
+        ("semesters", "id name source_root"),
+        ("courses", "id semester_id name code folder_path"),
+        ("assignments", "id course_id title description due_at status submission_label submission_url submission_notes source_name source_text created_at updated_at"),
+        ("file_assets", "id path"),
+        ("assignment_files", "id assignment_id file_id role page chapter problem note"),
+        ("rename_history", "id file_id old_path new_path file_size modified_at_ms changed_at undone_at"),
+        ("settings", "key value"),
+    ] {
+        let mut stmt = source.prepare(&format!("PRAGMA table_info({table})")).map_err(|e| e.to_string())?;
+        let columns = stmt.query_map([], |r| r.get::<_,String>(1)).map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+        if required.split_whitespace().any(|name| !columns.iter().any(|column|column==name)) { return Err(format!("备份缺少必需的数据表或字段：{table}；当前数据库未改变")); }
+    }
+    Ok(())
+}
+
+struct RestoreStage(PathBuf);
+impl Drop for RestoreStage { fn drop(&mut self) { let _=std::fs::remove_dir_all(&self.0); } }
 
 fn restore_impl(conn: &mut Connection, path: &str) -> Result<(), String> {
     let source = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| e.to_string())?;
     let check: String = source.query_row("PRAGMA integrity_check", [], |r| r.get(0)).map_err(|e| e.to_string())?;
     if check != "ok" { return Err("备份数据库完整性检查失败".into()); }
     let version: i64 = source.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(|e| e.to_string())?;
-    if !(1..=6).contains(&version) { return Err("备份数据库版本不兼容".into()); }
-    conn.restore(MAIN_DB, path, None::<fn(rusqlite::backup::Progress)>).map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA foreign_keys=ON").map_err(|e| e.to_string())?;
-    conn.execute_batch("CREATE TABLE IF NOT EXISTS recent_values (field TEXT NOT NULL, value TEXT NOT NULL, used_at TEXT NOT NULL, PRIMARY KEY(field,value));
+    if !(1..=8).contains(&version) { return Err("备份数据库版本不兼容".into()); }
+    validate_restore_schema(&source)?;
+    let stage = RestoreStage(std::env::temp_dir().join(format!("homeworkbook-restore-{}",Uuid::new_v4())));
+    std::fs::create_dir(&stage.0).map_err(|e|e.to_string())?;
+    let stage_path=stage.0.join("candidate.db");
+    source.backup(MAIN_DB,&stage_path,None).map_err(|e|e.to_string())?;
+    let staged=Connection::open(&stage_path).map_err(|e|e.to_string())?;
+    staged.execute_batch("PRAGMA foreign_keys=ON").map_err(|e|e.to_string())?;
+    let has_sync:bool=staged.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='sync_runtime')",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if has_sync { staged.execute_batch("UPDATE sync_runtime SET enabled=0,replaying=1").map_err(|e|e.to_string())?; }
+    staged.execute_batch("CREATE TABLE IF NOT EXISTS recent_values (field TEXT NOT NULL, value TEXT NOT NULL, used_at TEXT NOT NULL, PRIMARY KEY(field,value));
         CREATE TABLE IF NOT EXISTS assignment_custom_fields (assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE, field_key TEXT NOT NULL, field_value TEXT NOT NULL, PRIMARY KEY(assignment_id,field_key));
         CREATE TABLE IF NOT EXISTS common_files (course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE, file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, kind TEXT NOT NULL, label TEXT NOT NULL, PRIMARY KEY(course_id,file_id));
         CREATE TABLE IF NOT EXISTS file_history (id TEXT PRIMARY KEY, file_id TEXT NOT NULL, link_id TEXT NOT NULL DEFAULT '', assignment_id TEXT NOT NULL DEFAULT '', assignment_title TEXT NOT NULL DEFAULT '', event_type TEXT NOT NULL, path TEXT NOT NULL, details TEXT NOT NULL DEFAULT '', file_size INTEGER, modified_at_ms INTEGER, occurred_at TEXT NOT NULL);
@@ -485,14 +533,48 @@ fn restore_impl(conn: &mut Connection, path: &str) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS module_file_links (id TEXT PRIMARY KEY, module_id TEXT NOT NULL, owner_type TEXT NOT NULL, owner_id TEXT NOT NULL, owner_label TEXT NOT NULL DEFAULT '', file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, role TEXT NOT NULL DEFAULT 'reference', note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(module_id,owner_type,owner_id,file_id,role));
         CREATE INDEX IF NOT EXISTS module_file_links_by_owner ON module_file_links(module_id,owner_type,owner_id);
         PRAGMA journal_size_limit=1048576; PRAGMA wal_autocheckpoint=100;").map_err(|e| e.to_string())?;
-    crate::import_sync::initialize(conn)?;
-    conn.execute_batch("PRAGMA user_version=6").map_err(|e| e.to_string())?;
+    crate::import_sync::initialize(&staged)?;
+    // Initialize module schemas and migration logic against an isolated temporary directory.
+    // Existing user prompts and the live connection remain untouched until all checks succeed.
+    crate::modules::initialize(&staged,&stage.0)?;
+    crate::sync::migrate(&staged)?;
+    staged.execute_batch("UPDATE sync_runtime SET enabled=0,replaying=0,cursor=0,baseline_done=0,baseline_pending=0; DELETE FROM sync_outbox; DELETE FROM sync_shadow;").map_err(|e|e.to_string())?;
+    let bad_reference:bool=staged.prepare("PRAGMA foreign_key_check").map_err(|e|e.to_string())?.exists([]).map_err(|e|e.to_string())?;
+    if bad_reference { return Err("备份含无效的数据关联；当前数据库未改变".into()); }
+    staged.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").map_err(|e|e.to_string())?;
+    conn.restore(MAIN_DB,&stage_path,None::<fn(rusqlite::backup::Progress)>).map_err(|e|e.to_string())?;
+    conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_size_limit=1048576; PRAGMA wal_autocheckpoint=100;").map_err(|e|e.to_string())?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn legacy_schema(conn:&Connection) {
+        conn.execute_batch("PRAGMA foreign_keys=ON;
+         PRAGMA journal_mode=WAL;
+         PRAGMA journal_size_limit=1048576;
+         PRAGMA wal_autocheckpoint=100;
+         CREATE TABLE IF NOT EXISTS semesters (id TEXT PRIMARY KEY, name TEXT NOT NULL, source_root TEXT NOT NULL DEFAULT '');
+         CREATE TABLE IF NOT EXISTS courses (id TEXT PRIMARY KEY, semester_id TEXT NOT NULL REFERENCES semesters(id) ON DELETE CASCADE, name TEXT NOT NULL, code TEXT NOT NULL DEFAULT '', folder_path TEXT NOT NULL DEFAULT '');
+         CREATE TABLE IF NOT EXISTS assignments (id TEXT PRIMARY KEY, course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', due_at TEXT, status TEXT NOT NULL DEFAULT 'todo', submission_label TEXT NOT NULL DEFAULT '', submission_url TEXT NOT NULL DEFAULT '', submission_notes TEXT NOT NULL DEFAULT '', source_name TEXT NOT NULL DEFAULT '', source_text TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+         CREATE INDEX IF NOT EXISTS assignments_by_course_due ON assignments(course_id, due_at);
+         CREATE TABLE IF NOT EXISTS file_assets (id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE);
+         CREATE TABLE IF NOT EXISTS assignment_files (id TEXT PRIMARY KEY, assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE, file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, role TEXT NOT NULL, page TEXT NOT NULL DEFAULT '', chapter TEXT NOT NULL DEFAULT '', problem TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '');
+         CREATE INDEX IF NOT EXISTS assignment_files_by_assignment ON assignment_files(assignment_id);
+         CREATE TABLE IF NOT EXISTS rename_history (id TEXT PRIMARY KEY, file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, old_path TEXT NOT NULL, new_path TEXT NOT NULL, file_size INTEGER NOT NULL, modified_at_ms INTEGER NOT NULL, changed_at TEXT NOT NULL, undone_at TEXT);
+         CREATE TABLE IF NOT EXISTS file_history (id TEXT PRIMARY KEY, file_id TEXT NOT NULL, link_id TEXT NOT NULL DEFAULT '', assignment_id TEXT NOT NULL DEFAULT '', assignment_title TEXT NOT NULL DEFAULT '', event_type TEXT NOT NULL, path TEXT NOT NULL, details TEXT NOT NULL DEFAULT '', file_size INTEGER, modified_at_ms INTEGER, occurred_at TEXT NOT NULL);
+         CREATE INDEX IF NOT EXISTS file_history_by_file_time ON file_history(file_id, occurred_at DESC);
+         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS recent_values (field TEXT NOT NULL, value TEXT NOT NULL, used_at TEXT NOT NULL, PRIMARY KEY(field,value));
+         CREATE TABLE IF NOT EXISTS assignment_custom_fields (assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE, field_key TEXT NOT NULL, field_value TEXT NOT NULL, PRIMARY KEY(assignment_id,field_key));
+         CREATE TABLE IF NOT EXISTS common_files (course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE, file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, kind TEXT NOT NULL, label TEXT NOT NULL, PRIMARY KEY(course_id,file_id));
+         CREATE TABLE IF NOT EXISTS module_states (module_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS module_file_links (id TEXT PRIMARY KEY, module_id TEXT NOT NULL, owner_type TEXT NOT NULL, owner_id TEXT NOT NULL, owner_label TEXT NOT NULL DEFAULT '', file_id TEXT NOT NULL REFERENCES file_assets(id) ON DELETE CASCADE, role TEXT NOT NULL DEFAULT 'reference', note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(module_id,owner_type,owner_id,file_id,role));
+         CREATE INDEX IF NOT EXISTS module_file_links_by_owner ON module_file_links(module_id,owner_type,owner_id);
+         ").unwrap();
+        conn.execute_batch("INSERT INTO semesters VALUES('s','Term',''); INSERT INTO courses VALUES('c','s','Course','',''); INSERT INTO assignments(id,course_id,title,created_at,updated_at) VALUES('a','c','Assignment','now','now'); INSERT INTO file_assets VALUES('f','/synthetic/file.pdf');").unwrap();
+    }
     #[test]
     fn batch_creates_multiple_assignments_with_one_shared_file_atomically() {
         let dir = std::env::temp_dir().join(format!("homeworkbook-batch-{}",Uuid::new_v4()));
@@ -527,10 +609,9 @@ mod tests {
         let db_path = dir.join("active.db");
         let backup_path = dir.join("backup.db");
         let mut conn = Connection::open(&db_path).unwrap();
+        legacy_schema(&conn);
         conn.execute_batch("CREATE TABLE test_records(name TEXT); INSERT INTO test_records VALUES('original');
-            CREATE TABLE assignment_custom_fields(assignment_id TEXT,field_key TEXT,field_value TEXT);
             INSERT INTO assignment_custom_fields VALUES('a','教学周','第 3 周');
-            CREATE TABLE common_files(course_id TEXT,file_id TEXT,kind TEXT,label TEXT);
             INSERT INTO common_files VALUES('c','f','textbook','课本');
             PRAGMA user_version=2;").unwrap();
         backup_impl(&conn,&backup_path.to_string_lossy()).unwrap();
@@ -543,12 +624,41 @@ mod tests {
         assert_eq!(field,"第 3 周");
         assert_eq!(common,"textbook");
         let version: i64 = conn.query_row("PRAGMA user_version",[],|row|row.get(0)).unwrap();
-        assert_eq!(version,6);
+        assert_eq!(version,8);
+        conn.execute("INSERT INTO file_assets(id,path) VALUES('gdrive-abcdefghij_123','gdrive:abcdefghij_123')",[]).unwrap();
+        conn.execute("INSERT INTO sync_files(id,name,mime,drive_id,drive_resource_key,drive_unavailable) VALUES('gdrive-abcdefghij_123','Notes','application/pdf','abcdefghij_123','key_123',1)",[]).unwrap();
+        backup_impl(&conn,backup_path.to_str().unwrap()).unwrap();
+        conn.execute("DELETE FROM sync_files WHERE id='gdrive-abcdefghij_123'",[]).unwrap();
+        restore_impl(&mut conn,backup_path.to_str().unwrap()).unwrap();
+        let drive: (String,String,bool) = conn.query_row("SELECT drive_id,drive_resource_key,drive_unavailable FROM sync_files WHERE id='gdrive-abcdefghij_123'",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
+        assert_eq!(drive,("abcdefghij_123".into(),"key_123".into(),true));
         let import_tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('assignment_import_course_map','assignment_import_links','assignment_import_ignored')",[],|row|row.get(0)).unwrap();
         assert_eq!(import_tables,3);
         drop(conn);
         std::fs::remove_file(db_path).unwrap();
         std::fs::remove_file(backup_path).unwrap();
-        std::fs::remove_dir(dir).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn restore_rejects_missing_schema_and_broken_references_before_replacing_live(){
+        let dir=std::env::temp_dir().join(format!("restore-reject-{}",Uuid::new_v4()));std::fs::create_dir(&dir).unwrap();
+        let mut live=Connection::open_in_memory().unwrap();legacy_schema(&live);
+        let bad_path=dir.join("bad.db");let bad=Connection::open(&bad_path).unwrap();bad.execute_batch("CREATE TABLE unrelated(value TEXT); PRAGMA user_version=6").unwrap();
+        assert!(restore_impl(&mut live,bad_path.to_str().unwrap()).is_err());
+        assert_eq!(live.query_row("SELECT title FROM assignments WHERE id='a'",[],|r|r.get::<_,String>(0)).unwrap(),"Assignment");drop(bad);
+        std::fs::remove_file(&bad_path).unwrap();
+        let bad=Connection::open(&bad_path).unwrap();legacy_schema(&bad);bad.execute_batch("PRAGMA foreign_keys=OFF; UPDATE assignments SET course_id='missing'; PRAGMA user_version=6").unwrap();
+        assert!(restore_impl(&mut live,bad_path.to_str().unwrap()).is_err());
+        assert_eq!(live.query_row("SELECT course_id FROM assignments WHERE id='a'",[],|r|r.get::<_,String>(0)).unwrap(),"c");drop(bad);std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn backup_scrubs_sync_runtime_but_preserves_live_queue(){
+        let dir=std::env::temp_dir().join(format!("backup-sync-{}",Uuid::new_v4()));std::fs::create_dir(&dir).unwrap();
+        let conn=Connection::open_in_memory().unwrap();legacy_schema(&conn);crate::sync::migrate(&conn).unwrap();
+        conn.execute_batch("UPDATE sync_runtime SET enabled=1,cursor=42,baseline_pending=2; INSERT INTO sync_outbox(entity_type,entity_id,data) VALUES('assignment','a','{\"title\":\"pending\"}');").unwrap();
+        let path=dir.join("backup.db");backup_impl(&conn,path.to_str().unwrap()).unwrap();let backup=Connection::open(&path).unwrap();
+        assert_eq!(backup.query_row("SELECT count(*) FROM sync_outbox",[],|r|r.get::<_,i64>(0)).unwrap(),0);assert_eq!(backup.query_row("SELECT enabled+cursor+baseline_pending FROM sync_runtime",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        assert_eq!(conn.query_row("SELECT count(*) FROM sync_outbox",[],|r|r.get::<_,i64>(0)).unwrap(),1);drop(backup);std::fs::remove_dir_all(dir).unwrap();
+    }
+
 }

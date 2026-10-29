@@ -242,6 +242,7 @@ pub struct AiResult {
 struct ProviderConfig { id:String, kind:String, base_url:String, model:String }
 
 fn classify(path: &str) -> Result<&'static str, String> {
+    if path.starts_with("gdrive:") { return Err("Drive 关联仅保存链接，暂不支持 AI 读取".into()); }
     let ext = Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
     match ext.as_str() {
         "pdf" => Ok("pdf"), "docx" => Ok("docx"),
@@ -509,6 +510,7 @@ async fn do_import_with_timeout(provider: &ProviderConfig, key: &str, system: &s
 
 #[tauri::command]
 pub async fn analyze_assignment(state: State<'_, AppState>, payload: AiRequest) -> Result<AiResult, String> {
+    if payload.paths.iter().any(|path| path.starts_with("gdrive:")) { return Err("Drive 关联仅保存链接，暂不支持 AI 读取".into()); }
     if payload.text.trim().is_empty() && payload.paths.is_empty() { return Err("请粘贴内容或选择文件".into()); }
     let (provider, courses) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
@@ -554,6 +556,13 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::time::Duration;
+    #[test]
+    fn drive_references_are_rejected_before_file_access() {
+        for path in ["gdrive:abcdefghij_123", "gdrive:abcdefghij_123.pdf"] {
+            assert!(classify(path).unwrap_err().contains("暂不支持 AI 读取"));
+        }
+        assert_eq!(classify("/notes/assignment.pdf").unwrap(), "pdf");
+    }
     #[test]
     fn parses_multiple_assignments_and_unknown_due() {
         let result = extract_json(r#"{"assignments":[{"title":"A","due_at":"2026-09-25T23:59:00"},{"title":"B","due_at":null}]}"#).unwrap();

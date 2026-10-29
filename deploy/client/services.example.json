@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "sync": {
+    "server_url": "https://<YOUR_SYNC_DOMAIN>"
+  }
+}

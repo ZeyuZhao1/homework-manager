@@ -3,6 +3,8 @@ import { open, save } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { Assignment, CommonFile, Course, DirectoryEntry, FileHistoryEvent, FileLink, FileRole, LinkBatchInput, LinkInput, ModuleDescriptor, NamingInput, OpenFileResult, RenamePreview, Semester, Settings, Snapshot } from './types'
 import type { ApplyImport, ImportPreview, RemoteSnapshot } from './importSync'
+import { cloudService, webSync } from './sync/web'
+import type { DriveFileInfo } from './drive/types'
 
 const desktop = isTauri()
 const root = 'D:\\share\\University\\Year 1 Fall'
@@ -35,8 +37,20 @@ function trackPreview(fileId: string, eventType: FileHistoryEvent['event_type'],
   previewState.file_history.unshift({ id:newId(), file_id:fileId, link_id:link?.id || '', assignment_id:link?.assignment_id || '', assignment_title:previewState.assignments.find(a => a.id === link?.assignment_id)?.title || '', event_type:eventType, path, details, file_size:null, modified_at_ms:null, occurred_at:new Date().toISOString() })
 }
 
-export const service = {
+const localService = {
   isDesktop: desktop,
+  async driveRequest<T = unknown>(action: string, payload?: unknown): Promise<T> {
+    if (!desktop) throw new Error('Google Drive 需要连接个人云端')
+    return invoke<T>('drive_request', { action, payload: payload ?? null })
+  },
+  async registerDriveFiles(files: DriveFileInfo[]): Promise<string[]> {
+    if (desktop) return invoke<string[]>('register_drive_files', { files })
+    throw new Error('Google Drive 需要连接个人云端，演示模式不可用')
+  },
+  get isCloud() { return webSync.isCloud },
+  async openSystemPrint(fileId: string): Promise<void> { if (!desktop) throw new Error('浏览器预览无法执行系统打印，请使用桌面应用'); const { printSystemFile } = await import('./systemPrint'); return printSystemFile(fileId) },
+  async readSystemPrintDocument(fileId: string): Promise<ArrayBuffer> { if (!desktop) throw new Error('浏览器预览无法读取打印文件'); return invoke<ArrayBuffer>('read_system_print_document', { fileId }) },
+  async showSystemPrintDialog(): Promise<void> { if (!desktop) throw new Error('浏览器预览无法打开系统打印对话框'); return invoke<void>('show_system_print_dialog') },
   async snapshot(): Promise<Snapshot> { return desktop ? invoke<Snapshot>('load_snapshot') : clone() },
   async saveSemester(payload: Semester) {
     if (desktop) return invoke<string>('save_semester', { payload })
@@ -187,3 +201,10 @@ export const service = {
   async openModulesDirectory() { if (desktop) return invoke<void>('open_modules_directory') },
   async openUrl(url: string) { if (desktop) return openUrl(url); window.open(url, '_blank', 'noopener,noreferrer') },
 }
+
+export const service = new Proxy(localService, {
+  get(target, key, receiver) {
+    if (!desktop && webSync.isCloud && key in cloudService) return Reflect.get(cloudService, key)
+    return Reflect.get(target, key, receiver)
+  },
+})

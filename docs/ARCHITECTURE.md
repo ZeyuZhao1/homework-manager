@@ -2,6 +2,10 @@
 
 本文描述作业簿当前 `main` 的运行时架构、领域模型、数据流和一致性边界。面向需要理解或修改实现的维护者；用户操作说明见项目根目录 [README.md](../README.md)，逐项接口见 [CORE_API.md](CORE_API.md)。
 
+可选个人云同步在保留下述本地核心的基础上增加 `src-tauri/src/sync.rs`、`src/sync/` 与 `cloud/`。桌面 SQLite 事务触发器采集白名单字段到 outbox，Worker 的个人 SQLite Durable Object 原子记录操作、顺序与墓碑，R2 只保存明确确认上传的内容。生产网页通过同源 API 在线读写；设计与迁移协议见 [SYNC_DESIGN.md](SYNC_DESIGN.md)，行为见 [SYNC.md](SYNC.md)。每位使用者在自己的 Cloudflare 账户部署独立个人空间，`deploy/cloudflare/` 仅提供[占位模板与自托管指南](../deploy/cloudflare/README.md)，真实部署配置与管理身份始终位于仓库外。
+
+桌面运行时源地址由 `src-tauri/src/service_config.rs` 读取用户数据目录的 `services.json`，已授权设备的源地址仍钉在独立设备状态中，Token 只在系统凭据库。配置换源后返回未连接状态，不能把旧凭据带到新源。普通读取与升级不重写已有服务文件；缺失时才从旧设备状态迁移。此文件不参与业务同步或数据库备份，详见[配置契约](SERVICE_CONFIG.md)。
+
 ## 1. 设计目标
 
 作业簿围绕四个约束设计：
@@ -64,6 +68,7 @@ Rust 实现按责任分为：
 
 - `db.rs`：领域记录、完整快照、核心 CRUD、备份/恢复；
 - `files.rs`：文件路径、关联、目录浏览、历史、改名与撤回；
+- `printing.rs`：当前文件校验、仅限主窗口的二进制读取与系统打印对话框；
 - `window.rs`：启动窗口尺寸与位置；内容区域最大 1200×800 逻辑像素，含边框的窗口不超过工作区宽高的 85%；
 - `modules.rs`：内置/外部模块发现、启用状态和调用宿主；
 - `import_sync.rs`：通用来源快照校验、导入差异预览和事务应用；
@@ -79,7 +84,7 @@ Rust 实现按责任分为：
 - `journal_mode=WAL`：改善读取和写入恢复能力；
 - `journal_size_limit=1048576`；
 - `wal_autocheckpoint=100`；
-- `user_version=6`；版本 6 增加通用作业导入的课程映射、来源关联与忽略基线表。
+- `user_version=8`；版本 6 增加通用导入来源表，版本 7 增加可选同步运行态、outbox、shadow、逻辑文件元数据和脱敏业务历史。版本 8 为逻辑文件补充 Drive ID、资源键和可访问状态。启动与备份恢复共用同步迁移；高版本数据库拒绝打开。
 
 数据库是元数据和审计记录的事实来源，但不是实际学习文件的容器。
 
@@ -331,7 +336,9 @@ Tauri 标识符为 `app.homeworkbook.local`。Windows 上主要目录为：
 
 用户另行安装声明 `assignment.sync.snapshot` 的模块后，通用导入界面读取来源快照，并调用 `preview_assignment_import` 计算新建、关联与逐字段变化。用户确认后，`apply_assignment_import` 在核心数据库事务内建立课程、映射和来源关联。来源 ID 保证幂等，来源缺席不会触发删除。学校认证、抓取与网页解析不属于主程序，也不随仓库提供。
 
-`src/printing.tsx` 根据已启用模块的 `file.print` 能力提供文件按钮，并通过 `src/service.ts` 调用通用宿主。默认配置和可选认证由外部模块管理，核心不包含打印驱动、渲染器或学校认证实现。只在用户操作时传递选中文件路径；提交结果不保证物理打印完成。本仓库不附带打印模块。
+`src/printing.tsx` 默认通过 `src/service.ts` 调用核心系统打印。Rust 根据文件 ID 读取数据库当前路径，规范化并验证格式；二进制读取及打印命令只接受主窗口调用，不新增任意文件读取权限。`src/systemPrint.ts` 按需加载，在当前主窗口的隐藏内容区准备所选文档，不创建额外 WebView 或页面。PDF.js、Worker、CMap、标准字体和解码资源全部随包提供；PDF 按 150 DPI 准备，图片通过本地 Blob 读取。加密 PDF 使用继承主界面样式的密码弹窗，可用取消或 Esc 中止。文件大小与渲染像素限制用于控制内存；失败时清空部分页面且不打印。
+
+内容完成后通过当前主窗口的 Tauri/Wry `WebviewWindow::print()` 分别调用 WebView2、macOS `NSPrintOperation`、WebKitGTK `PrintOperation`，直接打开系统对话框；打印媒体样式隔离所选文件，隐藏主界面及其他弹窗，屏幕显示保持原样。系统管理打印机选择和全部打印参数。`afterprint` 后释放隐藏文档；未收到事件时保留至下一次显式打印或关闭应用，避免异步原生打印读到空文档。打开或取消对话框不被解释为入队或物理打印完成。原文件不被复制、改名或上传；系统网络打印机的发送由系统负责。外部 `file.print` 模块仍可显式选择，旧配置/认证协议保留，不自动迁移到系统设置。
 
 ## 9. 浏览器预览模式
 
@@ -374,3 +381,12 @@ Tauri 标识符为 `app.homeworkbook.local`。Windows 上主要目录为：
 自定义标题栏由 `main.tsx` 在应用内容上方挂载，加载状态也保留窗口控制；Tauri 关闭系统装饰并仅额外授权最小化、切换最大化、关闭和拖动。关联文件菜单通过渲染回调使用打印组件的操作，打印选项、配置和结果弹窗保留在菜单之外，避免菜单关闭导致打印状态丢失。
 
 核心原生构建目标、各系统数据根目录和发布矩阵见 [平台支持](PLATFORMS.md)。Wayland 的几何设置失败只记录启动诊断，主窗口仍会显示；macOS 平台配置启用原生控件与 Overlay 标题栏。
+
+
+### Google Drive 元数据来源
+
+Drive 是文件资产的一种来源。`src/drive/` 通过现有服务边界访问个人云端，桌面桥接在 `src-tauri/src/drive.rs`；SQLite `sync_files` 保存名称、MIME、Drive ID 和链接所需资源键，继承既有关联与同步语义。暂停同步时显式 Drive 请求可执行，但业务关联留在本机直到恢复同步。
+
+`cloud/src/drive.ts` 使用单次、设备绑定的授权流程和 PKCE，Google Picker 通过系统浏览器返回选中文件 ID；原设备持有临时轮询凭据接收结果，回调不创建作业簿会话，也不依赖 Safari 与 PWA 共享 Cookie。授权只申请 `drive.file`。后端仅查询账户和文件元数据，不请求内容，也不对 Drive 文件执行写操作。
+
+OAuth 访问和刷新令牌仅以 AES-GCM 独立加密保存在私有 R2 前缀 `_private/drive-credentials/`，主密钥使用独立 Worker Secret。临时流程表仅保存授权状态、PKCE 验证值及元数据结果，不存提供商令牌；它不进入业务快照、变更流或本地备份。代次校验和短临界区阻止断开账号、撤销设备或并发授权时恢复过期凭据。

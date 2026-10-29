@@ -56,10 +56,9 @@ pub fn assignment_saved(conn: &Connection, assignment_id: &str) -> Result<(), St
 
 pub fn assignment_deleted(conn: &Connection, assignment_id: &str) -> Result<(), String> {
     for module in builtin_modules() {
-        let descriptor = (module.descriptor)();
-        if enabled(conn, &descriptor.id)? {
-            if let Some(hook) = module.assignment_deleted { hook(conn, assignment_id)?; }
-        }
+        // Deletion bookkeeping preserves occurrence identity even when automation is
+        // disabled. This internal cleanup hook does not execute module capabilities.
+        if let Some(hook) = module.assignment_deleted { hook(conn, assignment_id)?; }
     }
     Ok(())
 }

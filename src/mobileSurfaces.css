@@ -1,0 +1,123 @@
+@media(max-width:780px){
+.mobile-setting-section{border-radius:14px;background:var(--surface);overflow:hidden}
+.mobile-setting-section>summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:19px 18px;list-style:none;font-size:15px;font-weight:600;cursor:pointer}
+.mobile-setting-section>summary::-webkit-details-marker{display:none}
+.mobile-setting-section>summary small{display:block;font-size:13px;font-weight:400;color:var(--muted);margin-top:6px;line-height:1.5}
+.mobile-setting-section>summary svg{flex:none;color:var(--muted)}
+.mobile-setting-section[open]>summary svg{transform:rotate(90deg)}
+.mobile-setting-section[open]>summary{border-bottom:1px solid var(--border)}
+.mobile-setting-section .settings-card{border:0;margin:0;border-radius:0}
+.settings-layout .settings-card{border:0;border-radius:14px;padding:20px 18px}
+.settings-layout .settings-card h2{font-size:16px}
+.settings-layout .settings-card-title p{font-size:13px;line-height:1.6}
+.settings-layout .helper-text{font-size:13px;line-height:1.65}
+.settings-layout .form-field{font-size:14px;font-weight:500}
+.file-page-list{border:0;border-radius:14px}
+.file-page-row{padding:18px 16px;gap:12px;flex-wrap:wrap}
+.file-page-main{flex:1;min-width:0}
+.file-page-main strong{font-size:15px;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
+.file-page-main small{font-size:13px;line-height:1.5}
+.file-page-row .file-page-actions{width:100%;justify-content:flex-start;padding-left:48px}
+.file-page-toolbar{gap:12px}
+.file-relations button{font-size:12px;min-height:32px}
+}
+.mobile-add-course{display:none}
+@media(max-width:780px){
+.app-shell[data-view] .page-header p{display:none}
+.mobile-add-course{display:inline-flex;margin-left:auto;font-size:13px;height:36px;min-height:36px;padding:0 10px}
+.semester-settings-heading small{display:none}
+.modal-backdrop{padding:0;align-items:stretch}
+.modal-backdrop .modal{width:100%;max-width:none;height:100%;max-height:100%;border:0;border-radius:0;display:flex;flex-direction:column}
+.modal-backdrop .modal-header{padding:calc(16px + var(--app-safe-top,env(safe-area-inset-top,0px))) 20px 16px;flex:none}
+.modal-backdrop .modal-body{flex:1;padding:22px 20px;overflow-y:auto;min-height:0}
+.modal-backdrop .modal-footer{padding:14px 20px calc(14px + env(safe-area-inset-bottom));flex:none}
+.modal-backdrop .form-field{font-size:14px;gap:8px}
+.app-shell[data-view] .filter-tabs{display:flex;gap:4px;padding:4px;border:0;border-radius:12px;background:var(--surface-2);overflow:visible;margin-top:12px}
+.app-shell[data-view] .filter-tabs>button{flex:1;min-height:38px;padding:7px 4px;border:0;border-radius:8px;font-size:14px;line-height:22px}
+.app-shell[data-view] .filter-tabs>button.active{background:var(--surface);color:var(--blue)}
+.mobile-filter-more{position:relative;display:grid;place-items:center;flex:none;width:38px;height:38px;color:var(--muted)}
+.mobile-filter-more select{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;cursor:pointer}
+.app-shell[data-view] .mobile-summary{padding-bottom:19px;margin-top:9px}
+.app-shell[data-view] .mobile-summary>span{flex-direction:column;gap:7px;font-size:13px;align-items:flex-start}
+.app-shell[data-view] .mobile-summary strong{font-size:26px;color:var(--blue)}
+}
+@media(max-width:780px){.mobile-semester select,.mobile-course-filter{font-size:16px}}
+@media(max-width:780px){
+.app-shell[data-view] .filter-tabs>button:not(:disabled){flex:1 1 0}
+.app-shell[data-view="files"] .file-page-toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.app-shell[data-view="files"] .file-page-toolbar>.search-field{grid-column:1/-1;width:100%;background:var(--surface-2);border:0;border-radius:10px}
+.app-shell[data-view="files"] .file-page-toolbar>select{width:100%;min-width:0;height:44px;padding:0 10px;border:0;border-radius:8px;background:var(--surface);font-size:16px}
+.app-shell[data-view="files"] .file-page-toolbar>.checkbox-label{grid-column:1/-1;min-height:32px;font-size:13px}
+.file-page-row .file-transfer-actions{justify-content:flex-start}
+.file-page-row .file-transfer-actions>small:first-child{display:none}
+.file-page-row .file-transfer-actions .button{font-size:13px;min-height:36px}
+.file-page-row .file-page-actions>.icon-button:disabled{display:none}
+.course-settings-row small{display:none}
+}
+.provider-clear-key{font-size:12px;min-height:32px;padding:0 9px}
+@media(max-width:780px){.provider-row{display:grid;grid-template-columns:32px minmax(0,1fr) 36px 36px;gap:8px}.provider-row>.provider-icon{grid-column:1;grid-row:1}.provider-row>div:nth-child(2){grid-column:2;grid-row:1}.provider-row>.icon-button{grid-row:1;width:36px;min-width:36px}.provider-row>.provider-clear-key{grid-column:2/-1;grid-row:2;justify-self:start}.provider-row strong{font-size:14px}.provider-row small{font-size:12px}}
+@media(max-width:780px){.mobile-setting-section[open] .module-settings-card>.settings-card-title{display:block}.mobile-setting-section[open] .module-settings-card>.settings-card-title h2{display:none}.mobile-setting-section[open] .module-card-actions{display:flex;justify-content:space-between;align-items:center;margin-top:14px}}
+/* Mobile control hierarchy: prominent actions, quiet filters and compact tools. */
+@media(max-width:780px){
+html:has(.app-shell[data-view]),body:has(.app-shell[data-view]){overflow:hidden;background:var(--bg);overscroll-behavior:none}
+.app-shell[data-view] .mobile-create{width:42px;height:42px;border-radius:13px}
+.app-shell[data-view] .mobile-more .icon-button{background:transparent}
+.app-shell[data-view] .assignment-toolbar .search-field{height:44px;border-radius:12px}
+.app-shell[data-view="files"] .file-page-toolbar>select{height:38px;min-height:38px;background:transparent;border-bottom:1px solid var(--border);border-radius:0;padding-inline:3px}
+.app-shell[data-view] .file-transfer-actions .button{height:34px;min-height:34px;font-size:13px;border-radius:8px;padding:0 10px;font-weight:550}
+.app-shell[data-view] .file-relations button{min-height:28px;padding:4px 7px;border-radius:6px;font-size:12px;font-weight:400;background:var(--surface-2);border-color:transparent;line-height:18px}
+.app-shell[data-view] .file-page-row details>summary{min-height:34px;font-size:12px}
+.app-shell[data-view] .mobile-add-course{height:34px;min-height:34px;border-radius:8px;font-size:13px}
+.app-shell[data-view] .form-field input:not([type="checkbox"]):not([type="radio"]),.app-shell[data-view] .form-field select{border-radius:9px}
+.app-shell[data-view] .sync-pair-approval input{border-radius:9px}
+.app-shell[data-view] .button-primary{border-radius:11px;min-height:44px;font-size:14px;padding-inline:17px}
+.mobile-detail-screen .detail-actions>.status-select{height:38px;min-height:38px;border-radius:12px;font-size:15px}
+.mobile-detail-screen .detail-actions>.icon-button{width:40px;height:40px;min-width:40px;min-height:40px}
+}
+@media(prefers-reduced-transparency:reduce){.mobile-bottom-nav,:root[data-theme="dark"] .mobile-bottom-nav{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
+@media(prefers-reduced-motion:reduce){.mobile-bottom-nav button{transition:none}}
+/* The app header paints the safe area as part of the same page surface. */
+@media(max-width:780px){
+.sync-gate{padding-top:max(24px,var(--app-safe-top,env(safe-area-inset-top,0px)));padding-bottom:max(24px,env(safe-area-inset-bottom))}
+:root[data-standalone="true"] .import-inbox>header{padding-top:calc(18px + var(--app-safe-top,env(safe-area-inset-top,0px)))}
+:root[data-standalone="true"] .drawer-header{padding-top:calc(18px + var(--app-safe-top,env(safe-area-inset-top,0px)))}
+.app-shell[data-view] .button,.app-shell[data-view] .status-select,.app-shell[data-view] .file-transfer-actions .button,.app-shell[data-view] .mobile-add-course{border-radius:999px}
+.app-shell[data-view] .form-field input:not([type="checkbox"]):not([type="radio"]),.app-shell[data-view] .form-field select,.app-shell[data-view] .sync-pair-approval input{border-radius:22px;padding-inline:15px}
+.app-shell[data-view] .search-field,.app-shell[data-view] .assignment-toolbar .search-field,.app-shell[data-view="files"] .file-page-toolbar>.search-field{border-radius:999px}
+.app-shell[data-view="files"] .file-page-toolbar>select,.app-shell[data-view] .mobile-course-filter{border:0;border-radius:999px;background-color:var(--surface-2);padding-inline:14px}
+.app-shell[data-view] .filter-tabs{border-radius:999px}
+.app-shell[data-view] .filter-tabs>button,.app-shell[data-view] .mobile-filter-more{border-radius:999px}
+.app-shell[data-view] .file-relations button{border-radius:14px;padding-inline:9px}
+.app-shell[data-view] .mobile-more-menu{border-radius:24px}
+.app-shell[data-view] .mobile-more-menu .button{border-radius:999px}
+.overview-focus h2{margin-bottom:0}
+.overview-focus-label{font-size:12px}
+.overview-focus .overview-counts{margin-top:18px}
+.overview-section-heading{margin-bottom:10px}
+.overview-footer{justify-content:flex-end}
+}
+
+/* Fixed application viewport, with scrolling restricted to the active pane. */
+:root[data-standalone="true"],:root[data-standalone="true"] body{touch-action:pan-x pan-y}
+@media(max-width:780px){
+body{-webkit-text-size-adjust:100%}
+.mobile-topbar{background:transparent;border:0}
+.modal-backdrop{align-items:stretch;overscroll-behavior:none}
+.modal-backdrop .modal{min-width:0;min-height:0;max-width:100%;height:100%;max-height:100%;overflow:hidden;background:var(--bg)}
+.modal-backdrop .modal-footer{background:var(--bg)}
+.modal-backdrop .modal-body{min-width:0;overscroll-behavior:none;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;scroll-padding-block:20px}
+.modal-backdrop .modal-header h2{font-size:19px;line-height:1.4;overflow-wrap:anywhere}
+.modal-backdrop .modal-footer{gap:10px}
+.modal-backdrop .modal-footer .button{min-height:44px;padding:10px 20px;font-size:15px;border-radius:999px}
+.modal-backdrop :is(input,select,textarea){font-size:16px;max-width:100%;min-width:0}
+.main-content,.mobile-detail-body,.import-inbox-content,.drawer-body{overscroll-behavior:none;-webkit-overflow-scrolling:touch}
+:root[data-keyboard="open"] .mobile-bottom-nav{visibility:hidden;pointer-events:none}
+:root:not([data-theme="dark"]) .app-shell[data-view] .filter-tabs{background:#dfe7f2}
+:root:not([data-theme="dark"]) .app-shell[data-view] .filter-tabs>button.active{box-shadow:0 1px 4px #203c6518}
+:root:not([data-theme="dark"]) .mobile-bottom-nav{border-color:#b7c4d4;box-shadow:0 8px 28px #203c651c,inset 0 1px 0 #fffc}
+}
+
+@media(max-width:780px){
+.sync-gate{min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-x:hidden;overflow-y:auto;overscroll-behavior:none;-webkit-overflow-scrolling:touch}
+.sync-gate>.settings-card{flex:none;margin-block:auto}
+}

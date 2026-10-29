@@ -1,0 +1,103 @@
+.assignment-editor,
+.assignment-editor .form-grid > *,
+.assignment-editor .recent-control,
+.assignment-editor .custom-fields,
+.assignment-editor .custom-field-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.assignment-editor .form-grid > .span-2 {
+  grid-column: 1 / -1;
+}
+
+.assignment-editor input,
+.assignment-editor select,
+.assignment-editor textarea {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Paint the value ourselves; the native control remains a full-size picker target. */
+.date-time-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.date-time-control { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; height: 38px; padding: 0 12px; border: 1px solid var(--field-border); border-radius: 6px; background: var(--field-bg); font-size: 13px; font-weight: 400; overflow: hidden; }
+.date-time-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 20px; }
+.date-time-control>svg { flex: none; color: var(--muted); }
+.date-time-control.is-empty { color: var(--placeholder); }
+.date-time-control:focus-within { border-color: var(--blue); outline: 2px solid var(--blue); outline-offset: 2px; }
+.assignment-editor .date-time-control>input[type="datetime-local"] { position: absolute; inset: 0; display: block; width: 100%; height: 100%; min-width: 0; max-width: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.date-time-clear { display: inline-flex; align-items: center; gap: 4px; align-self: flex-end; border: 0; background: transparent; color: var(--muted); padding: 0; min-height: 24px; font-size: 12px; font-weight: 400; }
+
+.assignment-editor .recent-field > label {
+  margin-bottom: 0;
+}
+
+.assignment-editor .recent-toggle {
+  flex: none;
+}
+
+.assignment-editor .custom-fields-heading {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.assignment-editor .custom-fields-heading > .button {
+  width: auto;
+}
+
+.assignment-editor .custom-field-row > .icon-button {
+  flex: none;
+  align-self: start;
+}
+
+@media (max-width: 780px) {
+  .date-time-field { gap: 8px; }
+  .date-time-control { height: 44px; border-radius: 22px; padding-inline: 15px; font-size: 16px; }
+  .date-time-value { line-height: 22px; }
+  .assignment-editor .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .assignment-editor .form-field {
+    line-height: 1.5;
+  }
+
+  .assignment-editor .form-field small {
+    margin-left: 6px;
+  }
+
+  .assignment-editor .custom-fields {
+    margin-top: 24px;
+    padding-top: 20px;
+  }
+
+  .assignment-editor .custom-fields-heading {
+    margin-bottom: 14px;
+  }
+
+  .assignment-editor .custom-field-row input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .assignment-editor .custom-field-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 40px;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .assignment-editor .custom-field-row input {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  .assignment-editor .custom-field-row > .icon-button {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}

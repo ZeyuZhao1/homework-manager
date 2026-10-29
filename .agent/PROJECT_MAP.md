@@ -124,8 +124,8 @@ UI -> service.method()
 
 - `PRAGMA foreign_keys=ON`；
 - WAL 模式；
-- 当前 `user_version=6`；
-- 恢复接受版本 1–6；
+- 当前 `user_version=7`，可选同步实现位于 `src-tauri/src/sync.rs`、`src/sync/` 与 `cloud/`；
+- 恢复接受版本 1–7，暂存校验后替换并暂停旧设备同步；
 - 至少保留一个学期；
 - Snapshot 读取可能记录外部文件变化。
 
@@ -212,7 +212,7 @@ Tauri 命令注册清单。定义命令但忘记在这里注册，会导致前�
 
 ### 周期模块和通用宿主
 
-`modules/recurring-assignments/` 持有周期规则、私有表、调度、时间线与模块管理操作；核心通过 `manage_builtin_module` 转发。`src-tauri/src/import_sync.rs` 负责通用来源导入审核事务，`src/ImportInbox.tsx` 提供审核 UI。`src/printing.tsx` 提供外部打印能力界面，不包含打印实现。
+`modules/recurring-assignments/` 持有周期规则、私有表、调度、时间线与模块管理操作；核心通过 `manage_builtin_module` 转发。`src-tauri/src/import_sync.rs` 负责通用来源导入审核事务，`src/ImportInbox.tsx` 提供审核 UI。`src/printing.tsx` 默认走核心系统打印，`src-tauri/src/printing.rs` 校验文件并从主窗口调用原生打印接口，`src/systemPrint.ts` 在当前窗口隐藏内容区本地准备 PDF/图片后直接打开系统对话框；不创建额外页面或窗口，打印样式隐藏主界面。外部打印能力保留为可选入口。
 
 仓库只跟踪 AI 导入和周期作业两个模块。其他模块由用户独立安装到 AppData，不加入本仓库。
 
@@ -330,7 +330,7 @@ UI/core -> invoke_module -> enabled/capability/path checks
 ## 10. 已知技术边界
 
 - 平台构建目标与待验证范围见 `docs/PLATFORMS.md`；
-- 没有账号、云同步或跨设备同步；
+- 默认不启用云同步；私有个人同步与在线网页的边界见 `docs/SYNC.md`，不提供公开注册或多人空间；
 - Snapshot 是全量读取，数据规模很大时需要分页演进；
 - schema 迁移目前以兼容建表/更新为主，复杂演进需要显式迁移框架；
 - 当前没有独立前端测试框架；
@@ -341,3 +341,5 @@ UI/core -> invoke_module -> enabled/capability/path checks
 
 
 跨平台构建、原生凭据后端、runner 与打包配置以 [平台支持](../docs/PLATFORMS.md) 为准。
+
+Google Drive 入口为 `src/drive/`、`src-tauri/src/drive.rs`、`cloud/src/drive.ts` 与 `drive-credentials.ts`；仅保存元数据，schema 8，真实 OAuth 配置及令牌不得入公开仓库。

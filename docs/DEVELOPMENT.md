@@ -4,6 +4,12 @@
 
 使用自动化编程 Agent 贡献时，还应先阅读根目录 [AGENTS.md](../AGENTS.md) 和 [.agent 协作手册](../.agent/README.md)。
 
+项目同时包含可选云端工作区 `cloud/`。`pnpm install --frozen-lockfile` 安装两个工作区依赖；构建 Worker 所需的 `esbuild`、`workerd` 安装脚本由 `pnpm-workspace.yaml` 明确允许。网页构建仍为 `pnpm build`，云端类型与本地 SQLite/R2 集成测试分别为 `pnpm cloud:check`、`pnpm cloud:test`。个人部署仅通过仓库外配置进行，不能在公开 CI 使用私人凭据；使用方式见 [云同步指南](SYNC.md)，独立部署步骤见 [Cloudflare 自托管指南](../deploy/cloudflare/README.md)。
+
+`cloud/` 只包含服务实现与本地模拟；`deploy/cloudflare/` 包含公开占位模板和运维说明。`pnpm cloud:setup --dir <仓库外绝对目录>` 生成未填写的个人配置，`pnpm cloud:deploy --config <仓库外配置>` 必须显式选择自己的部署；`--secret SECRET_NAME` 使用交互输入，不接受密钥值参数。公开源码、CI、测试和通用客户端不能依赖维护者的部署。
+
+桌面客户端配置是独立的 `services.json`，格式见[客户端服务配置](SERVICE_CONFIG.md)，公开模板位于 `deploy/client/services.example.json`。实现入口 `src-tauri/src/service_config.rs`；设备状态和地址绑定在 `sync.rs`，令牌留在原生凭据库。不要把实际客户端配置复制进源码或安装资源。
+
 ## 1. 环境要求
 
 核心应用可原生构建 Windows x64/ARM64、macOS ARM64、Linux x64/ARM64；完整依赖、凭据要求与 runner 矩阵见 [平台支持](PLATFORMS.md)。以下清单是 Windows x64 的开发环境示例：
@@ -84,7 +90,7 @@ pnpm dev
 | `pnpm desktop:build` | 生成 release EXE 和 NSIS 安装包 |
 | `cargo test --manifest-path src-tauri/Cargo.toml --lib` | 运行 Rust 库测试 |
 
-通用打印界面仅在安装兼容模块后可用。外部实现的协议、渲染与客户端认证应在其独立项目验证；本仓库的构建不验证实际打印、学校认证或网络接收。
+系统打印直接内置，默认入口不需要安装模块。点击打印时在当前主窗口后台准备文件，直接调用系统打印对话框；没有额外页面或窗口。`vite.config.ts` 在开发时提供本地 PDF.js 字体/解码资源，构建时把同一资源集写入 `dist/pdfjs/`；渲染库和 Worker 按需加载。验证应覆盖点击后不导航/不创建窗口、打印媒体仅含所选文件（主界面与弹窗不可混入）、多页及中文 PDF、图片、密码重试/取消、文件丢失/损坏/超限、重复准备、原生调用失败以及 `afterprint` 清理。未发出 `afterprint` 的原生 WebView 会保留单份隐藏文档至下一次打印或应用关闭；不能在接口刚返回时提前删除。各平台仍需用真实原生对话框验收打印机选择、页码、份数和单双面。浏览器中模拟 IPC 的测试不等同桌面集成验证。可选外部实现的协议、渲染与客户端认证应在其独立项目验证。
 
 完整本地验证：
 
@@ -124,7 +130,7 @@ pnpm desktop:build
 
 1. 新安装建表；
 2. 旧数据库升级；
-3. 版本 1–6 备份恢复后的补表；
+3. 版本 1–7 备份恢复后的结构检查、暂存迁移与同步隔离；
 4. `PRAGMA user_version`；
 5. Snapshot 序列化兼容；
 6. Rust 测试中的最小测试 schema。
@@ -238,7 +244,8 @@ pnpm build
 - `modules/recurring-assignments/`：周期规则、私有表、调度、时间线及前端服务；
 - `modules/registry.rs`：编译期后端注册，前端由 `src/moduleRegistry.ts` 发现；
 - `src/ImportInbox.tsx` / `src-tauri/src/import_sync.rs`：通用外部导入审核；
-- `src/printing.tsx`：可选打印能力的通用界面。
+- `src/printing.tsx`：默认系统打印入口与可选外部打印模块界面。
+- `src/systemPrint.ts`、`src-tauri/src/printing.rs`：本地文档准备及原生系统打印调用。
 
 运行 `pnpm repository:check` 检查 Git 跟踪的模块白名单、应用/模块版本一致性和本地 Markdown 文件链接。`.gitignore` 阻止意外添加其他模块；检查脚本也会拒绝强制添加的非白名单模块。不要上传数据库、备份、实际课程文件或凭据。
 

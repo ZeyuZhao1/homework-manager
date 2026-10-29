@@ -1,0 +1,5 @@
+packages:
+  - cloud
+allowBuilds:
+  esbuild: true
+  workerd: true

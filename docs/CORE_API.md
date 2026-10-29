@@ -1,6 +1,6 @@
 # 核心接口参考
 
-本文记录作业簿当前 `main` 前端与 Tauri 后端之间的接口。它不是网络 HTTP API；调用只发生在桌面应用的 WebView 与同一进程的 Rust 后端之间。
+本文记录作业簿前端与桌面核心之间的接口；启用真实网页版时，`src/service.ts` 会选择同形状的在线适配器。独立同步 HTTP 协议见 [SYNC_DESIGN.md](SYNC_DESIGN.md)。
 
 前端代码应优先调用 `src/service.ts`，不要在页面组件中直接使用 `invoke`。内置 AI 模块使用自己的 `modules/assignment-import/frontend/service.ts`，并在需要写入核心数据时回到核心服务。
 
@@ -13,7 +13,7 @@ const snapshot = await service.snapshot()
 const id = await service.saveAssignment(assignment)
 ```
 
-浏览器预览模式下，同一服务对象会使用 LocalStorage 示例状态。文件选择器、SQLite、系统凭据和本地模块只在 Tauri 桌面模式可用。
+Vite 开发预览使用 LocalStorage 示例状态。生产网页版通过同源 `/api` 访问真实数据，未授权先进入设备授权界面；连接失败不退回样例。SQLite、系统凭据和本地进程模块仅在桌面可用。
 
 通用约定：
 
@@ -132,7 +132,7 @@ interface LinkBatchInput {
 
 ```ts
 interface Settings {
-  theme: 'light' | 'dark'
+  theme: 'light' | 'dark' | 'system'
   naming_template: string
 }
 
@@ -269,7 +269,7 @@ interface RenamePreview {
 | 前端服务 | Tauri 命令 | 行为 |
 | --- | --- | --- |
 | `backup(path)` | `backup_database` | 使用 SQLite backup API 导出当前数据库 |
-| `restore(path)` | `restore_database` | 先做 `integrity_check`，接受 `user_version` 1–6，然后恢复、补表并升级到版本 6 |
+| `restore(path)` | `restore_database` | 接受 `user_version` 1–8；暂存库校验核心结构、引用、模块与迁移后再替换，恢复后断开旧设备授权并暂停同步 |
 | `compactDatabase()` | `compact_database` | 清理无引用文件记录，截断 WAL 并执行 `VACUUM` |
 
 恢复后会重新初始化内置模块的表与提示词兼容逻辑。备份不含 API Key、提示词、模块文件或实际学习文件。
@@ -301,7 +301,19 @@ interface RenamePreview {
 
 `invokeModule` 对外部模块应用 2 MB 请求、4 MB 输出和 120 秒超时。完整协议见 [MODULES.md](../MODULES.md)。
 
-关联文件的打印按钮通过现有 `invokeModule(moduleId, 'file.print', {paths: [file.path]})` 调用启用的打印模块，没有模块专属 Tauri 命令。默认参数通过可选 `file.print.configure` 的 `get` / `save` 操作读取和保存；可选 `file.print.authenticate` 只准备外部客户端认证，不承诺认证已完成。返回 `queued`、逐文件结果和 `warning`；浏览器预览明确拒绝本地打印。公共参数及失败语义见 [打印契约](../MODULES.md#55-fileprint)。
+关联文件的打印按钮默认使用核心系统打印，不依赖模块：
+
+| 服务 | Tauri 命令 | 输入 / 返回 | 行为 |
+| --- | --- | --- | --- |
+| `openSystemPrint(fileId)` | 前端编排下列两个命令 | 文件记录 ID / `void` | 按需加载本地渲染逻辑，在当前主窗口准备所选文件后直接调用系统打印；不导航、不创建新窗口 |
+| `readSystemPrintDocument(fileId)` | `read_system_print_document` | 文件记录 ID / `ArrayBuffer` | 仅允许主窗口调用；从数据库解析并规范化路径，校验文件及格式；阻塞任务读取至多 50 MiB，使用二进制 IPC 返回，不接受任意路径 |
+| `showSystemPrintDialog()` | `show_system_print_dialog` | 无 / `void` | 仅允许主窗口调用，调用当前 `WebviewWindow::print()` 打开系统打印对话框，不返回排队数或打印完成状态 |
+
+`src/systemPrint.ts` 在主窗口的隐藏内容区本地准备 PDF / 常见图片，完成全部准备后才调用打印接口；打印媒体样式只显示所选文件，隐藏主界面及弹窗。屏幕上的主界面保持不变。PDF 按 150 DPI 渲染，累计不超过 8000 万像素；加密文档使用应用内密码弹窗，取消时清理内容且不打印。准备失败时移除部分页面，不打开系统打印。`afterprint` 后清理文档；原生 WebView 未发送该事件时保留至下一次显式打印或关闭应用，避免异步打印读取到已清空的内容。准备期间全局拒绝重复请求。所有参数由系统对话框管理，主程序不枚举打印机、不保存系统打印配置、不自动重试。浏览器预览明确拒绝以上接口。
+
+系统打印只处理已有本机文件。Drive 关联保留在外部链接流程，云端附件需先下载；界面不显示其本机打印入口，Rust 在访问文件系统前也会拒绝这些引用。
+
+手动选择外部模块时，仍通过 `invokeModule(moduleId, 'file.print', {paths: [file.path]})` 调用。旧版配置和可选认证接口保持兼容，详情见 [打印契约](../MODULES.md#55-fileprint)。
 
 前端在快照或模块清单变化后，会把已关联且未失效的文件最小清单发送给所有启用的 `document.navigation.index` 模块。`open_file` 只在调用方提供合法 `linkId` 且该关联填写了页码或章节时调用 `document.navigation.open`；模块未接管时回退到普通打开，并在 `OpenFileResult.warning` 中解释定位失败。
 
@@ -445,3 +457,43 @@ try {
 ### 跨平台原生运行
 
 核心 Tauri 命令与 Snapshot 结构在所有桌面目标上保持相同，平台目录由 `app_data_dir()` 解析。AI 密钥仅由后端使用对应平台的原生凭据存储；Linux Secret Service 不可用或锁定时返回可操作的错误，不回退到模拟存储。课程选择器的绝对/相对路径拼接遵循所选根目录的路径规则，核心继续执行规范化和目录边界验证。详见 [平台支持](PLATFORMS.md)。
+
+## 可选同步接口
+
+桌面同步服务集中于 `src/sync/desktop.ts`，云协议类型位于 `src/sync/protocol.ts`。以下均通过 Tauri 调用，不把设备凭据返回 React；网页使用同源 HttpOnly 会话。
+
+| Tauri 命令 | 参数及行为 |
+| --- | --- |
+| `sync_status` | 读取本地开关、连接、队列、游标、错误、基线数量及 `service_config_path`；从 `services.json` 解析服务，换源后不复用旧授权，不请求网络 |
+| `sync_open_service_config_directory` | 仅打开固定用户配置目录；配置损坏时仍可用，不接受任意路径，不请求网络 |
+| `sync_pair_start` | `serverUrl,deviceName`，申请短时配对，轮询秘密保存在系统凭据库 |
+| `sync_pair_poll` | 领取配对结果并保存设备凭据，前端不接收 Token |
+| `sync_bootstrap` | `serverUrl,deviceName,bootstrapSecret`，首台设备初始化；Secret 不持久化 |
+| `sync_set_enabled` | `enabled`，首次显式开启采集基线；关闭停止同步请求 |
+| `sync_now` | 推送有序幂等操作、分页拉取、原子回放、确认队列；基线 begin/complete 保护周期迁移 |
+| `sync_devices` | 联网查询授权设备，只有明确操作或已开启同步时调用 |
+| `sync_approve_pair` | `code`，已授权设备批准新设备 |
+| `sync_revoke_device` | `deviceId`，撤销指定设备，释放其待完成基线保护 |
+| `sync_disconnect` | 清除本机连接，尽力注销远端；本地业务数据保留 |
+| `sync_recurring_action` | `operation,payload`，联网进行云节点生成、跳过与审核补齐 |
+| `sync_upload_file` | `fileId,confirmed`，只有本次明确确认才读取并上传实际内容 |
+| `sync_download_file` | `fileId,path,confirmed`，下载到不覆盖的绝对路径并更新本机定位及历史 |
+| `sync_remove_cloud_file` | `fileId`，移除云端内容可用性，不删除元数据或本地文件 |
+
+`DesktopSyncStatus.service_config_path` 是仅本机使用的文件位置，不进入云协议。服务地址配置与设备授权源地址分别保存；配对/初始化按用户明确操作保存所选服务，普通状态读取及安装升级只在文件缺失时初始化，不修改已有配置。格式与故障语义见[客户端服务配置](SERVICE_CONFIG.md)。
+
+`FileAsset` 增加可选 `name` 和 `cloud_available`。远端文件没有本机定位时，内部用 `cloud://` 占位，界面展示逻辑名称；占位不交给本地文件打开程序。服务端字段覆盖顺序不使用无时区的本机 `updated_at`。完整范围和隐私限制见 [云同步指南](SYNC.md)。
+
+
+## Google Drive 文件来源
+
+`FileAsset` 新增可选 `mime`、`drive_id`、`drive_resource_key` 及 `drive_unavailable`。Drive 文件使用稳定标识 `gdrive-<Drive ID>` 和内部引用 `gdrive:<Drive ID>`；它不是本地路径。名称仅为展示元数据，可以包含斜杠，不能用于磁盘操作。
+
+| 服务 / Tauri 命令 | 行为 |
+| --- | --- |
+| `service.driveRequest(action,payload)` / `drive_request` | 已配对设备显式访问 Drive 状态、授权流程、轮询、链接解析、元数据刷新和断开；暂停同步时仍可用，不触发同步 |
+| `service.registerDriveFiles(files)` / `register_drive_files` | 校验并原子保存 Drive 元数据，返回文件资产 ID；与现有作业/常用文件/周期文件关联共用文件身份 |
+
+`action` 仅允许 `status`、`start`、`poll`、`resolve`、`refresh`、`disconnect`，不能传任意网址或请求路径。读取网页服务时使用已有设备授权；设备凭据不返回前端。
+
+Drive 引用可通过原有 `linkFile` / `linkFilesBatch` 关联并设置用途、页码、章节、题号；`openFile` 在外部浏览器打开经过校验的 Drive URL。关联不创建云端内容版本，不能用于文件系统改名、定位、上传/下载或 AI 附件读取。名称和可访问状态变化记录 `metadata_refreshed` 历史。

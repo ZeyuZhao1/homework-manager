@@ -1,8 +1,12 @@
 mod db;
+mod drive;
 mod files;
 mod import_sync;
 mod modules;
+mod printing;
 mod window;
+mod sync;
+mod service_config;
 
 use tauri::Manager;
 
@@ -19,6 +23,25 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            drive::drive_request,
+            drive::register_drive_files,
+            sync::sync_recurring_action,
+            sync::sync_status,
+            sync::sync_open_service_config_directory,
+            sync::sync_pair_start,
+            sync::sync_pair_poll,
+            sync::sync_bootstrap,
+            sync::sync_set_enabled,
+            sync::sync_now,
+            sync::sync_devices,
+            sync::sync_approve_pair,
+            sync::sync_revoke_device,
+            sync::sync_disconnect,
+            sync::sync_upload_file,
+            sync::sync_download_file,
+            sync::sync_remove_cloud_file,
+            printing::read_system_print_document,
+            printing::show_system_print_dialog,
             db::load_snapshot,
             db::save_semester,
             db::delete_semester,
