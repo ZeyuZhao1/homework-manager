@@ -20,7 +20,7 @@ export interface Assignment {
   updated_at: string
   custom_fields: Record<string, string>
 }
-export interface FileAsset { id: string; path: string; missing: boolean }
+export interface FileAsset { id: string; path: string; missing: boolean; name?: string; cloud_available?: boolean }
 export interface CommonFile { course_id: string; file_id: string; kind: 'textbook' | 'extra' | 'other'; label: string }
 export interface FileLink { id: string; assignment_id: string; file_id: string; role: FileRole; page: string; chapter: string; problem: string; note: string }
 export interface RenameEvent { id: string; file_id: string; old_path: string; new_path: string; changed_at: string; undone_at: string | null }

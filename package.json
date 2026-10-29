@@ -12,7 +12,11 @@
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "test": "node --experimental-strip-types --test scripts/*.test.mjs",
-    "repository:check": "node scripts/check-repository.mjs"
+    "repository:check": "node scripts/check-repository.mjs && node scripts/check-cloud-privacy.mjs",
+    "cloud:dev": "pnpm --dir cloud dev",
+    "cloud:check": "pnpm --dir cloud check",
+    "cloud:test": "pnpm --dir cloud test",
+    "cloud:deploy": "node scripts/cloud-deploy.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

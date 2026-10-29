@@ -3,6 +3,7 @@ mod files;
 mod import_sync;
 mod modules;
 mod window;
+mod sync;
 
 use tauri::Manager;
 
@@ -19,6 +20,20 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            sync::sync_recurring_action,
+            sync::sync_status,
+            sync::sync_pair_start,
+            sync::sync_pair_poll,
+            sync::sync_bootstrap,
+            sync::sync_set_enabled,
+            sync::sync_now,
+            sync::sync_devices,
+            sync::sync_approve_pair,
+            sync::sync_revoke_device,
+            sync::sync_disconnect,
+            sync::sync_upload_file,
+            sync::sync_download_file,
+            sync::sync_remove_cloud_file,
             db::load_snapshot,
             db::save_semester,
             db::delete_semester,

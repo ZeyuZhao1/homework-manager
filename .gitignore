@@ -40,3 +40,14 @@ src-tauri/gen/schemas/
 *.sqlite3
 .env
 .env.*
+
+# Private cloud deployment configuration and local runtime state
+**/.wrangler/
+**/.dev.vars
+**/.dev.vars.*
+**/wrangler.private.*
+**/wrangler.production.*
+**/cloudflare.private.*
+**/*.secrets.json
+private/
+.private/

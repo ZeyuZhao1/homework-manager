@@ -93,6 +93,12 @@ pub struct ApplyImport {
     pub decisions: Vec<ImportDecision>,
 }
 
+/// Versioned, unambiguous source identity shared by independent devices.
+pub(crate) fn source_id(kind: &str, parts: &[&str]) -> String {
+    let key = format!("homework-manager/import/v1/{kind}/{}", serde_json::to_string(parts).expect("string array"));
+    Uuid::new_v5(&Uuid::NAMESPACE_URL, key.as_bytes()).to_string()
+}
+
 pub fn initialize(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS assignment_import_course_map (
@@ -312,9 +318,10 @@ fn apply(conn: &mut Connection, payload: ApplyImport) -> Result<usize, String> {
             if choice.new_name.trim().is_empty() || choice.new_name.len() > 200 {
                 return Err("新课程名称无效".into());
             }
-            let id = Uuid::new_v4().to_string();
+            let mapped = tx.query_row("SELECT course_id FROM assignment_import_course_map WHERE module_id=?1 AND account_key=?2 AND remote_course_id=?3",params![payload.module_id,payload.snapshot.account_key,remote.id],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?;
+            let id = mapped.unwrap_or_else(|| source_id("course", &[&payload.module_id,&payload.snapshot.account_key,&remote.id]));
             tx.execute(
-                "INSERT INTO courses(id,semester_id,name,code,folder_path) VALUES (?1,?2,?3,?4,'')",
+                "INSERT OR IGNORE INTO courses(id,semester_id,name,code,folder_path) VALUES (?1,?2,?3,?4,'')",
                 params![id, choice.semester_id, choice.new_name.trim(), remote.code],
             )
             .map_err(|e| e.to_string())?;
@@ -356,7 +363,7 @@ fn apply(conn: &mut Connection, payload: ApplyImport) -> Result<usize, String> {
             if linked.is_some() || remote.status != "unknown" {
                 return Err("此作业不能新建".into());
             }
-            let id = Uuid::new_v4().to_string();
+            let id = source_id("assignment", &[&payload.module_id,&payload.snapshot.account_key,&remote.course_id,&remote.id]);
             let now = db::now();
             tx.execute("INSERT INTO assignments(id,course_id,title,description,due_at,status,submission_label,submission_url,submission_notes,source_name,source_text,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,'todo','',?6,'',?7,'',?8,?8)",params![id,course_id,remote.title.trim(),remote.description,remote.due_at,remote.url,payload.module_id,now]).map_err(|e|e.to_string())?;
             id
@@ -495,6 +502,40 @@ mod tests {
             fields: fields.iter().map(|s| s.to_string()).collect(),
         }
     }
+    #[test]
+    fn independent_devices_use_the_same_source_identity() {
+        let mut ids = Vec::new();
+        for _ in 0..2 {
+            let mut conn = database();
+            apply(&mut conn, ApplyImport {
+                module_id: "test.sync".into(), snapshot: snapshot("unknown", "Homework"),
+                courses: vec![CourseChoice {remote_course_id:"remote-course".into(),course_id:String::new(),semester_id:"term".into(),new_name:"New course".into()}],
+                decisions: vec![decision("create", "", &[])],
+            }).unwrap();
+            ids.push(conn.query_row("SELECT course_id,assignment_id FROM assignment_import_links JOIN assignment_import_course_map USING(module_id,account_key,remote_course_id)",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).unwrap());
+        }
+        assert_eq!(ids[0], ids[1]);
+        assert_ne!(ids[0].0, ids[0].1);
+        // JSON arrays prevent ambiguous delimiter-containing source keys.
+        assert_ne!(source_id("assignment", &["a:b", "c"]), source_id("assignment", &["a", "b:c"]));
+    }
+
+    #[test]
+    fn existing_random_source_mapping_ids_are_preserved() {
+        let mut conn = database();
+        conn.execute("INSERT INTO assignment_import_course_map VALUES('test.sync','account','remote-course','course')",[]).unwrap();
+        conn.execute("INSERT INTO assignments VALUES('legacy-random-id','course','Old','',NULL,'todo','','','','test.sync','','now','now')",[]).unwrap();
+        conn.execute("INSERT INTO assignment_import_links VALUES('test.sync','account','remote-course','remote-a','legacy-random-id','{}')",[]).unwrap();
+        apply(&mut conn, ApplyImport {
+            module_id:"test.sync".into(),snapshot:snapshot("unknown","Updated"),
+            courses:vec![CourseChoice{remote_course_id:"remote-course".into(),course_id:String::new(),semester_id:"term".into(),new_name:"Unused".into()}],
+            decisions:vec![decision("update","legacy-random-id",&["title"])],
+        }).unwrap();
+        assert_eq!(conn.query_row("SELECT id FROM assignments",[],|r|r.get::<_,String>(0)).unwrap(),"legacy-random-id");
+        assert_eq!(conn.query_row("SELECT course_id FROM assignment_import_course_map",[],|r|r.get::<_,String>(0)).unwrap(),"course");
+        assert_eq!(conn.query_row("SELECT count(*) FROM courses",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+    }
+
     #[test]
     fn repeated_scan_and_submitted_change_require_review() {
         let mut conn = database();

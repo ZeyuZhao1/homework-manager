@@ -1,0 +1,36 @@
+/* File associations stay quiet until their details are needed. */
+.file-page-main > strong { white-space:normal; overflow-wrap:anywhere; line-height:1.5; }
+.file-relation-details { margin-top:7px; color:var(--muted); font-size:12px; }
+.file-relation-details > summary { display:flex; align-items:center; gap:8px; min-height:32px; width:fit-content; max-width:100%; cursor:pointer; list-style:none; border-radius:5px; }
+.file-relation-details > summary::-webkit-details-marker { display:none; }
+.file-relation-details > summary > svg { flex:none; transition:transform .15s ease; }
+.file-relation-details[open] > summary > svg { transform:rotate(180deg); }
+.file-relation-summary-text { display:flex; flex-wrap:wrap; gap:3px 10px; line-height:1.65; min-width:0; }
+.file-relation-summary-text > span { overflow-wrap:anywhere; }
+.file-relation-course { color:var(--text); }
+.file-relation-details > summary:hover { color:var(--blue); }
+.file-relation-details > summary:focus-visible,.file-relation-assignment:focus-visible { outline:2px solid var(--blue); outline-offset:3px; }
+.file-relation-content { margin-top:5px; padding:12px 0 0; border-top:1px solid var(--border); }
+.file-relation-courses { display:flex; flex-wrap:wrap; gap:4px 12px; margin-bottom:8px; color:var(--muted); line-height:1.6; }
+.file-relation-courses > span { overflow-wrap:anywhere; }
+.file-relation-links { display:grid; }
+.file-relation-assignment { position:relative; display:block; width:100%; padding:10px 25px 10px 0; border:0; border-bottom:1px solid var(--border); background:transparent; color:var(--text); text-align:left; font:inherit; cursor:pointer; }
+.file-relation-assignment:last-child { border-bottom:0; }
+.file-relation-assignment > svg { position:absolute; right:0; top:13px; color:var(--muted); }
+.file-relation-assignment-main { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 10px; line-height:1.65; }
+.file-relation-assignment-title { overflow-wrap:anywhere; }
+.file-relation-role { color:var(--muted); font-size:11px; }
+.file-relation-note { display:block; margin-top:3px; line-height:1.65; color:var(--muted); overflow-wrap:anywhere; }
+.file-relation-assignment:hover .file-relation-assignment-title { color:var(--blue); }
+.file-relation-owner { margin:8px 0; line-height:1.7; overflow-wrap:anywhere; }
+.file-relation-location { margin-top:10px; font-size:11px; line-height:1.7; }
+.file-relation-location > span { color:var(--muted); }
+.file-relation-location > p { margin:2px 0; color:var(--text); overflow-wrap:anywhere; user-select:text; -webkit-user-select:text; }
+@media(max-width:780px) {
+  .app-shell[data-view="files"] .file-relation-details > summary { min-height:38px; font-size:12px; }
+  .file-relation-content { padding-top:10px; }
+  .file-relation-assignment { padding-top:12px; padding-bottom:12px; font-size:13px; min-height:44px; }
+  .file-relation-assignment > svg { top:16px; }
+  .file-relation-owner,.file-relation-location { font-size:12px; }
+}
+@media(prefers-reduced-motion:reduce) { .file-relation-details > summary > svg { transition:none; } }

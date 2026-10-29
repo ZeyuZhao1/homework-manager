@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { FolderOpen } from 'lucide-react'
+import { isCloudReference } from './filePresentation'
 import { service } from './service'
 import type { FileAsset } from './types'
 
@@ -70,7 +71,7 @@ export function FileContextMenu({ file, className, children, menuItems }: { file
           items[index]?.focus()
         }
       }}>
-      <button ref={itemRef} role="menuitem" onClick={() => {
+      <button ref={itemRef} role="menuitem" disabled={!service.isDesktop || !!file && isCloudReference(file.path)} title={!service.isDesktop || !!file && isCloudReference(file.path) ? "桌面专属" : undefined} onClick={() => {
         setPosition(null)
         previousFocus.current?.focus()
         if (file) void service.openFileDirectory(file.id).catch(error => window.alert(`打开所在文件夹失败：${error instanceof Error ? error.message : String(error)}`))

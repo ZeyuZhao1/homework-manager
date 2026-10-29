@@ -1,0 +1,15 @@
+{
+  "id": "/",
+  "name": "作业簿",
+  "short_name": "作业簿",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f0f3f8",
+  "theme_color": "#f0f3f8",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

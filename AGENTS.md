@@ -13,9 +13,10 @@
 3. **文件不随记录删除**：删除学期、课程关联或作业不能删除磁盘上的真实文件。
 4. **副作用可解释、可验证**：网络发送、数据库恢复和文件改名必须有明确的用户动作、错误处理及必要确认。
 5. **保留审计历史**：修改文件关联、位置或名称时，不得绕过 `file_history` / `rename_history`。
-6. **凭据不入库、不入日志**：API Key 只保存在系统原生凭据存储（Windows Credential Manager、macOS Keychain、Linux Secret Service）；不得写入 SQLite、备份、源码、测试夹具或输出日志。
+6. **凭据不入库、不入日志**：桌面 API Key 和设备授权只保存在系统原生凭据存储（Windows Credential Manager、macOS Keychain、Linux Secret Service）；网页 AI 专用 Key 可由已授权网页提交，独立加密保存在私有对象存储，加密主密钥仅使用 Worker Secret；不能自动上传桌面 Key。不得把凭据写入 SQLite、备份、源码、测试夹具或输出日志。
 7. **外部模块不是沙箱**：不得把模块协议的路径校验描述成操作系统隔离；新增能力要维持最小数据暴露。
 8. **兼容现有数据**：schema 变更必须考虑已有数据库、`user_version`、备份恢复和模块迁移。
+9. **同步可选、部署私有**：同步默认关闭，关闭时不发送同步请求；附件内容每次显式确认后才上传。真实 Cloudflare 域名、账号/资源 ID、资源名、路由及 OAuth 配置放在仓库外，不能进入公开源码、CI 或安装包。公共 CI 只能运行本地模拟。
 
 ## 编码边界
 
@@ -64,6 +65,7 @@ pnpm desktop:build
 | 内置 AI 模块 | `modules/assignment-import/README.md` |
 | 环境、脚本、测试 | `docs/DEVELOPMENT.md` |
 | 版本与发布 | `CHANGELOG.md`、`docs/RELEASING.md` |
+| 可选云同步、网页、设备授权 | `docs/SYNC.md`、`docs/SYNC_DESIGN.md`、Cloudflare 本地集成测试及隐私检查 |
 | Agent 协作规则 | `.agent/` 与本文件 |
 
 ## Git 与协作

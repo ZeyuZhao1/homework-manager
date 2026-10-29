@@ -4,6 +4,8 @@
 
 使用自动化编程 Agent 贡献时，还应先阅读根目录 [AGENTS.md](../AGENTS.md) 和 [.agent 协作手册](../.agent/README.md)。
 
+项目同时包含可选云端工作区 `cloud/`。`pnpm install --frozen-lockfile` 安装两个工作区依赖；构建 Worker 所需的 `esbuild`、`workerd` 安装脚本由 `pnpm-workspace.yaml` 明确允许。网页构建仍为 `pnpm build`，云端类型与本地 SQLite/R2 集成测试分别为 `pnpm cloud:check`、`pnpm cloud:test`。个人部署仅通过仓库外配置进行，不能在公开 CI 使用私人凭据；详见 [云同步指南](SYNC.md)。
+
 ## 1. 环境要求
 
 核心应用可原生构建 Windows x64/ARM64、macOS ARM64、Linux x64/ARM64；完整依赖、凭据要求与 runner 矩阵见 [平台支持](PLATFORMS.md)。以下清单是 Windows x64 的开发环境示例：
@@ -124,7 +126,7 @@ pnpm desktop:build
 
 1. 新安装建表；
 2. 旧数据库升级；
-3. 版本 1–6 备份恢复后的补表；
+3. 版本 1–7 备份恢复后的结构检查、暂存迁移与同步隔离；
 4. `PRAGMA user_version`；
 5. Snapshot 序列化兼容；
 6. Rust 测试中的最小测试 schema。

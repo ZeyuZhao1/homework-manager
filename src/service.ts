@@ -3,6 +3,7 @@ import { open, save } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { Assignment, CommonFile, Course, DirectoryEntry, FileHistoryEvent, FileLink, FileRole, LinkBatchInput, LinkInput, ModuleDescriptor, NamingInput, OpenFileResult, RenamePreview, Semester, Settings, Snapshot } from './types'
 import type { ApplyImport, ImportPreview, RemoteSnapshot } from './importSync'
+import { cloudService, webSync } from './sync/web'
 
 const desktop = isTauri()
 const root = 'D:\\share\\University\\Year 1 Fall'
@@ -35,8 +36,9 @@ function trackPreview(fileId: string, eventType: FileHistoryEvent['event_type'],
   previewState.file_history.unshift({ id:newId(), file_id:fileId, link_id:link?.id || '', assignment_id:link?.assignment_id || '', assignment_title:previewState.assignments.find(a => a.id === link?.assignment_id)?.title || '', event_type:eventType, path, details, file_size:null, modified_at_ms:null, occurred_at:new Date().toISOString() })
 }
 
-export const service = {
+const localService = {
   isDesktop: desktop,
+  get isCloud() { return webSync.isCloud },
   async snapshot(): Promise<Snapshot> { return desktop ? invoke<Snapshot>('load_snapshot') : clone() },
   async saveSemester(payload: Semester) {
     if (desktop) return invoke<string>('save_semester', { payload })
@@ -187,3 +189,10 @@ export const service = {
   async openModulesDirectory() { if (desktop) return invoke<void>('open_modules_directory') },
   async openUrl(url: string) { if (desktop) return openUrl(url); window.open(url, '_blank', 'noopener,noreferrer') },
 }
+
+export const service = new Proxy(localService, {
+  get(target, key, receiver) {
+    if (!desktop && webSync.isCloud && key in cloudService) return Reflect.get(cloudService, key)
+    return Reflect.get(target, key, receiver)
+  },
+})

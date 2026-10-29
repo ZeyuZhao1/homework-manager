@@ -1,0 +1,101 @@
+.assignment-editor,
+.assignment-editor .form-grid > *,
+.assignment-editor .recent-control,
+.assignment-editor .custom-fields,
+.assignment-editor .custom-field-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.assignment-editor .form-grid > .span-2 {
+  grid-column: 1 / -1;
+}
+
+.assignment-editor input,
+.assignment-editor select,
+.assignment-editor textarea {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Native date controls also have an intrinsic minimum in mobile WebKit. */
+.assignment-editor input[type="datetime-local"] {
+  display: block;
+  width: 100%;
+}
+
+.assignment-editor input[type="datetime-local"]::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
+}
+
+.assignment-editor .recent-field > label {
+  margin-bottom: 0;
+}
+
+.assignment-editor .recent-toggle {
+  flex: none;
+}
+
+.assignment-editor .custom-fields-heading {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.assignment-editor .custom-fields-heading > .button {
+  width: auto;
+}
+
+.assignment-editor .custom-field-row > .icon-button {
+  flex: none;
+  align-self: start;
+}
+
+@media (max-width: 780px) {
+  .assignment-editor .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .assignment-editor .form-field {
+    line-height: 1.5;
+  }
+
+  .assignment-editor .form-field small {
+    margin-left: 6px;
+  }
+
+  .assignment-editor .custom-fields {
+    margin-top: 24px;
+    padding-top: 20px;
+  }
+
+  .assignment-editor .custom-fields-heading {
+    margin-bottom: 14px;
+  }
+
+  .assignment-editor .custom-field-row input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .assignment-editor .custom-field-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 40px;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .assignment-editor .custom-field-row input {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  .assignment-editor .custom-field-row > .icon-button {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}

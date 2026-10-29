@@ -346,6 +346,7 @@ fn candidate_dates(conn: &Connection, series: &SeriesRecord, rule: &RecurrenceRu
 }
 
 fn materialize(conn: &Connection, series_id: &str) -> Result<(), String> {
+    if crate::sync::cloud_managed(conn)? { return Ok(()) }
     let series = load_series(conn,series_id)?;
     let (rule,due_rule) = validate_series(conn,&series.input)?;
     conn.execute("DELETE FROM recurring_occurrences WHERE series_id=?1 AND assignment_id IS NULL AND state IN ('planned','blocked')", [series_id]).map_err(|e| e.to_string())?;
@@ -370,12 +371,14 @@ fn academic_week_for(conn: &Connection, rule: &RecurrenceRule, scheduled: NaiveD
 }
 
 fn generate_occurrence(conn: &Connection, occurrence_id: &str) -> Result<String, String> {
+    if crate::sync::cloud_managed(conn)? { return Err("云端管理的周期节点需联网后由云端生成或审核补齐".into()) }
     let (series_id,number,scheduled_at,due_at,state,assignment_id): (String,u32,Option<String>,Option<String>,String,Option<String>) = conn.query_row("SELECT series_id,sequence_no,scheduled_at,due_at,state,assignment_id FROM recurring_occurrences WHERE id=?1", [occurrence_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).map_err(|_| "周期节点不存在".to_string())?;
     if let Some(id) = assignment_id { return Ok(id); }
     if state != "planned" { return Err("该周期节点当前不能生成".into()); }
     let scheduled_raw = scheduled_at.ok_or("周期节点缺少生成时间")?;
     let scheduled = parse_dt(&scheduled_raw)?;
     let series = load_series(conn,&series_id)?;
+    if series.status != "active" { return Err("暂停或结束的周期不能生成作业".into()); }
     let rule: RecurrenceRule = serde_json::from_value(series.input.rule.clone()).map_err(|_| "周期规则格式无效".to_string())?;
     let title = render_title(&series.input.title_template,number,scheduled,academic_week_for(conn,&rule,scheduled));
     let assignment = Assignment { id:String::new(),course_id:series.input.course_id,title,description:series.input.description,due_at,status:"todo".into(),submission_label:series.input.submission_label,submission_url:series.input.submission_url,submission_notes:series.input.submission_notes,source_name:"周期作业".into(),source_text:series.input.name,created_at:String::new(),updated_at:String::new(),custom_fields:HashMap::new() };
@@ -385,6 +388,7 @@ fn generate_occurrence(conn: &Connection, occurrence_id: &str) -> Result<String,
 }
 
 pub fn sync(conn: &mut Connection) -> Result<(), String> {
+    if crate::sync::cloud_managed(conn)? { return Ok(()) }
     conn.execute("UPDATE recurring_occurrences SET state='skipped',updated_at=?1 WHERE state='generated' AND assignment_id IS NULL", [db::now()]).map_err(|e| e.to_string())?;
     let now = db::now();
     let due = {
@@ -400,6 +404,7 @@ pub fn sync(conn: &mut Connection) -> Result<(), String> {
 }
 
 pub fn assignment_saved(conn: &Connection, assignment_id: &str) -> Result<(), String> {
+    if crate::sync::cloud_managed(conn)? { return Ok(()) }
     let occurrence: Option<(String,String,u32)> = conn.query_row("SELECT o.id,o.series_id,o.sequence_no FROM recurring_occurrences o WHERE o.assignment_id=?1", [assignment_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(|e| e.to_string())?;
     let Some((_occurrence_id,series_id,sequence_no)) = occurrence else { return Ok(()) };
     let series = load_series(conn,&series_id)?;
@@ -503,6 +508,7 @@ fn get_recurring_series(conn: &Connection, id: String) -> Result<SeriesDetail, S
 }
 
 fn save_recurring_series(conn: &mut Connection, mut payload: SeriesInput) -> Result<String, String> {
+    if let Some(rule) = payload.rule.as_object_mut() { rule.entry("timezone").or_insert_with(|| Value::String("Asia/Shanghai".into())); }
     validate_series(conn,&payload)?;
     payload.id = db::id_or_new(&payload.id); let now = db::now(); let created = conn.query_row("SELECT created_at FROM recurring_series WHERE id=?1", [&payload.id], |r| r.get::<_,String>(0)).optional().map_err(|e| e.to_string())?.unwrap_or_else(|| now.clone());
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -517,7 +523,7 @@ fn save_recurring_series(conn: &mut Connection, mut payload: SeriesInput) -> Res
 fn set_recurring_series_state(conn: &mut Connection, id: String, status: String) -> Result<(), String> {
     if !["active","paused","ended","archived"].contains(&status.as_str()) { return Err("无效的周期状态".into()); }
     conn.execute("UPDATE recurring_series SET status=?2,updated_at=?3 WHERE id=?1", params![id,status,db::now()]).map_err(|e| e.to_string())?;
-    if matches!(status.as_str(),"ended"|"archived") { conn.execute("UPDATE recurring_occurrences SET state='cancelled',updated_at=?2 WHERE series_id=?1 AND state IN ('planned','blocked')", params![id,db::now()]).map_err(|e| e.to_string())?; }
+    if !crate::sync::cloud_managed(conn)? && matches!(status.as_str(),"ended"|"archived") { conn.execute("UPDATE recurring_occurrences SET state='cancelled',updated_at=?2 WHERE series_id=?1 AND state IN ('planned','blocked')", params![id,db::now()]).map_err(|e| e.to_string())?; }
     if status == "active" { materialize(conn,&id)?; sync(conn)?; }
     Ok(())
 }
@@ -535,6 +541,9 @@ fn skip_recurring_occurrence(conn: &Connection, id: String) -> Result<(), String
 }
 
 fn generate_recurring_occurrence(conn: &Connection, id: String) -> Result<String, String> {
+    if crate::sync::cloud_managed(conn)? { return Err("云端管理的周期节点需联网后由云端生成或审核补齐".into()) }
+    let status: String = conn.query_row("SELECT s.status FROM recurring_occurrences o JOIN recurring_series s ON s.id=o.series_id WHERE o.id=?1", [&id], |r| r.get(0)).map_err(|_| "周期节点不存在".to_string())?;
+    if status != "active" { return Err("暂停或结束的周期不能生成作业".into()); }
     let state_value: String = conn.query_row("SELECT state FROM recurring_occurrences WHERE id=?1", [&id], |r| r.get(0)).map_err(|_| "周期节点不存在".to_string())?;
     if state_value == "blocked" {
         let due_rule_raw: String = conn.query_row("SELECT s.due_rule_json FROM recurring_occurrences o JOIN recurring_series s ON s.id=o.series_id WHERE o.id=?1", [&id], |r| r.get(0)).map_err(|e| e.to_string())?;
@@ -545,6 +554,7 @@ fn generate_recurring_occurrence(conn: &Connection, id: String) -> Result<String
 }
 
 fn resolve_recurring_catch_up(conn: &mut Connection, decisions: Vec<CatchUpDecision>) -> Result<(), String> {
+    if crate::sync::cloud_managed(conn)? { return Err("云端管理的周期节点需联网后由云端生成或审核补齐".into()) }
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     for decision in decisions {
         match decision.action.as_str() { "generate" => { generate_occurrence(&tx,&decision.occurrence_id)?; }, "skip" => { tx.execute("UPDATE recurring_occurrences SET state='skipped',updated_at=?2 WHERE id=?1 AND state='planned' AND assignment_id IS NULL", params![decision.occurrence_id,db::now()]).map_err(|e| e.to_string())?; }, _ => return Err("补齐操作无效".into()) }
@@ -719,4 +729,63 @@ mod tests {
         assignment_deleted(&conn,&assignment_id).unwrap(); conn.execute("DELETE FROM assignments WHERE id=?1",[assignment_id]).unwrap(); sync(&mut conn).unwrap();
         assert_eq!(conn.query_row("SELECT COUNT(*) FROM recurring_occurrences WHERE series_id='paused' AND state='skipped'",[],|r|r.get::<_,i64>(0)).unwrap(),1);
     }
+    #[test]
+    fn disabled_module_still_records_deleted_occurrence_without_generating() {
+        let mut conn=schema();
+        store(&conn,"disabled-cleanup",input(serde_json::json!({"kind":"timed","start_at":"2000-01-01T08:00:00","frequency":"day","every":1}),Some(1),None));
+        sync(&mut conn).unwrap();
+        let assignment:String=conn.query_row("SELECT assignment_id FROM recurring_occurrences WHERE series_id='disabled-cleanup'",[],|r|r.get(0)).unwrap();
+        conn.execute("INSERT INTO module_states(module_id,enabled,updated_at) VALUES(?1,0,'now')",[ID]).unwrap();
+        crate::modules::assignment_deleted(&conn,&assignment).unwrap();
+        conn.execute("DELETE FROM assignments WHERE id=?1",[assignment]).unwrap();
+        let (state,linked):(String,Option<String>)=conn.query_row("SELECT state,assignment_id FROM recurring_occurrences WHERE series_id='disabled-cleanup'",[],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
+        assert_eq!(state,"skipped"); assert!(linked.is_none());
+    }
+    #[test]
+    fn cloud_managed_blocks_all_local_generation_and_preserves_migrated_nodes() {
+        let mut conn=schema();
+        let rule=serde_json::json!({"kind":"sequence","first_at":"2000-01-01T08:00:00","start_num":1,"end_num":3,"completion_trigger":"done"});
+        store(&conn,"cloud",input(rule.clone(),Some(3),None));
+        sync(&mut conn).unwrap();
+        let (occurrence_id,assignment_id):(String,String)=conn.query_row("SELECT id,assignment_id FROM recurring_occurrences WHERE series_id='cloud' AND sequence_no=1",[],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
+        conn.execute_batch("CREATE TABLE sync_runtime(id INTEGER PRIMARY KEY,cloud_managed INTEGER); INSERT INTO sync_runtime VALUES(1,1);").unwrap();
+        conn.execute("UPDATE assignments SET status='done' WHERE id=?1",[&assignment_id]).unwrap();
+        assignment_saved(&conn,&assignment_id).unwrap();
+        sync(&mut conn).unwrap();
+        let next_id:String=conn.query_row("SELECT id FROM recurring_occurrences WHERE series_id='cloud' AND sequence_no=2",[],|r|r.get(0)).unwrap();
+        assert!(generate_recurring_occurrence(&conn,next_id.clone()).is_err());
+        assert!(resolve_recurring_catch_up(&mut conn,vec![CatchUpDecision {occurrence_id:next_id.clone(),action:"generate".into()}]).is_err());
+        let mut edit=input(rule,Some(4),None);edit.id="cloud".into();edit.title_template="Changed {num}".into();
+        save_recurring_series(&mut conn,edit).unwrap();
+        assert_eq!(conn.query_row("SELECT id FROM recurring_occurrences WHERE series_id='cloud' AND sequence_no=1",[],|r|r.get::<_,String>(0)).unwrap(),occurrence_id);
+        assert_eq!(conn.query_row("SELECT state FROM recurring_occurrences WHERE id=?1",[next_id],|r|r.get::<_,String>(0)).unwrap(),"blocked");
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM assignments",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+    }
+
+    #[test]
+    fn paused_series_rejects_manual_and_catchup_generation_without_unblocking() {
+        let mut conn=schema();
+        store(&conn,"pause-guard",input(serde_json::json!({"kind":"sequence","first_at":"2000-01-01T08:00:00","start_num":1,"end_num":3,"completion_trigger":"done"}),Some(3),None));
+        conn.execute("UPDATE recurring_series SET status='paused' WHERE id='pause-guard'",[]).unwrap();
+        let first:String=conn.query_row("SELECT id FROM recurring_occurrences WHERE series_id='pause-guard' AND sequence_no=1",[],|r|r.get(0)).unwrap();
+        let next:String=conn.query_row("SELECT id FROM recurring_occurrences WHERE series_id='pause-guard' AND sequence_no=2",[],|r|r.get(0)).unwrap();
+        assert!(generate_recurring_occurrence(&conn,first.clone()).is_err());
+        assert!(generate_recurring_occurrence(&conn,next.clone()).is_err());
+        assert!(resolve_recurring_catch_up(&mut conn,vec![CatchUpDecision{occurrence_id:first,action:"generate".into()}]).is_err());
+        assert_eq!(conn.query_row("SELECT state FROM recurring_occurrences WHERE id=?1",[next],|r|r.get::<_,String>(0)).unwrap(),"blocked");
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM assignments",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+    }
+
+    #[test]
+    fn saving_series_preserves_explicit_timezone_and_defaults_new_rules() {
+        let mut conn=schema();
+        let mut value=input(serde_json::json!({"kind":"timed","start_at":"2099-01-01T08:00:00","frequency":"day","every":1,"timezone":"America/New_York"}),Some(2),None);
+        let id=save_recurring_series(&mut conn,value.clone()).unwrap();
+        value.id=id.clone(); value.title_template="Edited {num}".into();
+        save_recurring_series(&mut conn,value).unwrap();
+        assert_eq!(load_series(&conn,&id).unwrap().input.rule["timezone"],"America/New_York");
+        let id=save_recurring_series(&mut conn,input(serde_json::json!({"kind":"timed","start_at":"2099-01-01T08:00:00","frequency":"day","every":1}),Some(2),None)).unwrap();
+        assert_eq!(load_series(&conn,&id).unwrap().input.rule["timezone"],"Asia/Shanghai");
+    }
+
 }

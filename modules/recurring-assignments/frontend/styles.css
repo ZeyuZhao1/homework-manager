@@ -9,7 +9,11 @@
 .state-active { background: var(--blue-soft); color: var(--blue); }
 .state-paused { background: var(--orange-soft); color: var(--orange); }
 .recurring-progress { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-.recurring-progress::before { content: ""; width: 46px; height: 5px; border-radius: 4px; background: var(--border); }
+.recurring-progress::before { display: none; }
+.recurring-progress progress { appearance: none; width: 46px; height: 5px; border: 0; border-radius: 4px; overflow: hidden; background: var(--border); accent-color: var(--blue); }
+.recurring-progress progress::-webkit-progress-bar { background: var(--border); border-radius: 4px; }
+.recurring-progress progress::-webkit-progress-value { background: var(--blue); border-radius: 4px; }
+.recurring-progress progress::-moz-progress-bar { background: var(--blue); border-radius: 4px; }
 .recurring-progress i { position: absolute; display: none; }
 .series-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 17px 0; }
 .series-summary span { padding: 11px; border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; color: var(--muted); font-size: 12px; }

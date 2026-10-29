@@ -124,8 +124,8 @@ UI -> service.method()
 
 - `PRAGMA foreign_keys=ON`；
 - WAL 模式；
-- 当前 `user_version=6`；
-- 恢复接受版本 1–6；
+- 当前 `user_version=7`，可选同步实现位于 `src-tauri/src/sync.rs`、`src/sync/` 与 `cloud/`；
+- 恢复接受版本 1–7，暂存校验后替换并暂停旧设备同步；
 - 至少保留一个学期；
 - Snapshot 读取可能记录外部文件变化。
 
@@ -330,7 +330,7 @@ UI/core -> invoke_module -> enabled/capability/path checks
 ## 10. 已知技术边界
 
 - 平台构建目标与待验证范围见 `docs/PLATFORMS.md`；
-- 没有账号、云同步或跨设备同步；
+- 默认不启用云同步；私有个人同步与在线网页的边界见 `docs/SYNC.md`，不提供公开注册或多人空间；
 - Snapshot 是全量读取，数据规模很大时需要分页演进；
 - schema 迁移目前以兼容建表/更新为主，复杂演进需要显式迁移框架；
 - 当前没有独立前端测试框架；

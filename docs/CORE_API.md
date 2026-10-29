@@ -1,6 +1,6 @@
 # 核心接口参考
 
-本文记录作业簿当前 `main` 前端与 Tauri 后端之间的接口。它不是网络 HTTP API；调用只发生在桌面应用的 WebView 与同一进程的 Rust 后端之间。
+本文记录作业簿前端与桌面核心之间的接口；启用真实网页版时，`src/service.ts` 会选择同形状的在线适配器。独立同步 HTTP 协议见 [SYNC_DESIGN.md](SYNC_DESIGN.md)。
 
 前端代码应优先调用 `src/service.ts`，不要在页面组件中直接使用 `invoke`。内置 AI 模块使用自己的 `modules/assignment-import/frontend/service.ts`，并在需要写入核心数据时回到核心服务。
 
@@ -13,7 +13,7 @@ const snapshot = await service.snapshot()
 const id = await service.saveAssignment(assignment)
 ```
 
-浏览器预览模式下，同一服务对象会使用 LocalStorage 示例状态。文件选择器、SQLite、系统凭据和本地模块只在 Tauri 桌面模式可用。
+Vite 开发预览使用 LocalStorage 示例状态。生产网页版通过同源 `/api` 访问真实数据，未授权先进入设备授权界面；连接失败不退回样例。SQLite、系统凭据和本地进程模块仅在桌面可用。
 
 通用约定：
 
@@ -269,7 +269,7 @@ interface RenamePreview {
 | 前端服务 | Tauri 命令 | 行为 |
 | --- | --- | --- |
 | `backup(path)` | `backup_database` | 使用 SQLite backup API 导出当前数据库 |
-| `restore(path)` | `restore_database` | 先做 `integrity_check`，接受 `user_version` 1–6，然后恢复、补表并升级到版本 6 |
+| `restore(path)` | `restore_database` | 接受 `user_version` 1–7；暂存库校验核心结构、引用、模块与迁移后再替换，恢复后断开旧设备授权并暂停同步 |
 | `compactDatabase()` | `compact_database` | 清理无引用文件记录，截断 WAL 并执行 `VACUUM` |
 
 恢复后会重新初始化内置模块的表与提示词兼容逻辑。备份不含 API Key、提示词、模块文件或实际学习文件。
@@ -445,3 +445,26 @@ try {
 ### 跨平台原生运行
 
 核心 Tauri 命令与 Snapshot 结构在所有桌面目标上保持相同，平台目录由 `app_data_dir()` 解析。AI 密钥仅由后端使用对应平台的原生凭据存储；Linux Secret Service 不可用或锁定时返回可操作的错误，不回退到模拟存储。课程选择器的绝对/相对路径拼接遵循所选根目录的路径规则，核心继续执行规范化和目录边界验证。详见 [平台支持](PLATFORMS.md)。
+
+## 可选同步接口
+
+桌面同步服务集中于 `src/sync/desktop.ts`，云协议类型位于 `src/sync/protocol.ts`。以下均通过 Tauri 调用，不把设备凭据返回 React；网页使用同源 HttpOnly 会话。
+
+| Tauri 命令 | 参数及行为 |
+| --- | --- |
+| `sync_status` | 读取本地开关、连接、队列、游标、错误和基线数量，不请求网络 |
+| `sync_pair_start` | `serverUrl,deviceName`，申请短时配对，轮询秘密保存在系统凭据库 |
+| `sync_pair_poll` | 领取配对结果并保存设备凭据，前端不接收 Token |
+| `sync_bootstrap` | `serverUrl,deviceName,bootstrapSecret`，首台设备初始化；Secret 不持久化 |
+| `sync_set_enabled` | `enabled`，首次显式开启采集基线；关闭停止同步请求 |
+| `sync_now` | 推送有序幂等操作、分页拉取、原子回放、确认队列；基线 begin/complete 保护周期迁移 |
+| `sync_devices` | 联网查询授权设备，只有明确操作或已开启同步时调用 |
+| `sync_approve_pair` | `code`，已授权设备批准新设备 |
+| `sync_revoke_device` | `deviceId`，撤销指定设备，释放其待完成基线保护 |
+| `sync_disconnect` | 清除本机连接，尽力注销远端；本地业务数据保留 |
+| `sync_recurring_action` | `operation,payload`，联网进行云节点生成、跳过与审核补齐 |
+| `sync_upload_file` | `fileId,confirmed`，只有本次明确确认才读取并上传实际内容 |
+| `sync_download_file` | `fileId,path,confirmed`，下载到不覆盖的绝对路径并更新本机定位及历史 |
+| `sync_remove_cloud_file` | `fileId`，移除云端内容可用性，不删除元数据或本地文件 |
+
+`FileAsset` 增加可选 `name` 和 `cloud_available`。远端文件没有本机定位时，内部用 `cloud://` 占位，界面展示逻辑名称；占位不交给本地文件打开程序。服务端字段覆盖顺序不使用无时区的本机 `updated_at`。完整范围和隐私限制见 [云同步指南](SYNC.md)。

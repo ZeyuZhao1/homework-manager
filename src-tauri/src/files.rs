@@ -111,11 +111,13 @@ pub fn link_module_files(state: State<'_, AppState>, payload: ModuleFileBatchInp
 
 #[tauri::command]
 pub fn unlink_module_file(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut connection = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = connection.transaction().map_err(|e| e.to_string())?;
     let (file_id,path,label): (String,String,String) = conn.query_row("SELECT l.file_id,f.path,l.owner_label FROM module_file_links l JOIN file_assets f ON f.id=l.file_id WHERE l.id=?1", [&id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|_| "模块文件关联不存在".to_string())?;
     record_file_history(&conn,&file_id,&id,"","module_unlinked",&path,&format!("模块关联：{label}"))?;
     conn.execute("DELETE FROM module_file_links WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
-    crate::db::prune_unused_files(&conn)
+    crate::db::prune_unused_files(&conn)?;
+    conn.commit().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -124,7 +126,8 @@ pub fn save_common_file(state: State<'_, AppState>, payload: CommonFileInput) ->
     let path = fs::canonicalize(&payload.path).map_err(|_| "文件不存在".to_string())?;
     if !path.is_file() { return Err("请选择文件".into()); }
     let path = normal_path(&path);
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut connection = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = connection.transaction().map_err(|e| e.to_string())?;
     let course_exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM courses WHERE id=?1)", [&payload.course_id], |r| r.get(0)).map_err(|e| e.to_string())?;
     if !course_exists { return Err("课程不存在".into()); }
     conn.execute("INSERT OR IGNORE INTO file_assets(id,path) VALUES (?1,?2)", params![Uuid::new_v4().to_string(),path]).map_err(|e| e.to_string())?;
@@ -133,16 +136,19 @@ pub fn save_common_file(state: State<'_, AppState>, payload: CommonFileInput) ->
     let existed: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM common_files WHERE course_id=?1 AND file_id=?2)", params![payload.course_id,file_id], |r| r.get(0)).map_err(|e| e.to_string())?;
     conn.execute("INSERT INTO common_files(course_id,file_id,kind,label) VALUES (?1,?2,?3,?4) ON CONFLICT(course_id,file_id) DO UPDATE SET kind=excluded.kind,label=excluded.label", params![payload.course_id,file_id,payload.kind,label]).map_err(|e| e.to_string())?;
     record_file_history(&conn,&file_id,"","",if existed { "common_updated" } else { "common_added" },&path,&format!("常用文件：{label}"))?;
+    conn.commit().map_err(|e| e.to_string())?;
     Ok(file_id)
 }
 
 #[tauri::command]
 pub fn remove_common_file(state: State<'_, AppState>, course_id: String, file_id: String) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut connection = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = connection.transaction().map_err(|e| e.to_string())?;
     let (path,label): (String,String) = conn.query_row("SELECT f.path,c.label FROM common_files c JOIN file_assets f ON f.id=c.file_id WHERE c.course_id=?1 AND c.file_id=?2", params![course_id,file_id], |r| Ok((r.get(0)?,r.get(1)?))).map_err(|_| "常用文件不存在".to_string())?;
     record_file_history(&conn,&file_id,"","","common_removed",&path,&format!("取消常用文件：{label}"))?;
     conn.execute("DELETE FROM common_files WHERE course_id=?1 AND file_id=?2", params![course_id,file_id]).map_err(|e| e.to_string())?;
-    crate::db::prune_unused_files(&conn)
+    crate::db::prune_unused_files(&conn)?;
+    conn.commit().map_err(|e| e.to_string())
 }
 
 fn clean_segment(raw: &str) -> String {
@@ -195,8 +201,11 @@ pub(crate) fn normal_path(path: &Path) -> String {
 
 #[tauri::command]
 pub fn link_file(state: State<'_, AppState>, payload: LinkInput) -> Result<String, String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    link_file_impl(&conn, payload)
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let id = link_file_impl(&tx, payload)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(id)
 }
 
 #[tauri::command]
@@ -315,27 +324,31 @@ fn link_file_impl(conn: &rusqlite::Connection, payload: LinkInput) -> Result<Str
 
 #[tauri::command]
 pub fn save_file_link(state: State<'_, AppState>, payload: FileLink) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut connection = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = connection.transaction().map_err(|e| e.to_string())?;
     let (file_id,path): (String,String) = conn.query_row("SELECT f.id,f.path FROM assignment_files l JOIN file_assets f ON f.id=l.file_id WHERE l.id=?1", [&payload.id], |r| Ok((r.get(0)?,r.get(1)?))).map_err(|_| "文件关联不存在".to_string())?;
     conn.execute("UPDATE assignment_files SET role=?2,page=?3,chapter=?4,problem=?5,note=?6 WHERE id=?1", params![payload.id,payload.role,payload.page,payload.chapter,payload.problem,payload.note]).map_err(|e| e.to_string())?;
     record_file_history(&conn,&file_id,&payload.id,&payload.assignment_id,"link_updated",&path,&link_details(&payload.role,&payload.page,&payload.chapter,&payload.problem,&payload.note))?;
-    Ok(())
+    conn.commit().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn unlink_file(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut connection = state.db.lock().map_err(|e| e.to_string())?;
+    let conn = connection.transaction().map_err(|e| e.to_string())?;
     let (assignment_id,file_id,path,role,page,chapter,problem,note): (String,String,String,String,String,String,String,String) = conn.query_row("SELECT l.assignment_id,f.id,f.path,l.role,l.page,l.chapter,l.problem,l.note FROM assignment_files l JOIN file_assets f ON f.id=l.file_id WHERE l.id=?1", [&id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?))).map_err(|_| "文件关联不存在".to_string())?;
     record_file_history(&conn,&file_id,&id,&assignment_id,"unlinked",&path,&link_details(&role,&page,&chapter,&problem,&note))?;
     conn.execute("DELETE FROM assignment_files WHERE id=?1", [id]).map_err(|e| e.to_string())?;
     crate::db::prune_unused_files(&conn)?;
-    Ok(())
+    conn.commit().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn relink_file(state: State<'_, AppState>, file_id: String, path: String) -> Result<(), String> {
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
-    relink_file_impl(&conn, &file_id, &path)
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    relink_file_impl(&tx, &file_id, &path)?;
+    tx.commit().map_err(|e| e.to_string())
 }
 
 fn relink_file_impl(conn: &rusqlite::Connection, file_id: &str, path: &str) -> Result<(), String> {
