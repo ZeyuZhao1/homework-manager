@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useDialogFocus } from './ui'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, RefreshCw, X } from 'lucide-react'
 import { service } from './service'
 import { errorText } from './ui'
@@ -35,6 +36,8 @@ function defaultFields(item: ImportItem) {
 export function ImportInbox({ modules, snapshot: appSnapshot, onClose, onSaved }: {
   modules: ModuleDescriptor[]; snapshot: Snapshot; onClose: () => void; onSaved: () => Promise<void>
 }) {
+  const dialogRef = useRef<HTMLElement>(null)
+  useDialogFocus(dialogRef, onClose)
   const [moduleId, setModuleId] = useState(modules[0]?.id || '')
   const [source, setSource] = useState<RemoteSnapshot | null>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
@@ -80,7 +83,7 @@ export function ImportInbox({ modules, snapshot: appSnapshot, onClose, onSaved }
     } catch(e) {setError(errorText(e))} finally {setBusy(false)}
   }
   return <div className="import-backdrop" onMouseDown={event => {if(event.target===event.currentTarget)onClose()}}>
-    <aside className="import-inbox" role="dialog" aria-modal="true" aria-labelledby="import-inbox-title">
+    <aside ref={dialogRef} tabIndex={-1} className="import-inbox" role="dialog" aria-modal="true" aria-labelledby="import-inbox-title">
       <header><div><small>外部来源</small><h2 id="import-inbox-title">导入待审核</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={20}/></button></header>
       <div className="import-body">
         <div className="import-toolbar"><label>来源模块<select value={moduleId} onChange={event => setModuleId(event.target.value)}>{modules.map(module => <option key={module.id} value={module.id}>{module.name}</option>)}</select></label><button className="button button-quiet" onClick={() => void load(moduleId)} disabled={busy}><RefreshCw size={16}/>读取最新结果</button></div>

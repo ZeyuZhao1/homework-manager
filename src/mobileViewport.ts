@@ -5,19 +5,21 @@ export function installMobileViewport() {
   const touchInput = matchMedia('(pointer: coarse)')
   const standalone = matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
   const viewport = document.querySelector('meta[name="viewport"]')
-  if (standalone) viewport?.setAttribute('content', 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content')
+  const previousViewport = viewport?.getAttribute('content')
+  if (standalone) viewport?.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content')
   const visual = window.visualViewport
   let frame = 0, x = 0, y = 0, restingHeight = innerHeight
   let orientation = screen.orientation?.type
+  let layoutWidth = innerWidth
   const measure = () => {
     frame = 0
     if (!small.matches) {
       root.style.removeProperty('--app-viewport-height'); root.style.removeProperty('--app-viewport-top'); delete root.dataset.keyboard
       return
     }
-    // Ignore browser zoom in a normal browser tab; PWA zoom is disabled below.
+    // Pinch zoom magnifies the existing canvas without reflow.
     if (visual && Math.abs(visual.scale - 1) > .01) return
-    if (orientation !== screen.orientation?.type) { orientation = screen.orientation?.type; restingHeight = innerHeight }
+    if (orientation !== screen.orientation?.type || layoutWidth !== innerWidth) { orientation = screen.orientation?.type; layoutWidth = innerWidth; restingHeight = innerHeight }
     const height = visual?.height || innerHeight
     restingHeight = Math.max(restingHeight, innerHeight, height)
     root.style.setProperty('--app-viewport-height', `${height}px`)
@@ -28,10 +30,9 @@ export function installMobileViewport() {
   const schedule = () => { if (!frame) frame = requestAnimationFrame(measure) }
   const mediaChange = () => { restingHeight = innerHeight; schedule() }
   const preventGesture = (event: Event) => { if (event.cancelable) event.preventDefault() }
-  const wheel = (event: WheelEvent) => { if (event.ctrlKey) preventGesture(event) }
   const start = (event: TouchEvent) => { const touch = event.touches[0]; if (touch) { x = touch.clientX; y = touch.clientY } }
   const move = (event: TouchEvent) => {
-    if (event.touches.length > 1) { if (standalone) preventGesture(event); return }
+    if (event.touches.length > 1) return
     if (!small.matches || !event.touches.length || !standalone && visual && visual.scale > 1.01) return
     const touch = event.touches[0], dx = touch.clientX - x, dy = touch.clientY - y
     x = touch.clientX; y = touch.clientY
@@ -55,14 +56,14 @@ export function installMobileViewport() {
   window.addEventListener('resize', schedule); window.addEventListener('focusin', schedule); window.addEventListener('focusout', schedule); small.addEventListener('change', mediaChange)
   document.addEventListener('touchstart', start, { passive: true, capture: true })
   document.addEventListener('touchmove', move, { passive: false, capture: true })
-  if (standalone) document.addEventListener('wheel', wheel, { passive: false })
-  if (standalone) for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, preventGesture, { passive: false })
+
+
   return () => {
     cancelAnimationFrame(frame)
+    if (previousViewport !== null && previousViewport !== undefined) viewport?.setAttribute('content', previousViewport)
     visual?.removeEventListener('resize', schedule); visual?.removeEventListener('scroll', schedule)
     window.removeEventListener('resize', schedule); window.removeEventListener('focusin', schedule); window.removeEventListener('focusout', schedule); small.removeEventListener('change', mediaChange)
     document.removeEventListener('touchstart', start, true); document.removeEventListener('touchmove', move, true)
-    if (standalone) document.removeEventListener('wheel', wheel)
     if (standalone) for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.removeEventListener(type, preventGesture)
   }
 }

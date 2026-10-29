@@ -1,0 +1,39 @@
+/* Visual viewport and touch targets for Safari tabs and Home Screen windows. */
+.dialog-fields { border:0; margin:0; padding:0; min-width:0; }
+.detail-title,.detail-title>div,.recurring-title>div { min-width:0; }
+.detail-title h2,.detail-notes p,.source-detail p,.helper-text,.inline-error { overflow-wrap:anywhere; }
+@media(max-width:780px) {
+  input:not([type="checkbox"]):not([type="radio"]),select,textarea,
+  .source-textarea,.mobile-detail-screen .detail-actions>.status-select { font-size:16px!important; }
+  input,textarea { scroll-margin-block:24px; }
+  .mobile-topbar,.mobile-detail-bar { padding-left:max(16px,env(safe-area-inset-left)); padding-right:max(16px,env(safe-area-inset-right)); }
+  .app-shell[data-view]>.main-content,.mobile-detail-body,.modal-backdrop .modal-body,.drawer-scroll,.drawer-body,.import-body {
+    padding-left:max(20px,env(safe-area-inset-left)); padding-right:max(20px,env(safe-area-inset-right));
+  }
+  .ai-drawer { position:absolute; top:var(--app-viewport-top,0px); bottom:auto; height:var(--app-viewport-height,100dvh); max-height:var(--app-viewport-height,100dvh); }
+  .drawer-scroll,.drawer-body,.modal-body,.import-body { min-height:0; overscroll-behavior:contain; }
+  .modal-header,.modal-footer,.drawer-header,.drawer-footer { flex-shrink:0; }
+  .recurring-drawer { min-height:0; }
+  .drawer-heading h2 { font-size:21px; line-height:1.35; }
+  .mode-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .mode-grid button { min-width:0; font-size:13px; padding:12px 10px; }
+  .mode-grid button small { font-size:11px; line-height:1.5; }
+  .assignment-card-context { flex-wrap:wrap; gap:2px 12px; }
+  .assignment-card-course { max-width:100%; }
+  .modal-backdrop:has(.modal) { z-index:110; }
+  .file-context-menu { z-index:130; max-height:calc(var(--app-viewport-height,100dvh) - 16px); overflow:auto; }
+  .toast { z-index:20; overflow-wrap:anywhere; }
+  .modal-footer .button,.drawer-footer .button,.import-inbox>footer .button { min-height:44px; }
+  :root[data-keyboard="open"] .mobile-topbar { height:48px; min-height:48px; padding-block:4px; }
+  :root[data-keyboard="open"] .mobile-bottom-nav { display:none; }
+  :root[data-keyboard="open"] .app-shell[data-view]>.main-content { padding-bottom:20px; }
+  :root[data-keyboard="open"] .modal-backdrop .modal-header,
+  :root[data-keyboard="open"] .drawer-header,
+  :root[data-keyboard="open"] .drawer-heading { padding-top:10px; padding-bottom:10px; }
+  :root[data-keyboard="open"] .modal-backdrop .modal-footer,
+  :root[data-keyboard="open"] .drawer-footer,
+  :root[data-keyboard="open"] .import-inbox>footer { padding-top:10px; padding-bottom:10px; }
+}
+@media(prefers-reduced-transparency:reduce) {
+  .mobile-more-menu,.file-context-menu,.modal,.ai-drawer { background:var(--surface); backdrop-filter:none; -webkit-backdrop-filter:none; }
+}

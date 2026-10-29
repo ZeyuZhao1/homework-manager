@@ -47,6 +47,7 @@ function App() {
     const scrollTop = main?.scrollTop || 0
     detailRef.current?.focus()
     const handleKey = (event: KeyboardEvent) => {
+      if (event.isComposing || event.keyCode === 229) return
       if (event.key === 'Escape') {
         if (document.querySelector('.modal-backdrop, .drawer-scrim')) return
         event.preventDefault(); setMobileDetailOpen(false)
@@ -227,7 +228,7 @@ function App() {
   const showAssignments = (nextFilter: OverviewFilter) => { chooseView('all'); setFilter(nextFilter); mainRef.current?.scrollTo({ top: 0 }) }
   const openOverviewAssignment = (id: string) => { setSelectedId(id); setSelectedGroupId(''); setMobileDetailOpen(true); setMoreOpen(false) }
   const openOverviewGroup = (id: string) => { setSelectedGroupId(id); setSelectedId(''); setMobileDetailOpen(true); setMoreOpen(false) }
-  const saveAssignment = async (payload: Assignment) => { const okay = await run(() => service.saveAssignment(payload), payload.id ? '作业已更新' : '作业已创建'); if (!okay) throw new Error('保存失败'); setEditor(null) }
+  const saveAssignment = async (payload: Assignment) => { const okay = await run(() => service.saveAssignment(payload), payload.id ? '作业已更新' : '作业已创建'); if (!okay) throw new Error('保存失败'); setEditor(current => current === editor ? null : current) }
   const setStatus = (item: Assignment, status: Status) => { void run(() => service.saveAssignment({ ...item, status }), '状态已更新') }
   const deleteSelected = async () => { if (!selected || !window.confirm(`确定删除“${selected.title}”吗？关联记录会移除，磁盘文件不会删除。`)) return; await run(() => service.deleteAssignment(selected.id), '作业已删除'); setSelectedId(''); setMobileDetailOpen(false) }
   const deleteSemester = async (id: string) => {
@@ -271,8 +272,8 @@ function App() {
     {editor ? <AssignmentEditor initial={editor} courses={snapshot.courses} recentValues={snapshot.recent_values} onClose={() => setEditor(null)} onSave={saveAssignment} /> : null}
     {enabledAppModules.filter(module => module.id === activeModuleId).map(module => <module.Overlay key={module.id} snapshot={snapshot} onClose={() => setActiveModuleId(null)} onSettings={() => { setActiveModuleId(null); chooseView('settings') }} onSaved={async () => { await refresh(); setActiveModuleId(null); setToast(module.savedMessage) }} />)}
     {importInboxOpen && syncModules.length ? <ImportInbox modules={syncModules} snapshot={snapshot} onClose={() => setImportInboxOpen(false)} onSaved={refresh}/> : null}
-    {fileDrawer ? <FileDrawer snapshot={snapshot} assignmentId={fileDrawer.assignmentId} editing={fileDrawer.editing} initialRole={fileDrawer.role} onClose={() => setFileDrawer(null)} onSaved={async () => { await refresh(); setFileDrawer(null); setToast('文件关联已保存') }} onDelete={async id => { await run(() => service.unlinkFile(id), '文件关联已移除'); setFileDrawer(null) }} /> : null}
-    {renameLink ? <RenameDialog link={renameLink} file={snapshot.files.find(f => f.id === renameLink.file_id)} onClose={() => setRenameLink(null)} onDone={async () => { await refresh(); setRenameLink(null); setToast('文件已原地重命名，可在文件页撤回') }} /> : null}
+    {fileDrawer ? <FileDrawer snapshot={snapshot} assignmentId={fileDrawer.assignmentId} editing={fileDrawer.editing} initialRole={fileDrawer.role} onClose={() => setFileDrawer(null)} onSaved={async () => { await refresh(); setFileDrawer(current => current === fileDrawer ? null : current); setToast('文件关联已保存') }} onDelete={async id => { await run(() => service.unlinkFile(id), '文件关联已移除'); setFileDrawer(null) }} /> : null}
+    {renameLink ? <RenameDialog link={renameLink} file={snapshot.files.find(f => f.id === renameLink.file_id)} onClose={() => setRenameLink(null)} onDone={async () => { await refresh(); setRenameLink(current => current === renameLink ? null : current); setToast('文件已原地重命名，可在文件页撤回') }} /> : null}
     {courseEditor ? <CourseEditor initial={courseEditor} semesters={snapshot.semesters} onClose={() => setCourseEditor(null)} onSave={async value => { const okay = await run(() => service.saveCourse(value), '课程已保存'); if (okay) setCourseEditor(null) }} /> : null}
     {semesterEditor ? <SemesterEditor initial={semesterEditor} onClose={() => setSemesterEditor(null)} onSave={async value => { const okay = await run(() => service.saveSemester(value), '学期已保存'); if (okay) setSemesterEditor(null) }} /> : null}
     {toast ? <div className="toast" role="status"><AlertCircle size={17} />{toast}<button onClick={() => setToast('')} aria-label="关闭提示"><X size={15} /></button></div> : null}

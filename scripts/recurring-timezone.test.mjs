@@ -12,7 +12,7 @@ function fixture(initial) {
   const state=[], saved=[], alerts=[]; let cursor=0
   const useState = value => { const i=cursor++; if(!(i in state))state[i]=value; return [state[i],next=>{state[i]=typeof next==='function'?next(state[i]):next}] }
   const element=(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)})
-  const dependencies={useState,element,fragment:'fragment',CalendarClock:'icon',X:'icon',Link2:'icon',ChevronRight:'icon',recurring:{save:async payload=>{saved.push(payload);return 'series'}},service:{},manifest:{id:'recurring'},errorText:String,window:{alert:value=>alerts.push(value)}}
+  const dependencies={useRef:value=>({current:value}),useDialogFocus:()=>{},useState,element,fragment:'fragment',CalendarClock:'icon',X:'icon',Link2:'icon',ChevronRight:'icon',recurring:{save:async payload=>{saved.push(payload);return 'series'}},service:{},manifest:{id:'recurring'},errorText:String,window:{alert:value=>alerts.push(value)}}
   const component=new Function(...Object.keys(dependencies),`${compiled}\nreturn SeriesDrawer`)(...Object.values(dependencies))
   const render=()=>{cursor=0;return component({snapshot:{courses:[{id:'course',semester_id:'semester',name:'Course'}],semesters:[{id:'semester'}]},initial,onClose(){},onSaved:async()=>{}})}
   const find=(tree,predicate)=>predicate(tree)?tree:tree.children?.filter(v=>v&&typeof v==='object').map(v=>find(v,predicate)).find(Boolean)

@@ -1,4 +1,6 @@
-import { Fragment } from 'react'
+import { Fragment, useLayoutEffect, useRef } from 'react'
+import type { RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { AlertCircle, CheckCircle2, ChevronRight, Clock3, ExternalLink, File, FileText, History, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { service } from './service'
@@ -32,14 +34,73 @@ export function dueState(item: Assignment) {
 export function isOpen(item: Assignment) { return item.status !== 'submitted' }
 export function urlIsSafe(value: string) { try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false } }
 
+const dialogStack: HTMLElement[] = []
+let originalBodyOverflow = ''
+const focusableControls = 'button:not(:disabled), [href], input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+
+export function useDialogFocus(ref: RefObject<HTMLElement | null>, onClose: () => void) {
+  const close = useRef(onClose)
+  useLayoutEffect(() => { close.current = onClose }, [onClose])
+  useLayoutEffect(() => {
+    const dialog = ref.current
+    if (!dialog) return
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (!dialogStack.length) {
+      originalBodyOverflow = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+    }
+    dialogStack.push(dialog)
+    const controls = () => Array.from(dialog.querySelectorAll<HTMLElement>(focusableControls)).filter(element => element.getClientRects().length && !element.closest('[inert]'))
+    const focusFirst = () => (controls()[0] || dialog).focus({ preventScroll: true })
+    const isTop = () => dialogStack.at(-1) === dialog
+    const isMenu = (target: EventTarget | null) => target instanceof Element && !!target.closest('[role="menu"]')
+    const keydown = (event: KeyboardEvent) => {
+      if (!isTop() || event.defaultPrevented || event.isComposing || event.keyCode === 229 || isMenu(event.target)) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        close.current()
+      } else if (event.key === 'Tab') {
+        const items = controls()
+        const first = items[0]
+        const last = items.at(-1)
+        const active = document.activeElement
+        if (!first) { event.preventDefault(); dialog.focus(); return }
+        if (event.shiftKey && (active === first || !dialog.contains(active))) {
+          event.preventDefault(); last?.focus()
+        } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+          event.preventDefault(); first.focus()
+        }
+      }
+    }
+    const focusin = (event: FocusEvent) => {
+      if (isTop() && event.target instanceof Node && !dialog.contains(event.target) && !isMenu(event.target)) focusFirst()
+    }
+    document.addEventListener('keydown', keydown)
+    document.addEventListener('focusin', focusin)
+    focusFirst()
+    return () => {
+      const wasTop = isTop()
+      const index = dialogStack.indexOf(dialog)
+      if (index !== -1) dialogStack.splice(index, 1)
+      document.removeEventListener('keydown', keydown)
+      document.removeEventListener('focusin', focusin)
+      if (!dialogStack.length) document.body.style.overflow = originalBodyOverflow
+      if (wasTop && previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
+    }
+  }, [ref])
+}
+
 export function Modal({ title, onClose, children, footer, wide = false }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
-  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-    <section className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+  const dialogRef = useRef<HTMLElement>(null)
+  useDialogFocus(dialogRef, onClose)
+  return createPortal(<div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <section ref={dialogRef} tabIndex={-1} className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
       <header className="modal-header"><h2>{title}</h2><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={19} /></button></header>
       <div className="modal-body">{children}</div>
       {footer ? <footer className="modal-footer">{footer}</footer> : null}
     </section>
-  </div>
+  </div>, document.body)
 }
 
 export function AssignmentMobileSummary({ course, status, due, overdue = false, extra }: { course: string; status: ReactNode; due: string; overdue?: boolean; extra?: ReactNode }) {
