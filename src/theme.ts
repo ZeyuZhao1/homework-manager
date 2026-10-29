@@ -12,14 +12,10 @@ function paintTheme() {
   root.style.colorScheme = theme
   document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', theme)
   root.style.backgroundColor = color
-  // The page canvas paints the transparent iOS status area too.
+  // iOS derives its status-area background from the document canvas.
   document.body.style.backgroundColor = color
-  // Replace the node to invalidate WebKit's cached browser-chrome color.
-  const previous = document.querySelector('meta[name="theme-color"]')
-  const meta = document.createElement('meta')
-  meta.name = 'theme-color'; meta.content = color
-  if (previous) previous.replaceWith(meta)
-  else document.head.append(meta)
+  // For browsers that support theme-color; this is not an iOS repaint mechanism.
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color)
   try { document.cookie = `homeworkbook_theme=${theme}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}` } catch { /* Appearance also works with cookies disabled. */ }
 }
 

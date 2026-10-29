@@ -5,6 +5,7 @@ import App from './App.tsx'
 import { TitleBar } from './TitleBar'
 import { SyncRuntime } from './sync/SyncRuntime'
 import { installMobileViewport } from './mobileViewport'
+import './mobileCanvas.css'
 
 const disposeViewport = installMobileViewport()
 if (import.meta.hot) import.meta.hot.dispose(disposeViewport)

@@ -139,11 +139,11 @@ test('local Durable Object: authorization, pairing, receipt LWW, dedup, cascades
 
 
 test('appearance HTML and manifest are selected per request, never reused through conditional caching',async()=>{
- for(const [theme,statusBar,color]of [['light','black-translucent','#f0f3f8'],['dark','black-translucent','#1b1b1d']]){
+ for(const [theme,color]of [['light','#f0f3f8'],['dark','#1b1b1d']]){
   const headers={Cookie:`other=value; homeworkbook_theme=${theme}`,Accept:'text/html','If-None-Match':'"stale-index"'}
   const response=await fetch(base+'/',{headers});assert.equal(response.status,200)
   assert.match(response.headers.get('cache-control'),/private, no-store/);assert.equal(response.headers.get('etag'),null)
-  const html=await response.text();assert.ok(!html.includes('data-status-bar='));assert.ok(html.includes('data-appearance-rendered="true"'));assert.ok(html.includes(`name="theme-color" content="${color}"`));assert.ok(html.includes(`name="apple-mobile-web-app-status-bar-style" content="${statusBar}"`))
+  const html=await response.text();assert.ok(!html.includes('data-status-bar='));assert.ok(html.includes('data-appearance-rendered="true"'));assert.ok(html.includes(`name="theme-color" content="${color}"`));assert.ok(!html.includes('name="apple-mobile-web-app-status-bar-style"'))
   const manifest=await fetch(base+`/manifest.webmanifest?theme=${theme}&v=3`,{headers:{Cookie:'homeworkbook_theme=light','If-None-Match':'"stale-manifest"'}})
   assert.equal(manifest.status,200);assert.match(manifest.headers.get('cache-control'),/private, no-store/)
   const json=await manifest.json();assert.equal(json.id,'/');assert.equal(json.theme_color,color);assert.equal(json.background_color,color)

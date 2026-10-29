@@ -71,14 +71,12 @@ html:has(.app-shell[data-view]),body:has(.app-shell[data-view]){overflow:hidden;
 .app-shell[data-view] .form-field input:not([type="checkbox"]):not([type="radio"]),.app-shell[data-view] .form-field select{border-radius:9px}
 .app-shell[data-view] .sync-pair-approval input{border-radius:9px}
 .app-shell[data-view] .button-primary{border-radius:11px;min-height:44px;font-size:14px;padding-inline:17px}
-.mobile-detail-bar{background:var(--bg);-webkit-backdrop-filter:none;backdrop-filter:none;isolation:isolate;contain:paint}
 .mobile-detail-screen .detail-actions>.status-select{height:38px;min-height:38px;border-radius:12px;font-size:15px}
 .mobile-detail-screen .detail-actions>.icon-button{width:40px;height:40px;min-width:40px;min-height:40px}
 }
 @media(prefers-reduced-transparency:reduce){.mobile-bottom-nav,:root[data-theme="dark"] .mobile-bottom-nav{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
 @media(prefers-reduced-motion:reduce){.mobile-bottom-nav button{transition:none}}
 /* The app header paints the safe area as part of the same page surface. */
-:root{--app-safe-top:env(safe-area-inset-top,0px)}
 @media(max-width:780px){
 .sync-gate{padding-top:max(24px,var(--app-safe-top,env(safe-area-inset-top,0px)));padding-bottom:max(24px,env(safe-area-inset-bottom))}
 :root[data-standalone="true"] .import-inbox>header{padding-top:calc(18px + var(--app-safe-top,env(safe-area-inset-top,0px)))}
@@ -102,14 +100,11 @@ html:has(.app-shell[data-view]),body:has(.app-shell[data-view]){overflow:hidden;
 /* Fixed application viewport, with scrolling restricted to the active pane. */
 :root[data-standalone="true"],:root[data-standalone="true"] body{touch-action:pan-x pan-y}
 @media(max-width:780px){
-html,body,#root{width:100%;height:100%;min-height:0;overflow:hidden;overscroll-behavior:none}
-body{position:fixed;inset:0;-webkit-text-size-adjust:100%}
-.app-shell[data-view],.mobile-detail-screen,.modal-backdrop{top:var(--app-viewport-top,0px);bottom:auto;height:var(--app-viewport-height,100dvh);min-height:0;max-height:var(--app-viewport-height,100dvh);overflow:hidden}
-.app-shell[data-view]{background:var(--bg)}
+body{-webkit-text-size-adjust:100%}
 .mobile-topbar{background:transparent;border:0}
 .modal-backdrop{align-items:stretch;overscroll-behavior:none}
 .modal-backdrop .modal{min-width:0;min-height:0;max-width:100%;height:100%;max-height:100%;overflow:hidden;background:var(--bg)}
-.modal-backdrop .modal-header,.modal-backdrop .modal-footer{background:var(--bg)}
+.modal-backdrop .modal-footer{background:var(--bg)}
 .modal-backdrop .modal-body{min-width:0;overscroll-behavior:none;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;scroll-padding-block:20px}
 .modal-backdrop .modal-header h2{font-size:19px;line-height:1.4;overflow-wrap:anywhere}
 .modal-backdrop .modal-footer{gap:10px}
@@ -123,6 +118,6 @@ body{position:fixed;inset:0;-webkit-text-size-adjust:100%}
 }
 
 @media(max-width:780px){
-.sync-gate{position:fixed;top:var(--app-viewport-top,0px);left:0;width:100%;height:var(--app-viewport-height,100dvh);min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-x:hidden;overflow-y:auto;overscroll-behavior:none;-webkit-overflow-scrolling:touch}
+.sync-gate{min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-x:hidden;overflow-y:auto;overscroll-behavior:none;-webkit-overflow-scrolling:touch}
 .sync-gate>.settings-card{flex:none;margin-block:auto}
 }

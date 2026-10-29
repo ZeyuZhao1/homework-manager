@@ -9,7 +9,7 @@ function setup() {
   const root = { dataset: {}, style: {} }, body = { style: {} }, handlers = new Map(), saved = new Map()
   const media = { matches: false, addEventListener: (event, handler) => handlers.set('system', handler) }
   let meta, cookie = '', replaced = 0
-  const attach = value => { meta = value; meta.replaceWith = replacement => { replaced++; attach(replacement) } }
+  const attach = value => { meta = value; meta.setAttribute = (key, value) => { meta[key] = value }; meta.replaceWith = replacement => { replaced++; attach(replacement) } }
   const document = { documentElement: root, body, head: { append: attach }, createElement: () => ({}), hidden: false, querySelector: selector => selector.includes('theme-color') ? meta : { setAttribute() {} }, addEventListener: (event, handler) => handlers.set(event, handler), get cookie() { return cookie }, set cookie(value) { cookie = value } }
   attach({})
   const context = vm.createContext({ document, window: { addEventListener: (event, handler) => handlers.set(event, handler) }, matchMedia: () => media, localStorage: { setItem: (key, value) => saved.set(key, value) }, location: { protocol: 'https:' } })
@@ -28,7 +28,7 @@ test('explicit appearance refreshes canvas and chrome without system overrides o
   const f = setup(); f.apply('dark'); f.apply('light')
   f.media.matches = true; f.handlers.get('system')()
   assert.equal(f.root.dataset.theme, 'light'); assert.equal(f.root.style.backgroundColor, f.body.style.backgroundColor)
-  assert.equal(f.meta().content, '#f0f3f8'); assert.equal(f.replaced(), 2)
+  assert.equal(f.meta().content, '#f0f3f8'); assert.equal(f.replaced(), 0)
   f.body.style.backgroundColor = 'stale'; f.handlers.get('pageshow')()
   assert.equal(f.body.style.backgroundColor, '#f0f3f8')
   assert.equal(f.handlers.size, 3)

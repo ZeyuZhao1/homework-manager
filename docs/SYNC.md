@@ -145,3 +145,11 @@ Google 登录成功后仍需调用 Drive API 查询账号。若提示 API 尚未
 采用 OAuth 重定向式 Picker，无需将 Google API Key 或访问令牌放进前端。实际客户端文件、域名和加密主密钥保存在仓库外。OAuth 刷新/访问令牌独立加密在私有 R2，不进入数据库、同步、应用备份或日志。链接资源键属于关联元数据，不是 OAuth 凭据。
 
 配置参考：[Google Picker 系统浏览器流程](https://developers.google.com/workspace/drive/picker/guides/desktop-mobile-picker)、[Drive 权限范围](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)。
+
+## 手机 PWA 顶部显示
+
+手机页面、作业详情、周期详情和全屏表单共享页面背景与根级安全区变量，内容在各自的窗格中滚动，文档背景留在正常布局。iOS 不再设置已弃用的 `apple-mobile-web-app-status-bar-style`；`theme-color` 只用于支持它的浏览器，更新它不等于刷新 iOS 的原生状态区。时钟、信号和电量仍由系统绘制，应用统一其取色来源，而不伪造系统状态栏。
+
+旧主屏幕图标可能保留安装时的窗口配置。先在 Safari 打开更新后的网页，必要时重新添加到主屏幕；新图标可能需要重新授权。保留原有已授权设备，完成新入口的配对或身份恢复后再移除旧入口，不要先清除网站数据。
+
+自动化手机视口测试只能验证页面画布、取色、滚动和安全区，不能证明真实 iOS 系统状态区已更新。[WebKit 官方建议移除旧状态栏配置](https://www2.webkit.org/show_bug.cgi?id=317153#c2)，[iOS 原生状态区与安装配置相关的问题记录](https://bugs.webkit.org/show_bug.cgi?id=301994)仍应结合具体设备判断。

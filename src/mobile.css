@@ -1,13 +1,8 @@
 /* A separate, quiet mobile shell; desktop keeps its existing layout. */
 @media (max-width: 780px) {
   .app-shell[data-view] {
-    --mobile-safe-top: var(--app-safe-top, env(safe-area-inset-top, 0px));
-    --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
     display: flex;
     flex-direction: column;
-    position: fixed;
-    inset: 0;
-    height: auto;
     min-height: 0;
     overflow: hidden;
     font-size: 16px;
@@ -94,8 +89,8 @@
   .mobile-bottom-nav button:focus-visible { outline-offset: -3px; }
   .mobile-settings-action { display: flex; justify-content: flex-end; margin: 0 0 14px; }
   .mobile-settings-action .button { min-height: 44px; font-size: 14px; }
-  .mobile-detail-screen { position: fixed; inset: 0; z-index: 25; display: flex; flex-direction: column; background: var(--bg); outline: 0; }
-  .mobile-detail-bar { display: flex; flex: none; align-items: center; min-height: calc(60px + var(--mobile-safe-top)); padding: calc(8px + var(--mobile-safe-top)) 16px 8px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .mobile-detail-screen { z-index: 25; display: flex; flex-direction: column; outline: 0; }
+  .mobile-detail-bar { display: flex; flex: none; align-items: center; min-height: calc(60px + var(--mobile-safe-top)); padding: calc(8px + var(--mobile-safe-top)) 16px 8px; }
   .mobile-detail-bar button { display: inline-flex; align-items: center; gap: 7px; height: 44px; padding: 0 9px 0 0; border: 0; background: transparent; color: var(--blue); font-size: 16px; }
   .mobile-detail-bar > span { position: absolute; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 14px; pointer-events: none; }
   .mobile-detail-body { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 20px calc(30px + var(--mobile-safe-bottom)); overscroll-behavior: contain; }

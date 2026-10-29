@@ -20,8 +20,6 @@ export async function appearanceAsset(request: Request, assets: Fetcher): Promis
   const queryTheme = url.searchParams.get('theme')
   const theme = manifest && (queryTheme === 'light' || queryTheme === 'dark') ? queryTheme : requestAppearance(request)
   const color = theme === 'dark' ? '#1b1b1d' : '#f0f3f8'
-  // Both appearances draw the application behind the system status area.
-  const statusBar = 'black-translucent'
   const response = new Response(asset.body, asset)
   response.headers.delete('etag')
   response.headers.delete('last-modified')
@@ -36,7 +34,8 @@ export async function appearanceAsset(request: Request, assets: Fetcher): Promis
     .on('html', { element(element) { element.setAttribute('data-theme', theme); element.setAttribute('data-appearance-rendered', 'true') } })
     .on('meta[name="color-scheme"]', { element(element) { element.setAttribute('content', theme) } })
     .on('meta[name="theme-color"]', { element(element) { element.setAttribute('content', color) } })
-    .on('meta[name="apple-mobile-web-app-status-bar-style"]', { element(element) { element.setAttribute('content', statusBar) } })
+    // iOS 26/27 samples the page canvas. Legacy status-bar modes can freeze its color.
+    .on('meta[name="apple-mobile-web-app-status-bar-style"]', { element(element) { element.remove() } })
     .transform(response)
   return request.method === 'HEAD' ? new Response(null, rewritten) : rewritten
 }
