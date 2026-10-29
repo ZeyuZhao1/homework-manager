@@ -3,6 +3,7 @@ mod drive;
 mod files;
 mod import_sync;
 mod modules;
+mod printing;
 mod window;
 mod sync;
 
@@ -37,6 +38,8 @@ pub fn run() {
             sync::sync_upload_file,
             sync::sync_download_file,
             sync::sync_remove_cloud_file,
+            printing::read_system_print_document,
+            printing::show_system_print_dialog,
             db::load_snapshot,
             db::save_semester,
             db::delete_semester,

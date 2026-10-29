@@ -212,7 +212,7 @@ Tauri 命令注册清单。定义命令但忘记在这里注册，会导致前�
 
 ### 周期模块和通用宿主
 
-`modules/recurring-assignments/` 持有周期规则、私有表、调度、时间线与模块管理操作；核心通过 `manage_builtin_module` 转发。`src-tauri/src/import_sync.rs` 负责通用来源导入审核事务，`src/ImportInbox.tsx` 提供审核 UI。`src/printing.tsx` 提供外部打印能力界面，不包含打印实现。
+`modules/recurring-assignments/` 持有周期规则、私有表、调度、时间线与模块管理操作；核心通过 `manage_builtin_module` 转发。`src-tauri/src/import_sync.rs` 负责通用来源导入审核事务，`src/ImportInbox.tsx` 提供审核 UI。`src/printing.tsx` 默认走核心系统打印，`src-tauri/src/printing.rs` 校验文件并从主窗口调用原生打印接口，`src/systemPrint.ts` 在当前窗口隐藏内容区本地准备 PDF/图片后直接打开系统对话框；不创建额外页面或窗口，打印样式隐藏主界面。外部打印能力保留为可选入口。
 
 仓库只跟踪 AI 导入和周期作业两个模块。其他模块由用户独立安装到 AppData，不加入本仓库。
 
