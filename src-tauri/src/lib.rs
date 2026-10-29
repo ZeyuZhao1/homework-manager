@@ -2,6 +2,7 @@ mod db;
 mod files;
 mod import_sync;
 mod modules;
+mod printing;
 mod window;
 
 use tauri::Manager;
@@ -19,6 +20,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            printing::read_system_print_document,
+            printing::show_system_print_dialog,
             db::load_snapshot,
             db::save_semester,
             db::delete_semester,

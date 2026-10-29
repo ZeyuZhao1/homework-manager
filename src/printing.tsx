@@ -82,7 +82,7 @@ export function PrintSettingsDialog({ module, onClose }: { module: ModuleDescrip
       <label className="form-field span-2">文档打印程序路径<input value={config.renderer_path} onChange={event => update({ renderer_path: event.target.value })} placeholder="由模块自动检测，或填写绝对路径" /><small>具体支持的程序由模块决定。</small></label>
     </div><p className="helper-text">页码指文件的实际页码，从 1 开始；留空打印全部页。不会自动使用关联信息中的教材页码。打印机需支持所选参数。</p>
     {response?.supported_formats?.length ? <p className="helper-text">模块支持的文件格式：{response.supported_formats.join('、')}</p> : null}
-    {!response?.printers.length ? <p className="helper-text">未检测到打印机。请先在 Windows 中安装打印机，再重新打开此设置。</p> : null}
+    {!response?.printers.length ? <p className="helper-text">未检测到打印机。请先在系统中安装打印机，再重新打开此设置。</p> : null}
     {response?.school_client ? <p className="helper-text">学校打印客户端：{response.school_client.detected ? '已检测到' : '未检测到'}</p> : null}
     {module.capabilities.includes('file.print.authenticate') ? <><p className="helper-text">学校登录由本机客户端处理。首次登录、验证码或校园网络连接可能需要你在客户端中完成。</p><button className="button button-quiet" onClick={() => { void authenticate() }}>连接学校打印客户端</button></> : null}
     </fieldset> : null}
@@ -98,28 +98,32 @@ export function PrintFileActions({ file, modules, renderActions }: { file?: File
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [settingsModule, setSettingsModule] = useState<ModuleDescriptor | null>(null)
   const [result, setResult] = useState<string | null>(null)
-  const module = modules.find(item => item.id === selectedId) || modules[0]
-  if (!module) return renderActions ? renderActions(null) : null
+  const module = modules.find(item => item.id === selectedId)
+  const printName = module?.name || '系统打印'
   const print = async () => {
-    if (!file || file.missing || busy || !module.enabled) return
+    if (!file || file.missing || busy || (module && !module.enabled)) return
     if (!service.isDesktop) { setResult('浏览器预览无法执行打印，请使用桌面应用。'); return }
     if (pendingFiles.has(file.path)) { setResult('此文件正在提交打印，请等待结果并检查打印队列。'); return }
     pendingFiles.add(file.path); setBusy(true)
     try {
+      if (!module) {
+        await service.openSystemPrint(file.id)
+        return
+      }
       const response = await service.invokeModule<PrintResult>(module.id, 'file.print', { paths: [file.path] })
       if (!Number.isInteger(response.queued) || response.queued < 0 || response.queued > 1) throw new Error('模块返回了无效的打印结果。')
       const failures = response.files?.filter(item => !item.queued).map(item => `${fileName(item.path)}：${item.error || '未成功提交'}`) || []
-      setResult([`“${module.name}”：已提交 ${response.queued} 个文件。`, ...failures, response.warning, '提交不代表物理打印完成。若提交状态不明，请先检查 Windows 和学校打印队列，再决定是否重试。'].filter(Boolean).join('\n'))
-    } catch (reason) { setResult(`打印请求未正常完成：${errorText(reason)}\n提交状态可能不明，请检查打印队列后再决定是否重试。`) }
+      setResult([`“${module.name}”：已提交 ${response.queued} 个文件。`, ...failures, response.warning, '提交不代表物理打印完成。若提交状态不明，请先检查系统打印队列，再决定是否重试。'].filter(Boolean).join('\n'))
+    } catch (reason) { setResult(module ? `打印请求未正常完成：${errorText(reason)}\n提交状态可能不明，请检查打印队列后再决定是否重试。` : `无法打开系统打印：${errorText(reason)}`) }
     finally { pendingFiles.delete(file.path); setBusy(false) }
   }
   const actions = <>
-    <button className={renderActions ? undefined : "icon-button tiny"} role={renderActions ? "menuitem" : undefined} title={service.isDesktop ? `打印当前文件 · ${module.name}` : '打印仅在桌面应用中可用'} aria-label={`打印当前文件 · ${module.name}`} disabled={!file || file.missing || busy || !service.isDesktop} onClick={() => { void print() }}>{busy ? <LoaderCircle size={15} /> : <Printer size={15} />}{renderActions ? (busy ? "正在提交打印…" : "打印") : null}</button>
+    <button className={renderActions ? undefined : "icon-button tiny"} role={renderActions ? "menuitem" : undefined} title={service.isDesktop ? `打印当前文件 · ${printName}` : '打印仅在桌面应用中可用'} aria-label={`打印当前文件 · ${printName}`} disabled={!file || file.missing || busy || !service.isDesktop} onClick={() => { void print() }}>{busy ? <LoaderCircle size={15} /> : <Printer size={15} />}{renderActions ? (busy ? "正在准备打印…" : "打印") : null}</button>
     <button className={renderActions ? undefined : "icon-button tiny"} role={renderActions ? "menuitem" : undefined} title="打印选项与配置" aria-label="打印选项与配置" disabled={busy} onClick={() => setOptionsOpen(true)}><ChevronDown size={13} />{renderActions ? "打印选项与配置" : null}</button>
   </>
   return <>
     {renderActions ? renderActions(actions) : actions}
-    {optionsOpen ? <Modal title="打印选项" onClose={() => setOptionsOpen(false)}><p className="modal-intro">选择负责打印的模块。选择右键菜单中的“打印”，将使用该模块保存的设置。</p>{modules.map(item => <div className="module-row" key={item.id}><label className="checkbox-label"><input type="radio" name="print-module" checked={module.id === item.id} onChange={() => setSelectedId(item.id)} />{item.name}</label>{item.capabilities.includes('file.print.configure') ? <button className="button button-quiet" onClick={() => { setOptionsOpen(false); setSettingsModule(item) }}>打印配置</button> : null}</div>)}</Modal> : null}
+    {optionsOpen ? <Modal title="打印选项" onClose={() => setOptionsOpen(false)}><p className="modal-intro">默认使用系统打印。打印机、份数、页码及单双面等设置由系统打印对话框管理，确认后才会打印。PDF 和常见图片可直接打印；其他文档请先导出为 PDF。</p><div className="module-row"><label className="checkbox-label"><input type="radio" name="print-module" checked={!module} onChange={() => setSelectedId('')} />系统打印（Windows、macOS、Linux）</label></div>{modules.map(item => <div className="module-row" key={item.id}><label className="checkbox-label"><input type="radio" name="print-module" checked={module?.id === item.id} onChange={() => setSelectedId(item.id)} />{item.name}</label>{item.capabilities.includes('file.print.configure') ? <button className="button button-quiet" onClick={() => { setOptionsOpen(false); setSettingsModule(item) }}>打印配置</button> : null}</div>)}</Modal> : null}
     {settingsModule ? <PrintSettingsDialog module={settingsModule} onClose={() => setSettingsModule(null)} /> : null}
     {result ? <Modal title="打印结果" onClose={() => setResult(null)} footer={<button className="button button-primary" onClick={() => setResult(null)}>知道了</button>}><p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} role="status">{result}</p></Modal> : null}
   </>

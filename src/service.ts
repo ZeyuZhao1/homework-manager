@@ -37,6 +37,9 @@ function trackPreview(fileId: string, eventType: FileHistoryEvent['event_type'],
 
 export const service = {
   isDesktop: desktop,
+  async openSystemPrint(fileId: string): Promise<void> { if (!desktop) throw new Error('浏览器预览无法执行系统打印，请使用桌面应用'); const { printSystemFile } = await import('./systemPrint'); return printSystemFile(fileId) },
+  async readSystemPrintDocument(fileId: string): Promise<ArrayBuffer> { if (!desktop) throw new Error('浏览器预览无法读取打印文件'); return invoke<ArrayBuffer>('read_system_print_document', { fileId }) },
+  async showSystemPrintDialog(): Promise<void> { if (!desktop) throw new Error('浏览器预览无法打开系统打印对话框'); return invoke<void>('show_system_print_dialog') },
   async snapshot(): Promise<Snapshot> { return desktop ? invoke<Snapshot>('load_snapshot') : clone() },
   async saveSemester(payload: Semester) {
     if (desktop) return invoke<string>('save_semester', { payload })

@@ -303,6 +303,8 @@ stderr 当前没有单独的宿主大小协议；仍应限制日志量，避免�
 
 ### 5.5 `file.print`
 
+此契约供可选的外部打印模块使用。主程序默认已内置 Windows、macOS、Linux 系统打印，通过系统对话框选择打印机及参数，不调用该能力，也不需要 `renderer_path`。用户可在“打印选项与配置”中显式选择外部模块；旧配置保留，不自动导入系统打印设置。
+
 输入：
 
 ```json
@@ -318,7 +320,7 @@ stderr 当前没有单独的宿主大小协议；仍应限制日志量，避免�
 { "queued": 1 }
 ```
 
-`queued` 表示成功提交到打印流程的文件数，不保证物理打印已经完成。用户从作业详情的单个关联文件触发；主程序只传这次选择的路径，不传数据库、作业正文或其他附件。入口只显示启用且声明 `file.print` 的模块，不自动重试打印。
+`queued` 表示成功提交到打印流程的文件数，不保证物理打印已经完成。用户从作业详情的单个关联文件触发；主程序只传这次选择的路径，不传数据库、作业正文或其他附件。外部模块选项只显示启用且声明 `file.print` 的模块，不自动重试打印。
 
 兼容的可选输入 `options`：
 
@@ -504,7 +506,7 @@ export interface AppModule {
 
 内置模块 ID 必须以 `builtin.` 开头，并与前端 `AppModule.id`、后端描述符及 `module.json` 保持一致。内置模块可以建立自己的表，但不应把模块私有字段塞入核心 `Snapshot`；应通过模块自己的服务获取配置。
 
-两个内置模块分别见 [AI 作业导入](modules/assignment-import/README.md) 与 [周期作业](modules/recurring-assignments/README.md)。其他模块应独立维护并安装到 AppData，不放入本仓库的 `modules/`。宿主保留通用文档定位、打印及作业同步契约，具体实现不随主程序提供。
+两个内置模块分别见 [AI 作业导入](modules/assignment-import/README.md) 与 [周期作业](modules/recurring-assignments/README.md)。其他模块应独立维护并安装到 AppData，不放入本仓库的 `modules/`。宿主保留通用文档定位、打印及作业同步契约；核心系统打印已直接内置，独立模块实现不随主程序提供。
 
 ## 10. 宿主实现位置
 
@@ -522,4 +524,4 @@ export interface AppModule {
 
 ## 跨平台范围
 
-核心应用的原生构建支持范围见 [平台文档](docs/PLATFORMS.md)。外部模块需匹配操作系统和 CPU 架构；本轮不适配打印、学校客户端及依赖 PowerShell 的模块。宿主现有 `pwsh` 启动分支不代表脚本或所依赖程序已经跨平台兼容，内置 AI 导入和周期作业不依赖 PowerShell。
+核心应用的原生构建支持范围见 [平台文档](docs/PLATFORMS.md)。内置系统打印接入三个桌面平台的原生对话框；外部打印模块、学校客户端及依赖 PowerShell 的模块需独立适配。外部模块需匹配操作系统和 CPU 架构。宿主现有 `pwsh` 启动分支不代表脚本或所依赖程序已经跨平台兼容，内置 AI 导入和周期作业不依赖 PowerShell。

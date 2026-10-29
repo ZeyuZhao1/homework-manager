@@ -301,7 +301,17 @@ interface RenamePreview {
 
 `invokeModule` 对外部模块应用 2 MB 请求、4 MB 输出和 120 秒超时。完整协议见 [MODULES.md](../MODULES.md)。
 
-关联文件的打印按钮通过现有 `invokeModule(moduleId, 'file.print', {paths: [file.path]})` 调用启用的打印模块，没有模块专属 Tauri 命令。默认参数通过可选 `file.print.configure` 的 `get` / `save` 操作读取和保存；可选 `file.print.authenticate` 只准备外部客户端认证，不承诺认证已完成。返回 `queued`、逐文件结果和 `warning`；浏览器预览明确拒绝本地打印。公共参数及失败语义见 [打印契约](../MODULES.md#55-fileprint)。
+关联文件的打印按钮默认使用核心系统打印，不依赖模块：
+
+| 服务 | Tauri 命令 | 输入 / 返回 | 行为 |
+| --- | --- | --- | --- |
+| `openSystemPrint(fileId)` | 前端编排下列两个命令 | 文件记录 ID / `void` | 按需加载本地渲染逻辑，在当前主窗口准备所选文件后直接调用系统打印；不导航、不创建新窗口 |
+| `readSystemPrintDocument(fileId)` | `read_system_print_document` | 文件记录 ID / `ArrayBuffer` | 仅允许主窗口调用；从数据库解析并规范化路径，校验文件及格式；阻塞任务读取至多 50 MiB，使用二进制 IPC 返回，不接受任意路径 |
+| `showSystemPrintDialog()` | `show_system_print_dialog` | 无 / `void` | 仅允许主窗口调用，调用当前 `WebviewWindow::print()` 打开系统打印对话框，不返回排队数或打印完成状态 |
+
+`src/systemPrint.ts` 在主窗口的隐藏内容区本地准备 PDF / 常见图片，完成全部准备后才调用打印接口；打印媒体样式只显示所选文件，隐藏主界面及弹窗。屏幕上的主界面保持不变。PDF 按 150 DPI 渲染，累计不超过 8000 万像素；加密文档使用应用内密码弹窗，取消时清理内容且不打印。准备失败时移除部分页面，不打开系统打印。`afterprint` 后清理文档；原生 WebView 未发送该事件时保留至下一次显式打印或关闭应用，避免异步打印读取到已清空的内容。准备期间全局拒绝重复请求。所有参数由系统对话框管理，主程序不枚举打印机、不保存系统打印配置、不自动重试。浏览器预览明确拒绝以上接口。
+
+手动选择外部模块时，仍通过 `invokeModule(moduleId, 'file.print', {paths: [file.path]})` 调用。旧版配置和可选认证接口保持兼容，详情见 [打印契约](../MODULES.md#55-fileprint)。
 
 前端在快照或模块清单变化后，会把已关联且未失效的文件最小清单发送给所有启用的 `document.navigation.index` 模块。`open_file` 只在调用方提供合法 `linkId` 且该关联填写了页码或章节时调用 `document.navigation.open`；模块未接管时回退到普通打开，并在 `OpenFileResult.warning` 中解释定位失败。
 

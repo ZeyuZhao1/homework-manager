@@ -84,7 +84,7 @@ pnpm dev
 | `pnpm desktop:build` | 生成 release EXE 和 NSIS 安装包 |
 | `cargo test --manifest-path src-tauri/Cargo.toml --lib` | 运行 Rust 库测试 |
 
-通用打印界面仅在安装兼容模块后可用。外部实现的协议、渲染与客户端认证应在其独立项目验证；本仓库的构建不验证实际打印、学校认证或网络接收。
+系统打印直接内置，默认入口不需要安装模块。点击打印时在当前主窗口后台准备文件，直接调用系统打印对话框；没有额外页面或窗口。`vite.config.ts` 在开发时提供本地 PDF.js 字体/解码资源，构建时把同一资源集写入 `dist/pdfjs/`；渲染库和 Worker 按需加载。验证应覆盖点击后不导航/不创建窗口、打印媒体仅含所选文件（主界面与弹窗不可混入）、多页及中文 PDF、图片、密码重试/取消、文件丢失/损坏/超限、重复准备、原生调用失败以及 `afterprint` 清理。未发出 `afterprint` 的原生 WebView 会保留单份隐藏文档至下一次打印或应用关闭；不能在接口刚返回时提前删除。各平台仍需用真实原生对话框验收打印机选择、页码、份数和单双面。浏览器中模拟 IPC 的测试不等同桌面集成验证。可选外部实现的协议、渲染与客户端认证应在其独立项目验证。
 
 完整本地验证：
 
@@ -238,7 +238,8 @@ pnpm build
 - `modules/recurring-assignments/`：周期规则、私有表、调度、时间线及前端服务；
 - `modules/registry.rs`：编译期后端注册，前端由 `src/moduleRegistry.ts` 发现；
 - `src/ImportInbox.tsx` / `src-tauri/src/import_sync.rs`：通用外部导入审核；
-- `src/printing.tsx`：可选打印能力的通用界面。
+- `src/printing.tsx`：默认系统打印入口与可选外部打印模块界面。
+- `src/systemPrint.ts`、`src-tauri/src/printing.rs`：本地文档准备及原生系统打印调用。
 
 运行 `pnpm repository:check` 检查 Git 跟踪的模块白名单、应用/模块版本一致性和本地 Markdown 文件链接。`.gitignore` 阻止意外添加其他模块；检查脚本也会拒绝强制添加的非白名单模块。不要上传数据库、备份、实际课程文件或凭据。
 
