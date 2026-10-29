@@ -1,5 +1,6 @@
-import { Fragment } from 'react'
-import type { ReactNode } from 'react'
+import { Fragment, useLayoutEffect, useRef } from 'react'
+import type { ReactNode, RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import { AlertCircle, CheckCircle2, ChevronRight, Clock3, ExternalLink, File, FileText, History, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { service } from './service'
 import { PrintFileActions } from './printing'
@@ -30,18 +31,77 @@ export function dueState(item: Assignment) {
 export function isOpen(item: Assignment) { return item.status !== 'submitted' }
 export function urlIsSafe(value: string) { try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false } }
 
+const dialogStack: HTMLElement[] = []
+let originalBodyOverflow = ''
+const focusableControls = 'button:not(:disabled), [href], input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+
+export function useDialogFocus(ref: RefObject<HTMLElement | null>, onClose: () => void) {
+  const close = useRef(onClose)
+  useLayoutEffect(() => { close.current = onClose }, [onClose])
+  useLayoutEffect(() => {
+    const dialog = ref.current
+    if (!dialog) return
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (!dialogStack.length) {
+      originalBodyOverflow = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+    }
+    dialogStack.push(dialog)
+    const controls = () => Array.from(dialog.querySelectorAll<HTMLElement>(focusableControls)).filter(element => element.getClientRects().length && !element.closest('[inert]'))
+    const focusFirst = () => (controls()[0] || dialog).focus({ preventScroll: true })
+    const isTop = () => dialogStack.at(-1) === dialog
+    const isMenu = (target: EventTarget | null) => target instanceof Element && !!target.closest('[role="menu"]')
+    const keydown = (event: KeyboardEvent) => {
+      if (!isTop() || event.defaultPrevented || isMenu(event.target)) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        close.current()
+      } else if (event.key === 'Tab') {
+        const items = controls()
+        const first = items[0]
+        const last = items.at(-1)
+        const active = document.activeElement
+        if (!first) { event.preventDefault(); dialog.focus(); return }
+        if (event.shiftKey && (active === first || !dialog.contains(active))) {
+          event.preventDefault(); last?.focus()
+        } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+          event.preventDefault(); first.focus()
+        }
+      }
+    }
+    const focusin = (event: FocusEvent) => {
+      if (isTop() && event.target instanceof Node && !dialog.contains(event.target) && !isMenu(event.target)) focusFirst()
+    }
+    document.addEventListener('keydown', keydown)
+    document.addEventListener('focusin', focusin)
+    focusFirst()
+    return () => {
+      const wasTop = isTop()
+      const index = dialogStack.indexOf(dialog)
+      if (index !== -1) dialogStack.splice(index, 1)
+      document.removeEventListener('keydown', keydown)
+      document.removeEventListener('focusin', focusin)
+      if (!dialogStack.length) document.body.style.overflow = originalBodyOverflow
+      if (wasTop && previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
+    }
+  }, [ref])
+}
+
 export function Modal({ title, onClose, children, footer, wide = false }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
-  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-    <section className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+  const dialogRef = useRef<HTMLElement>(null)
+  useDialogFocus(dialogRef, onClose)
+  return createPortal(<div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <section ref={dialogRef} tabIndex={-1} className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
       <header className="modal-header"><h2>{title}</h2><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={19} /></button></header>
       <div className="modal-body">{children}</div>
       {footer ? <footer className="modal-footer">{footer}</footer> : null}
     </section>
-  </div>
+  </div>, document.body)
 }
 
 export function AssignmentTable({ items, courses, selectedId, onSelect, filesFor, groupRows = [] }: { items: Assignment[]; courses: Course[]; selectedId: string; onSelect: (id: string) => void; filesFor: (id: string) => number; groupRows?: { id:string; sortAt:string|null; node:ReactNode }[] }) {
-  const rows = [...items.map(item => ({ key:`assignment-${item.id}`,sortAt:item.due_at||'9999',node:<tr className={selectedId === item.id ? 'selected' : ''} onClick={() => onSelect(item.id)}><td><div className="table-title"><FileText size={20} strokeWidth={1.8} /><span>{item.title}</span></div></td><td>{courses.find(c => c.id === item.course_id)?.name || '—'}</td><td><span className={dueState(item) === 'overdue' ? 'date-overdue' : ''}>{dateLabel(item.due_at)}</span></td><td><span className={`status status-${item.status}`}>{statusLabels[item.status]}</span></td><td>{item.submission_label || <span className="muted">—</span>}</td><td>{filesFor(item.id) ? `${filesFor(item.id)} 个文件` : <span className="muted">—</span>}</td><td><ChevronRight size={16} /></td></tr>})), ...groupRows.map(row => ({key:`group-${row.id}`,sortAt:row.sortAt||'9999',node:row.node}))].sort((a,b)=>a.sortAt.localeCompare(b.sortAt))
+  const rows = [...items.map(item => ({ key:`assignment-${item.id}`,sortAt:item.due_at||'9999',node:<tr className={`assignment-row ${selectedId === item.id ? 'selected' : ''}`} tabIndex={0} aria-selected={selectedId === item.id} aria-label={`查看作业：${item.title}`} onClick={() => onSelect(item.id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(item.id) } }}><td data-label="作业"><div className="table-title"><FileText size={20} strokeWidth={1.8} /><span title={item.title}>{item.title}</span></div></td><td data-label="科目">{courses.find(c => c.id === item.course_id)?.name || '—'}</td><td data-label="截止时间"><span className={dueState(item) === 'overdue' ? 'date-overdue' : ''}>{dateLabel(item.due_at)}</span></td><td data-label="状态"><span className={`status status-${item.status}`}>{statusLabels[item.status]}</span></td><td data-label="提交位置">{item.submission_label || <span className="muted">—</span>}</td><td data-label="文件">{filesFor(item.id) ? `${filesFor(item.id)} 个文件` : <span className="muted">—</span>}</td><td><ChevronRight size={16} /></td></tr>})), ...groupRows.map(row => ({key:`group-${row.id}`,sortAt:row.sortAt||'9999',node:row.node}))].sort((a,b)=>a.sortAt.localeCompare(b.sortAt))
   return <div className="assignment-table-wrap"><table className="assignment-table"><thead><tr><th>作业</th><th>科目</th><th>截止时间</th><th>状态</th><th>提交位置</th><th>文件</th><th /></tr></thead><tbody>{rows.map(row => <Fragment key={row.key}>{row.node}</Fragment>)}</tbody></table>{rows.length === 0 ? <div className="empty-list"><CheckCircle2 size={29} /><strong>这里暂时没有作业</strong><span>新建作业后，会按截止时间显示在这里。</span></div> : null}</div>
 }
 
@@ -73,4 +133,4 @@ export function AssignmentDetail({ item, course, links, files, fileHistory, onEd
     {item.description ? <div className="detail-notes"><h3>作业说明</h3><p>{item.description}</p></div> : null}{Object.keys(item.custom_fields || {}).length ? <div className="detail-notes"><h3>自定义字段</h3><dl className="custom-detail-list">{Object.entries(item.custom_fields).map(([key,value]) => <div key={key}><dt>{key}</dt><dd>{value || "—"}</dd></div>)}</dl></div> : null}<details className="assignment-file-history"><summary><History size={16} /><span>作业文件历史</span><em>{fileHistory.length} 条</em></summary>{historyGroups.length ? <div className="assignment-history-groups">{historyGroups.map(group => <section key={group.key}><h4>{group.label}</h4>{group.events.slice(0,30).map(event => { const asset = files.find(file => file.id === event.file_id); return <div className="assignment-history-row" key={event.id}><span className={`file-history-dot event-${event.event_type}`} /><div><div><strong>{historyLabels[event.event_type] || event.event_type}</strong><time>{fullDate(event.occurred_at)}</time></div><button className="assignment-history-file" title={asset?.path || event.path} disabled={!asset || asset.missing} onClick={() => { if (asset) void service.openFile(asset.id).catch(error => window.alert(`打开文件失败：${errorText(error)}`)) }}>{fileName(event.path)}</button>{event.details ? <small>{event.details}</small> : null}</div></div> })}</section>)}</div> : <div className="history-empty">尚无文件历史；关联解答或题目文件后会开始记录。</div>}</details>{item.source_name || item.source_text ? <details className="source-detail"><summary>来源内容 {item.source_name ? `· ${item.source_name}` : ''}</summary><p>{item.source_text || '没有保存来源原文'}</p></details> : null}</section>
 }
 
-export function InlineError({ children }: { children: ReactNode }) { return <div className="inline-error"><AlertCircle size={16} />{children}</div> }
+export function InlineError({ children }: { children: ReactNode }) { return <div className="inline-error" role="alert"><AlertCircle size={16} />{children}</div> }

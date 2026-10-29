@@ -5,7 +5,18 @@ import type { AiDraft, AiResult, ModuleConfig, ProviderInput } from './types'
 const previewKey = 'homeworkbook-assignment-import-preview'
 const emptyConfig: ModuleConfig = { providers: [], assignment_provider_id: '', material_provider_id: '', prompt_directory: '%APPDATA%\\app.homeworkbook.local\\modules\\assignment-import\\prompts' }
 function previewConfig(): ModuleConfig {
-  try { return { ...emptyConfig, ...JSON.parse(localStorage.getItem(previewKey) || '{}') } } catch { return { ...emptyConfig } }
+  try {
+    const config: ModuleConfig = { ...emptyConfig, ...JSON.parse(localStorage.getItem(previewKey) || '{}') }
+    // Older previews accidentally persisted the editor payload, including API keys.
+    let removedKey = false
+    config.providers = config.providers.map(provider => {
+      const { api_key: discardedKey, ...safeProvider } = provider as typeof provider & { api_key?: string }
+      if (discardedKey !== undefined) removedKey = true
+      return safeProvider
+    })
+    if (removedKey) persist(config)
+    return config
+  } catch { return { ...emptyConfig } }
 }
 function persist(config: ModuleConfig) { localStorage.setItem(previewKey, JSON.stringify(config)) }
 
@@ -21,7 +32,8 @@ export const assignmentImportService = {
     if (isTauri()) return invoke<string>('save_provider', { payload })
     const config = previewConfig()
     const id = payload.id || crypto.randomUUID()
-    config.providers = [...config.providers.filter(item => item.id !== id), { ...payload, id, has_key: !!payload.api_key || payload.has_key }]
+    const { api_key, ...safeProvider } = payload
+    config.providers = [...config.providers.filter(item => item.id !== id), { ...safeProvider, id, has_key: !!api_key || payload.has_key }]
     persist(config)
     return id
   },

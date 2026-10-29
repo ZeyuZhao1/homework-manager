@@ -34,3 +34,42 @@
 .provider-icon{width:30px;height:30px;display:grid;place-items:center;background:var(--blue-soft);color:var(--blue);border-radius:6px}
 .settings-empty{font-size:12px;color:var(--muted);background:var(--surface-2);padding:14px;border-radius:6px}
 .ai-drawer{position:fixed;top:0;right:0;bottom:0;width:min(100vw,470px);z-index:31;background:var(--surface);box-shadow:var(--shadow);display:flex;flex-direction:column}
+
+/* Keep source and review controls usable inside narrow and short drawers. */
+.ai-drawer { max-height: 100dvh; min-width: 0; }
+.ai-drawer .drawer-header,
+.ai-drawer .drawer-footer { flex: none; }
+.ai-drawer .drawer-scroll { min-height: 0; overscroll-behavior: contain; }
+.ai-drawer > .inline-error { margin: 8px 20px; flex: none; }
+.ai-drawer .draft-card { min-width: 0; margin-inline: 0; }
+.ai-drawer .evidence { overflow-wrap: anywhere; }
+.attachment-storage-note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+.attachment-storage-note summary { cursor: pointer; width: fit-content; }
+.attachment-storage-note p { margin-bottom: 0; }
+.upload-box { min-height: 54px; height: auto; padding: 12px; text-align: center; }
+.upload-box svg { flex: none; }
+.provider-info { overflow-wrap: anywhere; }
+.provider-row > .icon-button { flex: none; }
+@media (max-width: 600px) {
+  .module-settings-card .settings-card-title { flex-wrap: wrap; }
+  .module-settings-card .module-card-actions { width: 100%; justify-content: space-between; }
+  .ai-drawer .drawer-header { padding: 16px; }
+  .ai-drawer .drawer-scroll { padding-inline: 16px; }
+  .ai-drawer .drawer-footer { padding: 12px 16px; }
+  .ai-drawer .drawer-controls { flex-wrap: wrap; }
+  .ai-drawer .drawer-controls .button { flex: 1; }
+  .ai-drawer .attached-list span { max-width: none; min-width: 0; }
+  .ai-drawer .attached-list button { min-width: 28px; min-height: 28px; }
+}
+.provider-fields { padding: 0; margin: 0; border: 0; min-width: 0; }
+.ai-drawer {
+  z-index: 101;
+  background: var(--glass, var(--surface));
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.ai-drawer .drawer-header,
+.ai-drawer .drawer-footer { background: transparent; }
