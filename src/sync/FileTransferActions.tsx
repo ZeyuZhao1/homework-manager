@@ -1,21 +1,25 @@
 import { useEffect, useState } from 'react'
+import { isDriveReference } from '../filePresentation'
+import { DriveFileActions } from '../drive/DriveControls'
 import { service } from '../service'
 import type { FileAsset } from '../types'
 import { desktopSync } from './desktop'
 import { webSync } from './web'
 
 export function FileTransferActions({ file }: { file: FileAsset }) {
+  const drive = isDriveReference(file)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [connected, setConnected] = useState(false)
   useEffect(() => {
-    if (!service.isDesktop) return
+    if (!service.isDesktop || drive) return
     let alive = true
     const load = () => { void desktopSync.status().then(status => { if (alive) setConnected(status.connected) }).catch(() => {}) }
     load(); window.addEventListener('homeworkbook:sync-settings-changed', load)
     return () => { alive = false; window.removeEventListener('homeworkbook:sync-settings-changed', load) }
-  }, [])
+  }, [drive])
   const run = async (work: () => Promise<unknown>) => { setBusy(true); setMessage(''); try { await work(); window.dispatchEvent(new Event('homeworkbook:sync-refreshed')); setMessage('操作完成') } catch (e) { setMessage(e instanceof Error ? e.message : '操作失败') } finally { setBusy(false) } }
+  if (drive) return <DriveFileActions file={file} />
   if (!service.isDesktop && !service.isCloud) return null
   if (service.isDesktop && !connected && !file.cloud_available) return null
   const name = file.name || file.path.split(/[\\/]/).at(-1) || 'attachment'

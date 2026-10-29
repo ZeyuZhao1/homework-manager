@@ -4,6 +4,7 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import type { Assignment, CommonFile, Course, DirectoryEntry, FileHistoryEvent, FileLink, FileRole, LinkBatchInput, LinkInput, ModuleDescriptor, NamingInput, OpenFileResult, RenamePreview, Semester, Settings, Snapshot } from './types'
 import type { ApplyImport, ImportPreview, RemoteSnapshot } from './importSync'
 import { cloudService, webSync } from './sync/web'
+import type { DriveFileInfo } from './drive/types'
 
 const desktop = isTauri()
 const root = 'D:\\share\\University\\Year 1 Fall'
@@ -38,6 +39,14 @@ function trackPreview(fileId: string, eventType: FileHistoryEvent['event_type'],
 
 const localService = {
   isDesktop: desktop,
+  async driveRequest<T = unknown>(action: string, payload?: unknown): Promise<T> {
+    if (!desktop) throw new Error('Google Drive 需要连接个人云端')
+    return invoke<T>('drive_request', { action, payload: payload ?? null })
+  },
+  async registerDriveFiles(files: DriveFileInfo[]): Promise<string[]> {
+    if (desktop) return invoke<string[]>('register_drive_files', { files })
+    throw new Error('Google Drive 需要连接个人云端，演示模式不可用')
+  },
   get isCloud() { return webSync.isCloud },
   async snapshot(): Promise<Snapshot> { return desktop ? invoke<Snapshot>('load_snapshot') : clone() },
   async saveSemester(payload: Semester) {

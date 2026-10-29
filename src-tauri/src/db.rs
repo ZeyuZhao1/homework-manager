@@ -60,6 +60,14 @@ pub struct FileAsset {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub cloud_available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drive_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drive_resource_key: Option<String>,
+    #[serde(default)]
+    pub drive_unavailable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,7 +156,7 @@ pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
     let path = data_dir.join("homework.db");
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
     let schema_version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(|e| e.to_string())?;
-    if schema_version > 7 { return Err("数据库由较新版本创建，请升级应用".into()); }
+    if schema_version > 8 { return Err("数据库由较新版本创建，请升级应用".into()); }
     conn.execute_batch(
         "PRAGMA foreign_keys=ON;
          PRAGMA journal_mode=WAL;
@@ -247,10 +255,10 @@ pub fn load_snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
         custom_fields.entry(id).or_default().insert(key,value);
     }
     for assignment in &mut assignments { assignment.custom_fields = custom_fields.remove(&assignment.id).unwrap_or_default(); }
-    let files = conn.prepare("SELECT f.id,f.path,s.name,s.cloud_version IS NOT NULL FROM file_assets f LEFT JOIN sync_files s ON s.id=f.id ORDER BY f.path").map_err(|e| e.to_string())?
-        .query_map([], |r| { let path: String = r.get(1)?; Ok(FileAsset { id:r.get(0)?, missing: !std::path::Path::new(&path).is_file(), path, name:r.get(2)?, cloud_available:r.get(3)? }) }).map_err(|e| e.to_string())?
+    let files = conn.prepare("SELECT f.id,f.path,s.name,s.cloud_version IS NOT NULL,s.drive_id,s.drive_resource_key,coalesce(s.drive_unavailable,0),s.mime FROM file_assets f LEFT JOIN sync_files s ON s.id=f.id ORDER BY f.path").map_err(|e| e.to_string())?
+        .query_map([], |r| { let path: String = r.get(1)?; Ok(FileAsset { id:r.get(0)?, missing: !path.starts_with("gdrive:") && !std::path::Path::new(&path).is_file(), path, name:r.get(2)?, cloud_available:r.get(3)?, drive_id:r.get(4)?, drive_resource_key:r.get(5)?, drive_unavailable:r.get(6)?, mime:r.get(7)? }) }).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
-    for file in files.iter().filter(|file| !file.missing) {
+    for file in files.iter().filter(|file| !file.missing && file.drive_id.is_none()) {
         let Ok(metadata) = std::fs::metadata(&file.path) else { continue };
         let Ok(modified) = metadata.modified() else { continue };
         let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) else { continue };
@@ -397,6 +405,7 @@ fn save_assignments_batch_impl(conn: &mut Connection, payload: BatchAssignmentIn
         if !["todo","doing","done","submitted"].contains(&item.status.as_str()) { return Err("无效的作业状态".into()); }
     }
     let paths = payload.paths.iter().map(|path| {
+        if path.starts_with("gdrive:") { return Err("批量作业导入仅支持本机文件".into()); }
         let canonical = std::fs::canonicalize(path).map_err(|_| format!("文件不存在：{path}"))?;
         if !canonical.is_file() { return Err(format!("请选择文件：{path}")); }
         Ok(crate::files::normal_path(&canonical))
@@ -505,7 +514,7 @@ fn restore_impl(conn: &mut Connection, path: &str) -> Result<(), String> {
     let check: String = source.query_row("PRAGMA integrity_check", [], |r| r.get(0)).map_err(|e| e.to_string())?;
     if check != "ok" { return Err("备份数据库完整性检查失败".into()); }
     let version: i64 = source.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(|e| e.to_string())?;
-    if !(1..=7).contains(&version) { return Err("备份数据库版本不兼容".into()); }
+    if !(1..=8).contains(&version) { return Err("备份数据库版本不兼容".into()); }
     validate_restore_schema(&source)?;
     let stage = RestoreStage(std::env::temp_dir().join(format!("homeworkbook-restore-{}",Uuid::new_v4())));
     std::fs::create_dir(&stage.0).map_err(|e|e.to_string())?;
@@ -615,7 +624,14 @@ mod tests {
         assert_eq!(field,"第 3 周");
         assert_eq!(common,"textbook");
         let version: i64 = conn.query_row("PRAGMA user_version",[],|row|row.get(0)).unwrap();
-        assert_eq!(version,7);
+        assert_eq!(version,8);
+        conn.execute("INSERT INTO file_assets(id,path) VALUES('gdrive-abcdefghij_123','gdrive:abcdefghij_123')",[]).unwrap();
+        conn.execute("INSERT INTO sync_files(id,name,mime,drive_id,drive_resource_key,drive_unavailable) VALUES('gdrive-abcdefghij_123','Notes','application/pdf','abcdefghij_123','key_123',1)",[]).unwrap();
+        backup_impl(&conn,backup_path.to_str().unwrap()).unwrap();
+        conn.execute("DELETE FROM sync_files WHERE id='gdrive-abcdefghij_123'",[]).unwrap();
+        restore_impl(&mut conn,backup_path.to_str().unwrap()).unwrap();
+        let drive: (String,String,bool) = conn.query_row("SELECT drive_id,drive_resource_key,drive_unavailable FROM sync_files WHERE id='gdrive-abcdefghij_123'",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
+        assert_eq!(drive,("abcdefghij_123".into(),"key_123".into(),true));
         let import_tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('assignment_import_course_map','assignment_import_links','assignment_import_ignored')",[],|row|row.get(0)).unwrap();
         assert_eq!(import_tables,3);
         drop(conn);

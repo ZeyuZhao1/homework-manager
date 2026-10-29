@@ -37,7 +37,6 @@ export async function appearanceAsset(request: Request, assets: Fetcher): Promis
     .on('meta[name="color-scheme"]', { element(element) { element.setAttribute('content', theme) } })
     .on('meta[name="theme-color"]', { element(element) { element.setAttribute('content', color) } })
     .on('meta[name="apple-mobile-web-app-status-bar-style"]', { element(element) { element.setAttribute('content', statusBar) } })
-    .on('link[rel="manifest"]', { element(element) { element.setAttribute('href', `/manifest.webmanifest?theme=${theme}&v=4`) } })
     .transform(response)
   return request.method === 'HEAD' ? new Response(null, rewritten) : rewritten
 }

@@ -84,15 +84,15 @@ pub(crate) fn remove_module_owner_files(conn: &rusqlite::Connection, module_id: 
 
 #[tauri::command]
 pub fn link_module_files(state: State<'_, AppState>, payload: ModuleFileBatchInput) -> Result<usize, String> {
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    link_module_files_impl(&mut conn, payload)
+}
+
+fn link_module_files_impl(conn: &mut rusqlite::Connection, payload: ModuleFileBatchInput) -> Result<usize,String> {
     if payload.module_id.trim().is_empty() || payload.owner_type.trim().is_empty() || payload.owner_id.trim().is_empty() { return Err("模块文件关联缺少所有者".into()); }
     if !["shared","prompt","reference","solution"].contains(&payload.role.as_str()) { return Err("无效的文件角色".into()); }
     if payload.paths.is_empty() { return Err("请选择文件".into()); }
-    let canonical = payload.paths.iter().map(|raw| {
-        let path = fs::canonicalize(raw).map_err(|_| format!("文件不存在：{raw}"))?;
-        if !path.is_file() { return Err(format!("请选择文件：{raw}")); }
-        Ok(normal_path(&path))
-    }).collect::<Result<HashSet<_>,String>>()?;
-    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    let canonical = payload.paths.iter().map(|raw| registered_path(conn, raw)).collect::<Result<HashSet<_>,String>>()?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut created = 0;
     for path in canonical {
@@ -122,17 +122,21 @@ pub fn unlink_module_file(state: State<'_, AppState>, id: String) -> Result<(), 
 
 #[tauri::command]
 pub fn save_common_file(state: State<'_, AppState>, payload: CommonFileInput) -> Result<String, String> {
+    let mut conn = state.db.lock().map_err(|e| e.to_string())?;
+    save_common_file_impl(&mut conn, payload)
+}
+
+fn save_common_file_impl(connection: &mut rusqlite::Connection, payload: CommonFileInput) -> Result<String,String> {
     if !["textbook","extra","other"].contains(&payload.kind.as_str()) { return Err("无效的常用文件类型".into()); }
-    let path = fs::canonicalize(&payload.path).map_err(|_| "文件不存在".to_string())?;
-    if !path.is_file() { return Err("请选择文件".into()); }
-    let path = normal_path(&path);
-    let mut connection = state.db.lock().map_err(|e| e.to_string())?;
+    let path = registered_path(connection, &payload.path)?;
     let conn = connection.transaction().map_err(|e| e.to_string())?;
     let course_exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM courses WHERE id=?1)", [&payload.course_id], |r| r.get(0)).map_err(|e| e.to_string())?;
     if !course_exists { return Err("课程不存在".into()); }
     conn.execute("INSERT OR IGNORE INTO file_assets(id,path) VALUES (?1,?2)", params![Uuid::new_v4().to_string(),path]).map_err(|e| e.to_string())?;
     let file_id: String = conn.query_row("SELECT id FROM file_assets WHERE path=?1", [&path], |r| r.get(0)).map_err(|e| e.to_string())?;
-    let label = if payload.label.trim().is_empty() { Path::new(&path).file_name().unwrap_or_default().to_string_lossy().to_string() } else { payload.label.trim().to_owned() };
+    let label = if !payload.label.trim().is_empty() { payload.label.trim().to_owned() }
+        else if path.starts_with("gdrive:") { conn.query_row("SELECT name FROM sync_files WHERE id=?1",[&file_id],|r|r.get(0)).map_err(|e|e.to_string())? }
+        else { Path::new(&path).file_name().unwrap_or_default().to_string_lossy().to_string() };
     let existed: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM common_files WHERE course_id=?1 AND file_id=?2)", params![payload.course_id,file_id], |r| r.get(0)).map_err(|e| e.to_string())?;
     conn.execute("INSERT INTO common_files(course_id,file_id,kind,label) VALUES (?1,?2,?3,?4) ON CONFLICT(course_id,file_id) DO UPDATE SET kind=excluded.kind,label=excluded.label", params![payload.course_id,file_id,payload.kind,label]).map_err(|e| e.to_string())?;
     record_file_history(&conn,&file_id,"","",if existed { "common_updated" } else { "common_added" },&path,&format!("常用文件：{label}"))?;
@@ -184,7 +188,7 @@ pub(crate) fn record_file_history(
     let assignment_title = if assignment_id.is_empty() { String::new() } else {
         conn.query_row("SELECT title FROM assignments WHERE id=?1", [assignment_id], |r| r.get(0)).optional().map_err(|e| e.to_string())?.unwrap_or_default()
     };
-    let (file_size, modified_at_ms) = metadata_signature(Path::new(path)).map(|(size,modified)| (Some(size),Some(modified))).unwrap_or((None,None));
+    let (file_size, modified_at_ms) = if path.starts_with("gdrive:") { (None,None) } else { metadata_signature(Path::new(path)).map(|(size,modified)| (Some(size),Some(modified))).unwrap_or((None,None)) };
     conn.execute(
         "INSERT INTO file_history(id,file_id,link_id,assignment_id,assignment_title,event_type,path,details,file_size,modified_at_ms,occurred_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
         params![Uuid::new_v4().to_string(),file_id,link_id,assignment_id,assignment_title,event_type,path,details,file_size,modified_at_ms,now()]
@@ -197,6 +201,18 @@ pub(crate) fn normal_path(path: &Path) -> String {
     if let Some(rest) = raw.strip_prefix(r"\\?\UNC\") { format!(r"\\{}",rest) }
     else if let Some(rest) = raw.strip_prefix(r"\\?\") { rest.to_owned() }
     else { raw.to_string() }
+}
+
+fn registered_path(conn: &rusqlite::Connection, raw: &str) -> Result<String,String> {
+    if let Some(id) = raw.strip_prefix("gdrive:") {
+        crate::drive::validate_id(id)?;
+        let registered: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM file_assets f JOIN sync_files s ON s.id=f.id WHERE f.id=?1 AND f.path=?2 AND s.drive_id=?3)", params![format!("gdrive-{id}"),raw,id], |r| r.get(0)).map_err(|e|e.to_string())?;
+        if !registered { return Err("请先选择或解析 Drive 文件".into()); }
+        return Ok(raw.into());
+    }
+    let path = fs::canonicalize(raw).map_err(|_| "文件不存在，请重新选择".to_string())?;
+    if !path.is_file() { return Err("请选择文件，而非文件夹".into()); }
+    Ok(normal_path(&path))
 }
 
 #[tauri::command]
@@ -220,10 +236,8 @@ fn link_files_batch_impl(conn: &mut rusqlite::Connection, payload: LinkBatchInpu
     let mut seen = HashSet::new();
     let mut paths = Vec::new();
     for raw in &payload.paths {
-        let path = fs::canonicalize(raw).map_err(|_| format!("文件不存在：{raw}"))?;
-        if !path.is_file() { return Err(format!("请选择文件：{raw}")); }
-        let path = normal_path(&path);
-        if seen.insert(path.to_lowercase()) { paths.push(path); }
+        let path = registered_path(conn, raw)?;
+        if seen.insert(if path.starts_with("gdrive:") { path.clone() } else { path.to_lowercase() }) { paths.push(path); }
     }
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut created = 0;
@@ -247,6 +261,12 @@ pub async fn open_file(state: State<'_, AppState>, file_id: String, link_id: Opt
     let (path, location, navigation_modules) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let path: String = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [&file_id], |r| r.get(0)).map_err(|_| "文件关联不存在".to_string())?;
+        if let Some(id) = path.strip_prefix("gdrive:") {
+            let key: Option<String> = conn.query_row("SELECT drive_resource_key FROM sync_files WHERE id=?1", [&file_id], |r| r.get(0)).map_err(|_| "Drive 引用不存在")?;
+            let url = crate::drive::browser_url(id, key.as_deref())?;
+            open::that(url).map_err(|_| "无法用浏览器打开 Drive 文件")?;
+            return Ok(OpenFileResult { used_module:false, location_applied:false, warning:None });
+        }
         let location = link_id.as_deref().filter(|id| !id.trim().is_empty()).and_then(|id| {
             conn.query_row(
                 "SELECT page,chapter,problem FROM assignment_files WHERE id=?1 AND file_id=?2",
@@ -289,6 +309,7 @@ pub async fn open_file(state: State<'_, AppState>, file_id: String, link_id: Opt
 
 fn file_directory(conn: &rusqlite::Connection, file_id: &str) -> Result<PathBuf, String> {
     let path: String = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [file_id], |r| r.get(0)).map_err(|_| "文件关联不存在".to_string())?;
+    if path.starts_with("gdrive:") { return Err("Drive 引用没有本机文件夹".into()); }
     let directory = Path::new(&path).parent().filter(|path| path.is_absolute() && path.is_dir()).ok_or("所在文件夹不存在，请先重新定位文件")?;
     Ok(directory.to_path_buf())
 }
@@ -304,9 +325,7 @@ pub fn open_file_directory(state: State<'_, AppState>, file_id: String) -> Resul
 
 fn link_file_impl(conn: &rusqlite::Connection, payload: LinkInput) -> Result<String, String> {
     if !["prompt", "reference", "solution"].contains(&payload.role.as_str()) { return Err("无效的文件角色".into()); }
-    let path = fs::canonicalize(&payload.path).map_err(|_| "文件不存在，请重新选择".to_string())?;
-    if !path.is_file() { return Err("请选择文件，而非文件夹".into()); }
-    let path = normal_path(&path);
+    let path = registered_path(conn, &payload.path)?;
     let file_id: String = match conn.query_row("SELECT id FROM file_assets WHERE path=?1", [&path], |r| r.get(0)).optional().map_err(|e| e.to_string())? {
         Some(id) => id,
         None => {
@@ -353,6 +372,7 @@ pub fn relink_file(state: State<'_, AppState>, file_id: String, path: String) ->
 
 fn relink_file_impl(conn: &rusqlite::Connection, file_id: &str, path: &str) -> Result<(), String> {
     let old_path: String = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [file_id], |r| r.get(0)).map_err(|_| "文件关联不存在".to_string())?;
+    if old_path.starts_with("gdrive:") || path.starts_with("gdrive:") { return Err("Drive 引用不能重新定位为本机文件".into()); }
     let path = fs::canonicalize(path).map_err(|_| "新文件路径不存在".to_string())?;
     if !path.is_file() { return Err("请选择文件".into()); }
     let path = normal_path(&path);
@@ -412,6 +432,7 @@ fn make_preview(conn: &rusqlite::Connection, link_id: &str, naming: &NamingInput
         "SELECT f.id,f.path,c.name,c.code,a.title,l.role,l.chapter FROM assignment_files l JOIN file_assets f ON l.file_id=f.id JOIN assignments a ON l.assignment_id=a.id JOIN courses c ON a.course_id=c.id WHERE l.id=?1",
         [link_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?))
     ).map_err(|e| e.to_string())?;
+    if old_path.starts_with("gdrive:") { return Err("Drive 引用不能在本机重命名".into()); }
     let path = Path::new(&old_path);
     if !path.is_file() { return Err("原文件不存在，请先重新定位".into()); }
     let role_name = match role.as_str() { "prompt" => "题目", "reference" => "参考", _ => "解答" };
@@ -506,6 +527,26 @@ mod tests {
         LinkInput { id:String::new(),assignment_id:assignment_id.into(),path:path.to_string_lossy().to_string(),role:role.into(),page:String::new(),chapter:String::new(),problem:String::new(),note:String::new() }
     }
     fn naming(section: &str) -> NamingInput { NamingInput { material:"textbook".into(),sections:section.into(),version:"1".into(),scope_kind:"section".into() } }
+
+    #[test]
+    fn registered_drive_references_support_common_and_module_links() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE courses(id TEXT PRIMARY KEY); INSERT INTO courses VALUES('c'); CREATE TABLE assignments(id TEXT,title TEXT);
+          CREATE TABLE file_assets(id TEXT PRIMARY KEY,path TEXT UNIQUE); INSERT INTO file_assets VALUES('gdrive-abcdefghij_123','gdrive:abcdefghij_123');
+          CREATE TABLE common_files(course_id TEXT,file_id TEXT,kind TEXT,label TEXT,PRIMARY KEY(course_id,file_id));
+          CREATE TABLE module_file_links(id TEXT,module_id TEXT,owner_type TEXT,owner_id TEXT,owner_label TEXT,file_id TEXT,role TEXT,note TEXT,created_at TEXT,UNIQUE(module_id,owner_type,owner_id,file_id,role));
+          CREATE TABLE file_history(id TEXT,file_id TEXT,link_id TEXT,assignment_id TEXT,assignment_title TEXT,event_type TEXT,path TEXT,details TEXT,file_size INTEGER,modified_at_ms INTEGER,occurred_at TEXT);").unwrap();
+        crate::sync::migrate(&conn).unwrap();
+        conn.execute("INSERT INTO sync_files(id,name,drive_id) VALUES('gdrive-abcdefghij_123','Notes / week \\ one','abcdefghij_123')",[]).unwrap();
+        let id = save_common_file_impl(&mut conn, CommonFileInput { course_id:"c".into(),path:"gdrive:abcdefghij_123".into(),kind:"textbook".into(),label:String::new() }).unwrap();
+        assert_eq!(id,"gdrive-abcdefghij_123");
+        assert_eq!(conn.query_row("SELECT label FROM common_files",[],|r|r.get::<_,String>(0)).unwrap(),"Notes / week \\ one");
+        assert_eq!(link_module_files_impl(&mut conn, ModuleFileBatchInput { module_id:"example".into(),owner_type:"record".into(),owner_id:"record1".into(),owner_label:"Record".into(),paths:vec!["gdrive:abcdefghij_123".into()],role:"reference".into(),note:String::new() }).unwrap(),1);
+        assert!(registered_path(&conn,"gdrive:unregistered_123").is_err());
+        assert!(file_directory(&conn,&id).is_err());
+        assert!(relink_file_impl(&conn,&id,"/tmp/local-file").is_err());
+        assert_eq!(conn.query_row("SELECT count(*) FROM file_history WHERE file_size IS NULL AND modified_at_ms IS NULL",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+    }
 
     #[test]
     fn file_directory_uses_current_path_and_allows_missing_file() {

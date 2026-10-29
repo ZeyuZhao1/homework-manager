@@ -341,3 +341,5 @@ UI/core -> invoke_module -> enabled/capability/path checks
 
 
 跨平台构建、原生凭据后端、runner 与打包配置以 [平台支持](../docs/PLATFORMS.md) 为准。
+
+Google Drive 入口为 `src/drive/`、`src-tauri/src/drive.rs`、`cloud/src/drive.ts` 与 `drive-credentials.ts`；仅保存元数据，schema 8，真实 OAuth 配置及令牌不得入公开仓库。

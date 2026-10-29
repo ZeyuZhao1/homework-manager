@@ -3,10 +3,12 @@
   const root = document.documentElement
   let theme
   try { theme = localStorage.getItem('homeworkbook:theme') } catch { /* Storage may be disabled. */ }
-  if (theme !== 'dark' && theme !== 'light') theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  const preference = theme === 'dark' || theme === 'light' ? theme : 'system'
+  if (preference === 'system') theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
   const color = theme === 'dark' ? '#1b1b1d' : '#f0f3f8'
   root.dataset.theme = theme
+  root.dataset.themePreference = preference
   root.dataset.standalone = String(standalone)
   root.style.colorScheme = theme
   document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', theme)

@@ -1,4 +1,5 @@
 mod db;
+mod drive;
 mod files;
 mod import_sync;
 mod modules;
@@ -20,6 +21,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            drive::drive_request,
+            drive::register_drive_files,
             sync::sync_recurring_action,
             sync::sync_status,
             sync::sync_pair_start,

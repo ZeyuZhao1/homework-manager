@@ -1,6 +1,6 @@
 export type Status = 'todo' | 'doing' | 'done' | 'submitted'
 export type FileRole = 'prompt' | 'reference' | 'solution'
-export type Theme = 'light' | 'dark'
+export type Theme = 'light' | 'dark' | 'system'
 
 export interface Semester { id: string; name: string; source_root: string }
 export interface Course { id: string; semester_id: string; name: string; code: string; folder_path: string }
@@ -20,11 +20,11 @@ export interface Assignment {
   updated_at: string
   custom_fields: Record<string, string>
 }
-export interface FileAsset { id: string; path: string; missing: boolean; name?: string; cloud_available?: boolean }
+export interface FileAsset { id: string; path: string; missing: boolean; name?: string; cloud_available?: boolean; mime?: string; drive_id?: string; drive_resource_key?: string; drive_unavailable?: boolean }
 export interface CommonFile { course_id: string; file_id: string; kind: 'textbook' | 'extra' | 'other'; label: string }
 export interface FileLink { id: string; assignment_id: string; file_id: string; role: FileRole; page: string; chapter: string; problem: string; note: string }
 export interface RenameEvent { id: string; file_id: string; old_path: string; new_path: string; changed_at: string; undone_at: string | null }
-export interface FileHistoryEvent { id: string; file_id: string; link_id: string; assignment_id: string; assignment_title: string; event_type: 'tracking_started' | 'content_changed' | 'linked' | 'link_updated' | 'unlinked' | 'common_added' | 'common_updated' | 'common_removed' | 'module_linked' | 'module_unlinked' | 'relocated' | 'renamed' | 'rename_undone'; path: string; details: string; file_size: number | null; modified_at_ms: number | null; occurred_at: string }
+export interface FileHistoryEvent { id: string; file_id: string; link_id: string; assignment_id: string; assignment_title: string; event_type: 'tracking_started' | 'content_changed' | 'linked' | 'link_updated' | 'unlinked' | 'common_added' | 'common_updated' | 'common_removed' | 'module_linked' | 'module_unlinked' | 'relocated' | 'renamed' | 'rename_undone' | 'metadata_refreshed'; path: string; details: string; file_size: number | null; modified_at_ms: number | null; occurred_at: string }
 export interface ModuleFileLink { id: string; module_id: string; owner_type: string; owner_id: string; owner_label: string; file_id: string; role: string; note: string }
 export interface Settings { theme: Theme; naming_template: string }
 export interface Snapshot { semesters: Semester[]; courses: Course[]; assignments: Assignment[]; files: FileAsset[]; links: FileLink[]; module_file_links: ModuleFileLink[]; common_files: CommonFile[]; renames: RenameEvent[]; file_history: FileHistoryEvent[]; settings: Settings; recent_values: Record<string, string[]> }

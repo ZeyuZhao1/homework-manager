@@ -1,5 +1,8 @@
 import { entityTypes, type CloudSnapshot, type EntityType, type SyncEntity, type SyncMutation } from '../../src/sync/protocol'
 
+export function validDriveId(value: unknown): value is string { return typeof value === 'string' && /^[-_A-Za-z0-9]{10,180}$/.test(value) }
+export function validResourceKey(value: unknown): value is string | undefined { return value === undefined || typeof value === 'string' && value.length <= 256 && /^[-_A-Za-z0-9]*$/.test(value) }
+
 export class ApiError extends Error { constructor(public status: number, message: string) { super(message) } }
 export interface EntityStore {
   snapshot(): CloudSnapshot
@@ -9,7 +12,7 @@ export interface EntityStore {
 const fields: Record<EntityType, string[]> = {
   semester: ['name'], course: ['semester_id','name','code'],
   assignment: ['course_id','title','description','due_at','status','submission_label','submission_url','submission_notes','source_name','source_text','created_at','updated_at','custom_fields'],
-  file: ['name','mime','size','cloud_version'], link: ['assignment_id','file_id','role','page','chapter','problem','note'],
+  file: ['name','mime','size','cloud_version','drive_id','drive_resource_key','drive_unavailable'], link: ['assignment_id','file_id','role','page','chapter','problem','note'],
   common_file: ['course_id','file_id','kind','label'], module_file_link: ['module_id','owner_type','owner_id','owner_label','file_id','role','note','created_at'],
   setting: ['value'], module_state: ['enabled'], provider: ['name','kind','base_url','model'], ai_setting: ['value'],
   recurring_series: ['course_id','name','title_template','description','submission_label','submission_url','submission_notes','rule_json','due_rule_json','max_occurrences','end_at','status','created_at','updated_at','timezone'],
@@ -87,7 +90,7 @@ export class SqlEntityStore implements EntityStore {
     }
     if(type==='link'&&!['prompt','reference','solution'].includes(String(merged.role)))throw new ApiError(400,'Invalid file role')
     if(type==='common_file'&&!['textbook','extra','other'].includes(String(merged.kind)))throw new ApiError(400,'Invalid common file kind')
-    if(type==='setting'&&id==='theme'&&!['light','dark'].includes(String(merged.value)))throw new ApiError(400,'Invalid theme')
+    if(type==='setting'&&id==='theme'&&!['light','dark','system'].includes(String(merged.value)))throw new ApiError(400,'Invalid theme')
     if(type==='module_state'&&![true,false,0,1].includes(merged.enabled as boolean))throw new ApiError(400,'Invalid module state')
     if(type==='file'&&merged.size!=null&&(!Number.isSafeInteger(merged.size)||Number(merged.size)<0))throw new ApiError(400,'Invalid file size')
     for(const key of ['due_at','scheduled_at','end_at']){
@@ -95,17 +98,24 @@ export class SqlEntityStore implements EntityStore {
       if(typeof value!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?$/.test(value))throw new ApiError(400,'Invalid date')
       const date=new Date(`${value.length===16?value+':00':value}Z`);if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,value.length)!==value)throw new ApiError(400,'Invalid calendar date')
     }
-    const nullable=['due_at','scheduled_at','end_at','max_occurrences','assignment_id','cloud_version','size']
+    const nullable=['due_at','scheduled_at','end_at','max_occurrences','assignment_id','cloud_version','size','drive_id','drive_resource_key']
     for(const [key,value]of Object.entries(merged))if(value===null&&!nullable.includes(key))throw new ApiError(400,'Invalid null field')
     for(const key of ['size','max_occurrences','sequence_no','overridden'])if(merged[key]!=null&&(!Number.isSafeInteger(merged[key])||Number(merged[key])<0))throw new ApiError(400,'Invalid number')
     if(merged.overridden!==undefined&&![0,1].includes(Number(merged.overridden)))throw new ApiError(400,'Invalid override state')
     if(type==='calendar'){const value=String(merged.week1_start_date??'');if(!/^\d{4}-\d\d-\d\d$/.test(value)||!Number.isFinite(new Date(value+'T00:00:00Z').getTime())||new Date(value+'T00:00:00Z').toISOString().slice(0,10)!==value)throw new ApiError(400,'Invalid calendar date')}
-    const numbers=['size','max_occurrences','sequence_no','overridden']
+    const numbers=['size','max_occurrences','sequence_no','overridden','drive_unavailable']
     const booleans=['enabled']
     for(const [key,value]of Object.entries(merged))if(key!=='custom_fields'&&!numbers.includes(key)&&!booleans.includes(key)&&value!==null&&typeof value!=='string')throw new ApiError(400,'Invalid field type')
     if(type==='recurring_occurrence'&&this.sql.exec("SELECT id FROM entities WHERE type='recurring_occurrence' AND id<>? AND data IS NOT NULL AND ((json_extract(data,'$.series_id')=? AND json_extract(data,'$.sequence_no')=?) OR (? IS NOT NULL AND json_extract(data,'$.assignment_id')=?)) LIMIT 1",id,String(merged.series_id??''),Number(merged.sequence_no??0),typeof merged.assignment_id==='string'?merged.assignment_id:null,typeof merged.assignment_id==='string'?merged.assignment_id:null).toArray().length>0)throw new ApiError(400,'Duplicate recurrence occurrence')
     if(type==='recurring_occurrence' && (!Number.isSafeInteger(merged.sequence_no)||Number(merged.sequence_no)<1||!['planned','blocked','generated','skipped','cancelled'].includes(String(merged.state))))throw new ApiError(400,'Invalid occurrence')
-    if (type==='file' && (typeof merged.name!=='string' || !merged.name.trim() || merged.name.length>255 || /[\\/]/.test(merged.name))) throw new ApiError(400,'Invalid file name')
+    if(type==='file'){
+      const drive=merged.drive_id!=null||id.startsWith('gdrive-')
+      if(drive){
+        if(!validDriveId(merged.drive_id)||id!==`gdrive-${merged.drive_id}`||!validResourceKey(merged.drive_resource_key??undefined)||merged.cloud_version!==undefined||merged.size!=null||merged.drive_unavailable!==undefined&&![0,1].includes(merged.drive_unavailable as number))throw new ApiError(400,'Invalid Google Drive reference')
+        if(previous?.data&&previous.data.drive_id!==merged.drive_id)throw new ApiError(400,'Google Drive identity is immutable')
+      }else if(merged.drive_resource_key!=null||merged.drive_unavailable!==undefined&&merged.drive_unavailable!==0||previous?.data?.drive_id)throw new ApiError(400,'Invalid Google Drive reference')
+    }
+    if (type==='file' && (typeof merged.name!=='string' || !merged.name.trim() || (merged.drive_id?new TextEncoder().encode(merged.name).length>1024:merged.name.length>255) || /[\u0000-\u001f\u007f-\u009f]/.test(merged.name) || !merged.drive_id && /[\\/]/.test(merged.name))) throw new ApiError(400,'Invalid file name')
     if (type==='assignment' && !['todo','doing','done','submitted'].includes(String(merged.status??'todo'))) throw new ApiError(400,'Invalid assignment status')
     if (type==='file' && ('cloud_version' in data) && (data.cloud_version!==null||previous?.data?.cloud_version)) throw new ApiError(400,'Cloud content is server managed')
     for (const [key,parentType] of parents[type]??[]) { const parentId=merged[key]; if (key==='assignment_id' && type==='recurring_occurrence' && !parentId) continue; if (typeof parentId!=='string' || !this.read(parentType,parentId)?.data) throw new ApiError(400,'Missing parent') }
@@ -115,7 +125,7 @@ export class SqlEntityStore implements EntityStore {
     this.publish(type,id,merged)
   }
   setFileVersion(id:string,version:string|null,mime?:string,size?:number) {
-    this.storage.transactionSync(()=>{ const row=this.read('file',id); if (!row?.data) throw new ApiError(404,'File not found'); this.publish('file',id,{...row.data,cloud_version:version,...(mime?{mime,size}:{})}) })
+    this.storage.transactionSync(()=>{ const row=this.read('file',id); if (!row?.data) throw new ApiError(404,'File not found'); if(row.data.drive_id||id.startsWith('gdrive-'))throw new ApiError(400,'Google Drive references have no content'); this.publish('file',id,{...row.data,cloud_version:version,...(mime?{mime,size}:{})}) })
   }
   private cascade(type:EntityType,id:string) {
     for (const row of this.snapshot().entities) {

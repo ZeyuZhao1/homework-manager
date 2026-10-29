@@ -116,3 +116,32 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 `pnpm cloud:dev` 启动本地服务，静态资源来自 `dist`。本地初始化 Secret 使用被 Git 忽略的 `.dev.vars` 配置，值仅用于本地模拟。Vite `pnpm dev` 仍是演示模式；生产网页一旦无法连接 API 会显示错误，不会降级成样例数据。
 
 真实 OAuth 提供商回调、你的网络环境与私有账户部署，需要在私有测试环境中验证后才能认定正式可用。实现契约见 [SYNC_DESIGN.md](SYNC_DESIGN.md)。
+
+
+## Google Drive 文件关联
+
+先更新所有桌面客户端至支持 schema 8 / Drive 来源的版本；旧客户端不理解新的 Drive 元数据字段。网页和 PWA 使用在线版本。
+
+1. 在设置的“Google Drive”中检查连接状态并连接账号；桌面需先配对个人云端，同步可以保持暂停。
+2. 在作业“关联文件”中选择“从 Google Drive 选择”，或粘贴 Drive / Google 文档、表格、幻灯片链接。私人链接未获文件权限时会再打开选择器，确认选中的文件。
+3. 按原有方式填写用途、页码、章节、题号等并保存。关联信息进入业务同步，内容继续留在 Drive；不自动上传到 R2、下载或传给 AI。
+4. 打开文件关联详情或点击“刷新信息”时才查询最新名称和可访问状态。文件移动保持 ID 关联；不可访问时保留原记录和关系。离线仍可查看桌面缓存元数据，网页保持在线使用。
+5. 点击文件会在 Google Drive 打开。各设备浏览器仍需登录有权限的 Google 账号；作业簿共用授权不会自动登录外部 Google 页面。
+
+Google Drive 授权与应用 Google 身份登录相互独立，一个 Drive 账号由所有已授权设备共享。断开账号保留已有链接；换账号前需显式断开。Google 的逐文件 `drive.file` 权限本身包含编辑能力，但本应用仅调用读取账户/文件信息接口。
+
+### 私有 Google 配置
+
+在自己的 Google Cloud 项目中启用 **Google Drive API** 和 **Google Picker API**，创建 **Web application** OAuth 客户端，将实际服务源地址加 `/api/drive/callback` 登记为授权重定向 URI。授权界面配置逐文件权限 `https://www.googleapis.com/auth/drive.file`；测试项目添加自己的 Google 账号为测试用户。Google 对测试状态应用的刷新令牌可能施加较短有效期，遇到重新授权提示时可重新连接；正式使用需按 Google 项目要求调整发布状态。
+
+Google 登录成功后仍需调用 Drive API 查询账号。若提示 API 尚未启用，请先在 OAuth 客户端所属项目启用它，再重新连接；失败的连接不会保存为已连接。外观设置接受 `system`，同步的是用户偏好，各设备按自身系统配色显示。
+
+| Worker Secret | 用途 |
+| --- | --- |
+| `DRIVE_GOOGLE_CLIENT_ID` | 独立的 Drive OAuth 客户端 ID |
+| `DRIVE_GOOGLE_CLIENT_SECRET` | Drive 客户端密钥 |
+| `DRIVE_CREDENTIAL_ENCRYPTION_KEY` | 独立的 32 字节随机主密钥，以 64 位十六进制保存 |
+
+采用 OAuth 重定向式 Picker，无需将 Google API Key 或访问令牌放进前端。实际客户端文件、域名和加密主密钥保存在仓库外。OAuth 刷新/访问令牌独立加密在私有 R2，不进入数据库、同步、应用备份或日志。链接资源键属于关联元数据，不是 OAuth 凭据。
+
+配置参考：[Google Picker 系统浏览器流程](https://developers.google.com/workspace/drive/picker/guides/desktop-mobile-picker)、[Drive 权限范围](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)。

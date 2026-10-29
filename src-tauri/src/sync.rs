@@ -145,7 +145,7 @@ const SPECS: &[Spec] = &[
         kind: "file",
         table: "sync_files",
         key: "id",
-        columns: &["name", "mime", "size", "cloud_version"],
+        columns: &["name", "mime", "size", "cloud_version", "drive_id", "drive_resource_key", "drive_unavailable"],
         filter: "1",
     },
     Spec {
@@ -380,7 +380,7 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(sql_error)?;
-    if version > 7 {
+    if version > 8 {
         return Err("数据库由较新版本创建，请升级应用".into());
     }
     conn.execute_batch("SAVEPOINT sync_migrate")
@@ -392,7 +392,13 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
       CREATE TABLE IF NOT EXISTS sync_shadow(entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,data TEXT,seq INTEGER NOT NULL,PRIMARY KEY(entity_type,entity_id));
       CREATE TABLE IF NOT EXISTS sync_business_history(id TEXT PRIMARY KEY,file_id TEXT NOT NULL DEFAULT '',link_id TEXT NOT NULL DEFAULT '',assignment_id TEXT NOT NULL DEFAULT '',assignment_title TEXT NOT NULL DEFAULT '',event_type TEXT NOT NULL,occurred_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sync_files(id TEXT PRIMARY KEY REFERENCES file_assets(id) ON DELETE CASCADE,name TEXT NOT NULL,mime TEXT NOT NULL DEFAULT 'application/octet-stream',size INTEGER,cloud_version TEXT);
-      PRAGMA user_version=7;").map_err(sql_error)?;
+      PRAGMA user_version=8;").map_err(sql_error)?;
+        let columns = { let mut stmt = conn.prepare("PRAGMA table_info(sync_files)").map_err(sql_error)?;
+            let rows = stmt.query_map([], |r| r.get::<_,String>(1)).map_err(sql_error)?;
+            rows.collect::<Result<Vec<_>,_>>().map_err(sql_error)? };
+        for (column, definition) in [("drive_id", "TEXT"), ("drive_resource_key", "TEXT"), ("drive_unavailable", "INTEGER NOT NULL DEFAULT 0")] {
+            if !columns.iter().any(|c| c == column) { conn.execute_batch(&format!("ALTER TABLE sync_files ADD COLUMN {column} {definition}")).map_err(sql_error)?; }
+        }
         let has_baseline: bool = {
             let mut stmt = conn
                 .prepare("PRAGMA table_info(sync_runtime)")
@@ -411,6 +417,8 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
             )
             .map_err(sql_error)?;
         }
+        conn.execute_batch("CREATE TRIGGER IF NOT EXISTS drive_asset_identity BEFORE UPDATE OF id,path ON file_assets WHEN OLD.path LIKE 'gdrive:%' AND (NEW.path IS NOT OLD.path OR NEW.id IS NOT OLD.id) BEGIN SELECT RAISE(ABORT,'Drive identity is immutable'); END;
+          CREATE TRIGGER IF NOT EXISTS drive_metadata_identity BEFORE UPDATE OF drive_id ON sync_files WHEN OLD.drive_id IS NOT NULL AND NEW.drive_id IS NOT OLD.drive_id BEGIN SELECT RAISE(ABORT,'Drive identity is immutable'); END;").map_err(sql_error)?;
         install_triggers(conn)
     })();
     match result {
@@ -485,7 +493,7 @@ fn install_triggers(conn: &Connection) -> Result<(), String> {
             } else {
                 "update"
             };
-            conn.execute_batch(&format!("CREATE TRIGGER IF NOT EXISTS sync_file_identity_{suffix} AFTER {event} ON file_assets WHEN (SELECT enabled=1 AND replaying=0 FROM sync_runtime WHERE id=1) AND NEW.path NOT LIKE 'cloud://%' BEGIN INSERT INTO sync_files(id,name) VALUES(NEW.id,(WITH RECURSIVE parts(s) AS (SELECT replace(NEW.path,char(92),'/') UNION ALL SELECT substr(s,instr(s,'/')+1) FROM parts WHERE instr(s,'/')>0) SELECT s FROM parts WHERE instr(s,'/')=0)) ON CONFLICT(id) DO UPDATE SET name=excluded.name; END;")).map_err(sql_error)?;
+            conn.execute_batch(&format!("DROP TRIGGER IF EXISTS sync_file_identity_{suffix}; CREATE TRIGGER sync_file_identity_{suffix} AFTER {event} ON file_assets WHEN (SELECT enabled=1 AND replaying=0 FROM sync_runtime WHERE id=1) AND NEW.path NOT LIKE 'cloud://%' AND NEW.path NOT LIKE 'gdrive:%' BEGIN INSERT INTO sync_files(id,name) VALUES(NEW.id,(WITH RECURSIVE parts(s) AS (SELECT replace(NEW.path,char(92),'/') UNION ALL SELECT substr(s,instr(s,'/')+1) FROM parts WHERE instr(s,'/')>0) SELECT s FROM parts WHERE instr(s,'/')=0)) ON CONFLICT(id) DO UPDATE SET name=excluded.name; END;")).map_err(sql_error)?;
         }
     }
     if exists(conn, "file_history")? {
@@ -1111,9 +1119,18 @@ fn apply_entity(
         return Err("同步实体格式无效".into());
     }
     if kind == "file" {
+        let drive = payload.get("drive_id").and_then(Value::as_str);
+        if let Some(drive) = drive {
+            crate::drive::validate_id(drive)?;
+            if id != format!("gdrive-{drive}") { return Err("Drive 文件标识不一致".into()); }
+        }
+        let existing: Option<String> = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [id], |r| r.get(0)).optional().map_err(sql_error)?;
+        if let Some(existing) = existing {
+            if drive.is_some_and(|d| existing != format!("gdrive:{d}")) { return Err("Drive 文件标识不可更改".into()); }
+        }
         conn.execute(
             "INSERT OR IGNORE INTO file_assets(id,path) VALUES(?1,?2)",
-            params![id, format!("cloud://{id}")],
+            params![id, drive.map(|d| format!("gdrive:{d}")).unwrap_or_else(|| format!("cloud://{id}"))],
         )
         .map_err(sql_error)?;
     }
@@ -1142,8 +1159,8 @@ fn apply_entity(
             if !fields.iter().any(|(k, _)| k == col) {
                 let v = match *col {
                     "max_occurrences" | "end_at" | "scheduled_at" | "due_at" | "assignment_id"
-                    | "size" | "cloud_version" => Value::Null,
-                    "sequence_no" | "overridden" => json!(0),
+                    | "size" | "cloud_version" | "drive_id" | "drive_resource_key" => Value::Null,
+                    "sequence_no" | "overridden" | "drive_unavailable" => json!(0),
                     "enabled" => json!(true),
                     "status" => json!(if kind == "assignment" {
                         "todo"
@@ -1554,6 +1571,10 @@ pub async fn sync_upload_file(
         return Err("上传文件内容需要本次明确确认".into());
     }
     safe_id(&file_id)?;
+    { let conn = state.db.lock().map_err(|_| "数据库繁忙")?;
+      let path: Option<String> = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [&file_id], |r| r.get(0)).optional().map_err(sql_error)?;
+      if path.is_some_and(|p| p.starts_with("gdrive:")) { return Err("Drive 引用不支持云端附件内容操作".into()); }
+    }
     sync_now(state.clone()).await?;
     let c = read_config(&state)?;
     let path = {
@@ -1573,6 +1594,7 @@ pub async fn sync_upload_file(
         )
         .map_err(sql_error)?
     };
+    if path.starts_with("gdrive:") { return Err("Drive 引用不支持上传或下载文件内容".into()); }
     if path.starts_with("cloud://") {
         return Err("请先选择本机文件位置".into());
     }
@@ -1617,6 +1639,10 @@ pub async fn sync_download_file(
         return Err("下载到本机需要本次明确确认".into());
     }
     safe_id(&file_id)?;
+    { let conn = state.db.lock().map_err(|_| "数据库繁忙")?;
+      let path: Option<String> = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [&file_id], |r| r.get(0)).optional().map_err(sql_error)?;
+      if path.is_some_and(|p| p.starts_with("gdrive:")) { return Err("Drive 引用不支持云端附件内容操作".into()); }
+    }
     let target = PathBuf::from(&path);
     if !target.is_absolute() || target.exists() {
         return Err("请选择尚未存在的绝对文件路径，不会覆盖文件".into());
@@ -1699,6 +1725,10 @@ pub async fn sync_remove_cloud_file(
     state: State<'_, AppState>,
     file_id: String,
 ) -> Result<Value, String> {
+    { let conn = state.db.lock().map_err(|_| "数据库繁忙")?;
+      let path: Option<String> = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [&file_id], |r| r.get(0)).optional().map_err(sql_error)?;
+      if path.is_some_and(|p| p.starts_with("gdrive:")) { return Err("Drive 引用不支持云端附件内容操作".into()); }
+    }
     let c = read_config(&state)?;
     ensure_active(&state, &c)?;
     let result = request(
@@ -1922,13 +1952,53 @@ mod tests {
             .any(|o| o.changes[0].entity_type == "semester" && o.changes[0].data.is_none()));
     }
     #[test]
+    fn paused_drive_registration_and_links_are_captured_on_resume() {
+        let mut conn = database();
+        configure_enabled(&mut conn,true).unwrap();
+        conn.execute("DELETE FROM sync_outbox",[]).unwrap();
+        configure_enabled(&mut conn,false).unwrap();
+        let files = vec![crate::drive::DriveFileInfo { id:"paused_drive_123".into(),name:"Notes / week 1".into(),mime_type:"application/pdf".into(),resource_key:Some("resource_key".into()),unavailable:false }];
+        let ids = crate::drive::register(&mut conn,files).unwrap();
+        conn.execute("INSERT INTO assignment_files(id,assignment_id,file_id,role) VALUES('drive-link','a',?1,'reference')",[&ids[0]]).unwrap();
+        assert!(pending(&conn,100).unwrap().is_empty());
+        configure_enabled(&mut conn,true).unwrap();
+        let operations = pending(&conn,100).unwrap();
+        let changes = operations.iter().flat_map(|op| &op.changes).collect::<Vec<_>>();
+        let file = changes.iter().find(|c| c.entity_type == "file" && c.entity_id == ids[0]).unwrap().data.as_ref().unwrap();
+        assert_eq!(file["name"],json!("Notes / week 1"));
+        assert_eq!(file["drive_id"],json!("paused_drive_123"));
+        assert_eq!(file["drive_resource_key"],json!("resource_key"));
+        assert_eq!(file["drive_unavailable"],json!(0));
+        assert!(changes.iter().any(|c| c.entity_type == "link" && c.entity_id == "drive-link"));
+    }
+
+    #[test]
+    fn drive_metadata_migrates_and_roundtrips_without_local_paths() {
+        let conn = database();
+        conn.execute_batch("DROP TABLE sync_files; CREATE TABLE sync_files(id TEXT PRIMARY KEY REFERENCES file_assets(id),name TEXT NOT NULL,mime TEXT DEFAULT 'application/octet-stream',size INTEGER,cloud_version TEXT); PRAGMA user_version=7;").unwrap();
+        migrate(&conn).unwrap();
+        let id = "gdrive-abcdefghij_123";
+        let data = json!({"name":"Course notes", "mime":"application/pdf", "drive_id":"abcdefghij_123", "drive_resource_key":"resource_key", "drive_unavailable":0});
+        apply_entity(&conn,"file",id,Some(&data)).unwrap();
+        assert_eq!(conn.query_row("SELECT path FROM file_assets WHERE id=?1", [id], |r| r.get::<_,String>(0)).unwrap(), "gdrive:abcdefghij_123");
+        assert!(conn.execute("UPDATE file_assets SET path='/local/file' WHERE id=?1",[id]).is_err());
+        assert!(conn.execute("UPDATE sync_files SET drive_id=NULL WHERE id=?1",[id]).is_err());
+        conn.execute("UPDATE sync_runtime SET enabled=1",[]).unwrap();
+        conn.execute("UPDATE sync_files SET name='Renamed',drive_unavailable=1 WHERE id=?1",[id]).unwrap();
+        let operations = pending(&conn,100).unwrap();
+        assert!(operations.iter().flat_map(|op| &op.changes).any(|op| op.entity_type == "file" && op.data.as_ref().is_some_and(|d| d.get("name") == Some(&json!("Renamed")))));
+        seed_baseline(&conn).unwrap();
+        assert!(pending(&conn,100).unwrap().iter().flat_map(|op| &op.changes).any(|op| op.entity_type == "file" && op.data.as_ref().is_some_and(|d| d.get("drive_id") == Some(&json!("abcdefghij_123")))));
+    }
+
+    #[test]
     fn migration_is_repeatable_and_future_versions_fail_closed() {
         let conn = database();
         migrate(&conn).unwrap();
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            7
+            8
         );
         conn.execute_batch("PRAGMA user_version=99").unwrap();
         assert!(migrate(&conn).is_err());
@@ -2290,4 +2360,11 @@ mod tests {
         }
         std::fs::remove_dir_all(dir).unwrap();
     }
+}
+
+/// Manual Drive actions remain available while record synchronization is paused.
+pub(super) async fn drive_request(state: &AppState, method: reqwest::Method, path: &str, body: Option<Value>) -> Result<Value,String> {
+    let c = read_config(state)?;
+    if c.device_id.is_empty() || c.server_url.is_empty() { return Err("请先配对此私有服务，再连接 Google Drive".into()); }
+    request(&c, method, path, body, true).await
 }

@@ -21,15 +21,13 @@
     gap: 16px;
     position: relative;
     z-index: 16;
-    isolation: isolate;
-    contain: paint;
     height: calc(60px + var(--mobile-safe-top));
     min-height: calc(60px + var(--mobile-safe-top));
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     filter: none;
     padding: calc(8px + var(--mobile-safe-top)) 20px 8px;
-    background: var(--bg);
+    background: transparent;
   }
   .mobile-brand { display: flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; white-space: nowrap; }
   .mobile-brand svg { color: var(--blue); }

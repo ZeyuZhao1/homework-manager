@@ -70,3 +70,12 @@ An existing desktop begins an explicit baseline session before sending its initi
 授权设备可读取 `GET /api/ai/credentials` 的布尔配置状态，或通过 `PUT /api/ai/providers/:id/credential` 提交 `{api_key}` 替换密钥，`DELETE` 清除。服务商必须存在，写入要求同源授权、限流和 8KB 请求限制；响应不含密钥。
 
 凭据以 AES-GCM（随机 12 字节 IV，服务商 ID 为附加认证数据）保存在私有 R2 前缀，使用 `AI_CREDENTIAL_ENCRYPTION_KEY` Secret 的 32 字节主密钥；不经 EntityStore、变更流、快照或业务备份。附件内容 API 限定 `content/<file-id>/` 前缀，不能读取凭据对象。旧 `AI_PROVIDER_KEYS` 只作为兼容来源；清除写入禁用标记，防止旧值复活。
+
+
+## Drive references
+
+File payloads additionally support `drive_id`, `drive_resource_key` (nullable), `drive_unavailable` (0/1). A Drive asset uses `gdrive-<id>`; its source ID is immutable. It has no `cloud_version` or uploaded contents. Desktop reconstructs `gdrive:<id>` and stores metadata in schema 8. Regular files may omit or use null Drive IDs; local paths still never enter wire payloads.
+
+Authenticated Drive API: `GET /api/drive/status`, `POST /api/drive/flows`, `POST /api/drive/flows/:id/poll`, `POST /api/drive/files/resolve`, `POST /api/drive/files/refresh`, `DELETE /api/drive/connection`. The public callback `GET /api/drive/callback` only completes a device-authorized, expiring state/PKCE flow; it cannot log into the application. Poll credentials are hashed and results are bound to the initiating device and consumed once. Grant-specific expiry uses 409, keeping the application's independent device session intact.
+
+Native commands are `drive_request` with an allowlisted action and `register_drive_files`. Explicit requests work while automatic sync is paused; new references are captured by the next baseline on resume. Names/access changes append `metadata_refreshed` history. Disconnection invalidates pending generations and deletes encrypted provider credentials but retains business references.

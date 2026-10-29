@@ -72,6 +72,9 @@ function App() {
     return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape) }
   }, [moreOpen])
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [themePreview, setThemePreview] = useState<Settings['theme'] | null>(null)
+  const themeWrites = useRef<Promise<void>>(Promise.resolve())
+  const themeRevision = useRef(0)
   const [view, setView] = useState<View>('overview')
   const [semesterId, setSemesterId] = useState('')
   const [courseId, setCourseId] = useState('')
@@ -115,7 +118,7 @@ function App() {
     return () => window.removeEventListener('homeworkbook:module-state-changed',update)
   }, [refreshModules])
   useEffect(() => { mainRef.current?.scrollTo({ top: 0, left: 0 }) }, [view, courseId])
-  const currentTheme = snapshot?.settings.theme
+  const currentTheme = themePreview ?? snapshot?.settings.theme
   useEffect(() => {
     if (!currentTheme) return
     applyTheme(currentTheme)
@@ -206,7 +209,19 @@ function App() {
   const assignmentFileIds = new Set([...(currentLinks.map(link => link.file_id)), ...(snapshot?.file_history.filter(event => event.assignment_id === selected?.id).map(event => event.file_id) || [])])
   const currentFileHistory = snapshot?.file_history.filter(event => assignmentFileIds.has(event.file_id)) || []
   const saveSettings = async (payload: Settings) => { const saved = await run(() => service.saveSettings(payload), '设置已保存'); if (saved) applyTheme(payload.theme) }
-  const setTheme = (theme: Settings['theme']) => { if (snapshot) void saveSettings({ ...snapshot.settings, theme }) }
+  const setTheme = (theme: Settings['theme']) => {
+    if (!snapshot) return
+    const revision = ++themeRevision.current
+    setThemePreview(theme)
+    applyTheme(theme)
+    // Keep rapid selections ordered and avoid painting an older in-flight response.
+    themeWrites.current = themeWrites.current.then(async () => {
+      const saved = await run(() => service.saveSettings({ ...snapshot.settings, theme }), '主题已更新')
+      if (revision !== themeRevision.current) return
+      setThemePreview(null)
+      if (!saved) applyTheme(snapshot.settings.theme)
+    })
+  }
   const openCourse = (id: string) => { setMobileDetailOpen(false); setMoreOpen(false); setCourseId(id); setView('course'); setFilter('open'); setSearch(''); setSelectedId(''); setSelectedGroupId('') }
   const chooseView = (next: View) => { mainRef.current?.scrollTo({ top: 0, left: 0 }); setMobileDetailOpen(false); setMoreOpen(false); setView(next); setFilter('open'); setSearch(''); setSelectedId(''); setSelectedGroupId('') }
   const showAssignments = (nextFilter: OverviewFilter) => { chooseView('all'); setFilter(nextFilter); mainRef.current?.scrollTo({ top: 0 }) }
@@ -235,7 +250,7 @@ function App() {
       <div className="semester-row"><CalendarDays className="semester-icon" size={16} aria-hidden="true" /><select value={semesterId} onChange={event => { setSemesterId(event.target.value); setCourseId(snapshot.courses.find(c => c.semester_id === event.target.value)?.id || ''); setSelectedId(''); setSelectedGroupId('') }} aria-label="选择学期">{snapshot.semesters.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}</select><ChevronDown className="semester-chevron" size={15} aria-hidden="true" /></div>
       <nav className="main-nav" aria-label="主导航"><button className={view === 'overview' ? 'active' : ''} onClick={() => chooseView('overview')}><LayoutDashboard size={19} />总览</button><button className={view === 'all' ? 'active' : ''} onClick={() => chooseView('all')}><FileText size={19} />全部作业</button><button className={view === 'files' ? 'active' : ''} onClick={() => chooseView('files')}><Folder size={19} />文件</button><button className={view === 'settings' ? 'active' : ''} onClick={() => chooseView('settings')}><Settings2 size={19} />设置</button></nav>
       <div className="sidebar-section-title"><span>我的课程</span><button className="icon-button tiny" onClick={() => setCourseEditor({ id: '', semester_id: semesterId, name: '', code: '', folder_path: '' })} title="添加课程"><Plus size={18} /></button></div><nav className="course-nav" aria-label="课程">{semesterCourses.map(course => <button key={course.id} className={view === 'course' && course.id === courseId ? 'active' : ''} onClick={() => openCourse(course.id)}><span className="course-monogram">{course.name === 'Calculus' ? '∑' : course.name === 'Physics' ? '◉' : course.name === 'Linear Algebra' ? '□' : '◇'}</span><span>{course.name}</span></button>)}</nav>
-      <div className="sidebar-bottom"><button onClick={() => setTheme(snapshot.settings.theme === 'dark' ? 'light' : 'dark')}>{snapshot.settings.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}{snapshot.settings.theme === 'dark' ? '浅色模式' : '深色模式'}</button><span>{service.isCloud ? "个人云端 · 在线模式" : "本地优先 · 同步默认关闭"}</span></div>
+      <div className="sidebar-bottom"><button onClick={() => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')}>{snapshot.settings.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}{snapshot.settings.theme === 'system' ? '切换明暗' : snapshot.settings.theme === 'dark' ? '浅色模式' : '深色模式'}</button><span>{service.isCloud ? "个人云端 · 在线模式" : "本地优先 · 同步默认关闭"}</span></div>
     </aside>
     <main ref={mainRef} className="main-content" inert={isMobile && mobileDetailOpen || undefined}>
 
@@ -249,7 +264,7 @@ function App() {
         </>}
         {!isMobile ? detailContent : null}</> : null}
       {view === 'files' ? <FilesPage snapshot={snapshot} onRelink={relink} onOpenAssignment={id => { const assignment = snapshot.assignments.find(a => a.id === id); if (assignment) { setCourseId(assignment.course_id); setSemesterId(snapshot.courses.find(course => course.id === assignment.course_id)?.semester_id || semesterId); setSelectedId(id); setView('course'); setFilter('all'); setSearch(''); setSelectedGroupId(''); setMobileDetailOpen(true); setMoreOpen(false) } }} onUndo={id => { void run(() => service.undoRename(id), '文件名已撤回') }} /> : null}
-      {view === 'settings' ? <><SettingsPage snapshot={snapshot} onSaveSettings={payload => { void saveSettings(payload) }} onEditCourse={setCourseEditor} onAddSemester={() => setSemesterEditor({ id: '', name: '', source_root: '' })} onDeleteSemester={id => { void deleteSemester(id) }} onBackup={async () => { const path = await service.pickBackupSave(); if (path) void run(() => service.backup(path), '数据库备份已保存') }} onRestore={async () => { const path = await service.pickBackupOpen(); if (path && window.confirm('恢复备份会替换当前数据库记录。关联文件仍在原位置。确定继续吗？')) void run(() => service.restore(path), '数据库已恢复，请检查文件链接') }} /></> : null}
+      {view === 'settings' ? <><SettingsPage snapshot={themePreview ? { ...snapshot, settings: { ...snapshot.settings, theme: themePreview } } : snapshot} onThemeChange={setTheme} onSaveSettings={payload => { void saveSettings(payload) }} onEditCourse={setCourseEditor} onAddSemester={() => setSemesterEditor({ id: '', name: '', source_root: '' })} onDeleteSemester={id => { void deleteSemester(id) }} onBackup={async () => { const path = await service.pickBackupSave(); if (path) void run(() => service.backup(path), '数据库备份已保存') }} onRestore={async () => { const path = await service.pickBackupOpen(); if (path && window.confirm('恢复备份会替换当前数据库记录。关联文件仍在原位置。确定继续吗？')) void run(() => service.restore(path), '数据库已恢复，请检查文件链接') }} /></> : null}
     </main>
     {isMobile ? <nav className="mobile-bottom-nav" aria-label="主导航" inert={mobileDetailOpen || undefined}>{([{ key: 'overview', label: '总览', Icon: LayoutDashboard }, { key: 'all', label: '作业', Icon: FileText }, { key: 'files', label: '文件', Icon: Folder }, { key: 'settings', label: '设置', Icon: Settings2 }] as const).map(({key, label, Icon}) => <button key={key} className={view === key || key === 'all' && view === 'course' ? 'active' : ''} aria-current={view === key || key === 'all' && view === 'course' ? 'page' : undefined} onClick={() => chooseView(key)}><Icon size={21} strokeWidth={1.8} /><span>{label}</span></button>)}</nav> : null}
     {isMobile && mobileDetailOpen ? <section className="mobile-detail-screen" ref={detailRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={selectedGroup ? '周期作业详情' : '作业详情'}><div className="mobile-detail-bar"><button onClick={() => setMobileDetailOpen(false)}><ArrowLeft size={21} />返回</button><span>{selectedGroup ? '周期作业' : '作业详情'}</span></div><div className="mobile-detail-body">{detailContent || <p>这项作业已不在当前列表中。请返回查看其他作业。</p>}</div></section> : null}

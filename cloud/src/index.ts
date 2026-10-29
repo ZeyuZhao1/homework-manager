@@ -1,3 +1,4 @@
+import { Drive } from './drive'
 import { DurableObject } from 'cloudflare:workers'
 import { Auth, body, boundedBytes, json } from './auth'
 import { ApiError, SqlEntityStore } from './store'
@@ -11,7 +12,8 @@ import { syncLimits, type SyncRequest } from '../../src/sync/protocol'
 export class PersonalSpace extends DurableObject<Env> {
   private store:SqlEntityStore
   private auth:Auth
-  constructor(ctx:DurableObjectState,env:Env){super(ctx,env);this.store=new SqlEntityStore(ctx.storage);this.auth=new Auth(ctx.storage,env);ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS active_baselines(device_id TEXT PRIMARY KEY,started_at INTEGER NOT NULL)')}
+  private drive:Drive
+  constructor(ctx:DurableObjectState,env:Env){super(ctx,env);this.store=new SqlEntityStore(ctx.storage);this.auth=new Auth(ctx.storage,env);this.drive=new Drive(ctx,env);ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS active_baselines(device_id TEXT PRIMARY KEY,started_at INTEGER NOT NULL)')}
   private baselinePending(){return this.ctx.storage.sql.exec('SELECT device_id FROM active_baselines LIMIT 1').toArray().length>0}
   async tick(){ if(!this.baselinePending())runRecurrence(this.store,new Date()) }
   async fetch(request:Request):Promise<Response>{
@@ -28,8 +30,10 @@ export class PersonalSpace extends DurableObject<Env> {
     if(path==='/api/recovery/providers'&&method==='GET')return providerStatus(request,this.env,this.auth)
     const recover=path.match(/^\/api\/recovery\/(github|google)\/(start|callback)$/)
     if(recover&&method==='GET')return recoveryNavigation(request,this.env,this.auth,recover[1],recover[2])
+    if(path==='/api/drive/callback'&&method==='GET')return this.drive.callback(request)
     const device=await this.auth.authenticate(request)
     if(!device)throw new ApiError(401,'Device authorization required')
+    if(path.startsWith('/api/drive/'))return this.drive.route(request,device.id)
     const identity=path.match(/^\/api\/recovery\/(github|google)$/)
     if(identity&&method==='DELETE')return unlinkIdentity(this.auth,identity[1])
     if(path==='/api/pair/approve'&&method==='POST')return this.auth.approve(request)
@@ -106,7 +110,7 @@ export class PersonalSpace extends DurableObject<Env> {
       return json({provider_id:id,has_key:method==='PUT'})
     }
     const file=path.match(/^\/api\/files\/([\w.:@-]+)\/content$/)
-    if(file){const id=file[1],record=this.store.read('file',id);if(!record?.data)throw new ApiError(404,'File not found');const version=record.data.cloud_version
+    if(file){const id=file[1],record=this.store.read('file',id);if(!record?.data)throw new ApiError(404,'File not found');const version=record.data.cloud_version; if(record.data.drive_id||id.startsWith('gdrive-'))throw new ApiError(400,'Google Drive references have no uploaded content')
       if(typeof version==='string'&&!version.startsWith(`content/${id}/`))throw new ApiError(404,'No uploaded content')
       if(method==='GET'){if(typeof version!=='string')throw new ApiError(404,'No uploaded content');const object=await this.env.FILES.get(version);if(!object)throw new ApiError(404,'No uploaded content');const headers=new Headers({'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Disposition':'attachment'});object.writeHttpMetadata(headers);return new Response(object.body,{headers})}
       if(method==='PUT'){
@@ -121,7 +125,7 @@ export class PersonalSpace extends DurableObject<Env> {
       }
       if(method==='DELETE'){this.store.setFileVersion(id,null);if(typeof version==='string')await this.env.FILES.delete(version);return json({removed:true})}
     }
-    if(path==='/api/ai/analyze'&&method==='POST')return handleAi(request,this.env,this.store)
+    if(path==='/api/ai/analyze'&&method==='POST'){const input=await body(request.clone());if(Array.isArray(input.file_ids)&&input.file_ids.some(id=>typeof id==='string'&&(id.startsWith('gdrive-')||this.store.read('file',id)?.data?.drive_id)))throw new ApiError(400,'Google Drive references cannot be sent to AI');return handleAi(request,this.env,this.store)}
     throw new ApiError(404,'API route not found')
   }
 }

@@ -81,7 +81,7 @@ Rust 实现按责任分为：
 - `journal_mode=WAL`：改善读取和写入恢复能力；
 - `journal_size_limit=1048576`；
 - `wal_autocheckpoint=100`；
-- `user_version=7`；版本 6 增加通用导入来源表，版本 7 增加可选同步运行态、outbox、shadow、逻辑文件元数据和脱敏业务历史。启动与备份恢复共用同步迁移；高版本数据库拒绝打开。
+- `user_version=8`；版本 6 增加通用导入来源表，版本 7 增加可选同步运行态、outbox、shadow、逻辑文件元数据和脱敏业务历史。版本 8 为逻辑文件补充 Drive ID、资源键和可访问状态。启动与备份恢复共用同步迁移；高版本数据库拒绝打开。
 
 数据库是元数据和审计记录的事实来源，但不是实际学习文件的容器。
 
@@ -376,3 +376,12 @@ Tauri 标识符为 `app.homeworkbook.local`。Windows 上主要目录为：
 自定义标题栏由 `main.tsx` 在应用内容上方挂载，加载状态也保留窗口控制；Tauri 关闭系统装饰并仅额外授权最小化、切换最大化、关闭和拖动。关联文件菜单通过渲染回调使用打印组件的操作，打印选项、配置和结果弹窗保留在菜单之外，避免菜单关闭导致打印状态丢失。
 
 核心原生构建目标、各系统数据根目录和发布矩阵见 [平台支持](PLATFORMS.md)。Wayland 的几何设置失败只记录启动诊断，主窗口仍会显示；macOS 平台配置启用原生控件与 Overlay 标题栏。
+
+
+### Google Drive 元数据来源
+
+Drive 是文件资产的一种来源。`src/drive/` 通过现有服务边界访问个人云端，桌面桥接在 `src-tauri/src/drive.rs`；SQLite `sync_files` 保存名称、MIME、Drive ID 和链接所需资源键，继承既有关联与同步语义。暂停同步时显式 Drive 请求可执行，但业务关联留在本机直到恢复同步。
+
+`cloud/src/drive.ts` 使用单次、设备绑定的授权流程和 PKCE，Google Picker 通过系统浏览器返回选中文件 ID；原设备持有临时轮询凭据接收结果，回调不创建作业簿会话，也不依赖 Safari 与 PWA 共享 Cookie。授权只申请 `drive.file`。后端仅查询账户和文件元数据，不请求内容，也不对 Drive 文件执行写操作。
+
+OAuth 访问和刷新令牌仅以 AES-GCM 独立加密保存在私有 R2 前缀 `_private/drive-credentials/`，主密钥使用独立 Worker Secret。临时流程表仅保存授权状态、PKCE 验证值及元数据结果，不存提供商令牌；它不进入业务快照、变更流或本地备份。代次校验和短临界区阻止断开账号、撤销设备或并发授权时恢复过期凭据。

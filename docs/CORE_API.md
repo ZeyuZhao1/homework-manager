@@ -132,7 +132,7 @@ interface LinkBatchInput {
 
 ```ts
 interface Settings {
-  theme: 'light' | 'dark'
+  theme: 'light' | 'dark' | 'system'
   naming_template: string
 }
 
@@ -269,7 +269,7 @@ interface RenamePreview {
 | 前端服务 | Tauri 命令 | 行为 |
 | --- | --- | --- |
 | `backup(path)` | `backup_database` | 使用 SQLite backup API 导出当前数据库 |
-| `restore(path)` | `restore_database` | 接受 `user_version` 1–7；暂存库校验核心结构、引用、模块与迁移后再替换，恢复后断开旧设备授权并暂停同步 |
+| `restore(path)` | `restore_database` | 接受 `user_version` 1–8；暂存库校验核心结构、引用、模块与迁移后再替换，恢复后断开旧设备授权并暂停同步 |
 | `compactDatabase()` | `compact_database` | 清理无引用文件记录，截断 WAL 并执行 `VACUUM` |
 
 恢复后会重新初始化内置模块的表与提示词兼容逻辑。备份不含 API Key、提示词、模块文件或实际学习文件。
@@ -468,3 +468,17 @@ try {
 | `sync_remove_cloud_file` | `fileId`，移除云端内容可用性，不删除元数据或本地文件 |
 
 `FileAsset` 增加可选 `name` 和 `cloud_available`。远端文件没有本机定位时，内部用 `cloud://` 占位，界面展示逻辑名称；占位不交给本地文件打开程序。服务端字段覆盖顺序不使用无时区的本机 `updated_at`。完整范围和隐私限制见 [云同步指南](SYNC.md)。
+
+
+## Google Drive 文件来源
+
+`FileAsset` 新增可选 `mime`、`drive_id`、`drive_resource_key` 及 `drive_unavailable`。Drive 文件使用稳定标识 `gdrive-<Drive ID>` 和内部引用 `gdrive:<Drive ID>`；它不是本地路径。名称仅为展示元数据，可以包含斜杠，不能用于磁盘操作。
+
+| 服务 / Tauri 命令 | 行为 |
+| --- | --- |
+| `service.driveRequest(action,payload)` / `drive_request` | 已配对设备显式访问 Drive 状态、授权流程、轮询、链接解析、元数据刷新和断开；暂停同步时仍可用，不触发同步 |
+| `service.registerDriveFiles(files)` / `register_drive_files` | 校验并原子保存 Drive 元数据，返回文件资产 ID；与现有作业/常用文件/周期文件关联共用文件身份 |
+
+`action` 仅允许 `status`、`start`、`poll`、`resolve`、`refresh`、`disconnect`，不能传任意网址或请求路径。读取网页服务时使用已有设备授权；设备凭据不返回前端。
+
+Drive 引用可通过原有 `linkFile` / `linkFilesBatch` 关联并设置用途、页码、章节、题号；`openFile` 在外部浏览器打开经过校验的 Drive URL。关联不创建云端内容版本，不能用于文件系统改名、定位、上传/下载或 AI 附件读取。名称和可访问状态变化记录 `metadata_refreshed` 历史。

@@ -7,7 +7,8 @@ import { attachmentName, attachmentLocation, canOpenAttachment } from '../src/fi
 const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText
 const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`
 const protocol = moduleUrl(compile(await readFile(new URL('../src/sync/protocol.ts', import.meta.url), 'utf8')))
-const adapter = compile((await readFile(new URL('../src/sync/web.ts', import.meta.url), 'utf8')).replace('import.meta.env.DEV', 'false')).replace(/from ['"]\.\/protocol['"]/g, `from '${protocol}'`)
+const driveLinks = moduleUrl(compile(await readFile(new URL('../src/drive/links.ts', import.meta.url), 'utf8')))
+const adapter = compile((await readFile(new URL('../src/sync/web.ts', import.meta.url), 'utf8')).replace('import.meta.env.DEV', 'false')).replace(/from ['"]\.\/protocol['"]/g, `from '${protocol}'`).replace(/from ['"]\.\.\/drive\/links['"]/g, `from '${driveLinks}'`)
 let instance = 0
 
 async function fixture(t) {
@@ -126,4 +127,25 @@ test('metadata-only browser attachments cannot pretend to be openable content', 
   const file = { id: 'file-id', path: 'cloud:file-id/worksheet.pdf', name: 'worksheet.pdf', missing: false, cloud_available: false }
   assert.equal(canOpenAttachment(file, true), false)
   assert.equal(canOpenAttachment({ ...file, cloud_available: true }, true), true)
+})
+
+test('Drive references preserve metadata and association without uploaded content or AI reads', async t => {
+  const { cloudService, webSync, server, window } = await fixture(t)
+  const info = { id: 'abcdefghij_drive_1', name: '讲义 / 第 1 章', mime_type: 'application/vnd.google-apps.document', resource_key: 'sample_resource_key' }
+  const [id] = await cloudService.registerDriveFiles([info])
+  assert.equal(id, `gdrive-${info.id}`)
+  await cloudService.linkFile({ id: '', assignment_id: 'a1', path: `gdrive:${info.id}`, role: 'reference', page: '12–15', chapter: '第一章', problem: '3, 5', note: '' })
+  const snapshot = webSync.snapshot(), file = snapshot.files.find(row => row.id === id)
+  assert.equal(file.name, info.name); assert.equal(file.drive_id, info.id); assert.equal(file.missing, false); assert.equal(file.cloud_available, false)
+  assert.equal(canOpenAttachment(file, true), true); assert.match(attachmentLocation(file), /Google Drive/)
+  const opened = []; window.open = (...args) => { opened.push(args[0]); return null }
+  await cloudService.openFile(id)
+  assert.equal(opened[0], `https://drive.google.com/file/d/${info.id}/view?resourcekey=${info.resource_key}`)
+  await assert.rejects(webSync.prepareAiFiles([file.path]), /Drive/)
+  await assert.rejects(webSync.uploadFile(id), /Drive/)
+  assert.equal(server.calls.some(call => call.url.includes('/content')), false)
+  await cloudService.registerDriveFiles([{ ...info, name: '更新后的讲义', unavailable: true }])
+  assert.equal(webSync.snapshot().files.find(row => row.id === id).drive_unavailable, true)
+  assert.equal(webSync.snapshot().links[0].page, '12–15')
+  assert.equal(webSync.snapshot().file_history.some(row => row.event_type === 'metadata_refreshed'), true)
 })
