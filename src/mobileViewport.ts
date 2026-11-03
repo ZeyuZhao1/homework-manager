@@ -11,6 +11,8 @@ export function installMobileViewport() {
   let frame = 0, x = 0, y = 0, restingHeight = innerHeight
   let orientation = screen.orientation?.type
   let layoutWidth = innerWidth
+  let keyboardSession = false
+  const isEditing = () => document.activeElement?.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]), textarea, [contenteditable="true"]')
   const measure = () => {
     frame = 0
     if (!small.matches) {
@@ -22,10 +24,19 @@ export function installMobileViewport() {
     if (orientation !== screen.orientation?.type || layoutWidth !== innerWidth) { orientation = screen.orientation?.type; layoutWidth = innerWidth; restingHeight = innerHeight }
     const height = visual?.height || innerHeight
     restingHeight = Math.max(restingHeight, innerHeight, height)
+    const editing = isEditing()
+    const keyboard = touchInput.matches && !!editing && restingHeight - height > 120
+    if (keyboard) keyboardSession = true
+    // WebKit can retain a pan offset after the focused input is removed.
+    // The page must not inherit that keyboard-only coordinate on return.
+    const top = editing ? visual?.offsetTop || 0 : 0
     root.style.setProperty('--app-viewport-height', `${height}px`)
-    root.style.setProperty('--app-viewport-top', `${visual?.offsetTop || 0}px`)
-    const editing = document.activeElement?.matches('input:not([type="checkbox"]):not([type="radio"]), textarea, [contenteditable="true"]')
-    root.dataset.keyboard = touchInput.matches && editing && restingHeight - height > 120 ? 'open' : 'closed'
+    root.style.setProperty('--app-viewport-top', `${top}px`)
+    root.dataset.keyboard = keyboard ? 'open' : 'closed'
+    if (keyboardSession && !editing && height >= restingHeight - 120) {
+      keyboardSession = false
+      if (window.scrollY || window.scrollX) window.scrollTo(0, 0)
+    }
   }
   const schedule = () => { if (!frame) frame = requestAnimationFrame(measure) }
   const mediaChange = () => { restingHeight = innerHeight; schedule() }
