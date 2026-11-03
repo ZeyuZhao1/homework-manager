@@ -37,14 +37,15 @@ export function installMobileViewport() {
       restingHeight = Math.max(innerHeight, root.clientHeight, height)
     }
     const editing = !!isEditing()
-    if (!editing) restingHeight = Math.max(innerHeight, root.clientHeight, height)
-    else restingHeight = Math.max(restingHeight, innerHeight, root.clientHeight, height)
+    // Preserve the same-orientation baseline through blur/refocus while a
+    // resizes-content keyboard still shrinks every viewport measurement.
+    restingHeight = Math.max(restingHeight, innerHeight, root.clientHeight, height)
     const gap = restingHeight - height
     const wasOpen = keyboardOpen
     keyboardOpen = small.matches && touchInput.matches && editing && gap > (keyboardOpen ? 80 : 120)
     if (keyboardOpen) {
-      root.style.setProperty('--app-viewport-height', `${height}px`)
-      root.style.setProperty('--app-viewport-top', `${(visual?.offsetTop || 0) * scale}px`)
+      root.style.setProperty('--app-viewport-height', `${visual?.height || innerHeight}px`)
+      root.style.setProperty('--app-viewport-top', `${visual?.offsetTop || 0}px`)
       root.dataset.keyboard = 'open'
     } else {
       // Native dvh owns the resting canvas. Never retain a sampled keyboard
