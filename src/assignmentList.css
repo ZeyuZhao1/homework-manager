@@ -1,7 +1,7 @@
 /* Desktop remains a table; phones use one calm, two-line list. */
 .assignment-mobile-summary{display:none}
 .assignment-table .assignment-row:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
-@media(max-width:780px){
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){
 .assignment-table-wrap{border:0;border-radius:14px;background:var(--surface);overflow:hidden;margin-top:14px}
 .assignment-table-wrap .assignment-table{display:block;min-width:0}
 .assignment-table-wrap .assignment-table thead{display:none}

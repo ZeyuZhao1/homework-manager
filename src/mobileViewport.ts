@@ -1,7 +1,7 @@
 /** Keep document chrome stationary; only the app's intended panes scroll. */
 export function installMobileViewport() {
   const root = document.documentElement
-  const small = matchMedia('(max-width: 780px)')
+  const small = matchMedia('(max-width: 780px), (max-width: 1024px) and (pointer: coarse)')
   const touchInput = matchMedia('(pointer: coarse)')
   const standalone = matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
   const viewport = document.querySelector('meta[name="viewport"]')

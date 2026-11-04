@@ -1,5 +1,5 @@
 /* A separate, quiet mobile shell; desktop keeps its existing layout. */
-@media (max-width: 780px) {
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) {
   .app-shell[data-view] {
     display: flex;
     flex-direction: column;
@@ -121,7 +121,7 @@
   .mobile-summary > span + span { padding-left: 10px; }
   .mobile-summary strong { font-size: 21px; }
 }
-@media (max-width: 780px) {
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) {
   .app-shell[data-view] .mobile-filter-more.is-filtered { display: flex; gap: 5px; width: auto; color: var(--blue); font-size: 12px; white-space: nowrap; }
   .app-shell[data-view] .mobile-filter-more.is-filtered svg { width: 16px; }
 }

@@ -20,7 +20,7 @@ export interface AssignmentGroup {
 export interface AssignmentListExtension {
   loadGroups: (snapshot: Snapshot) => Promise<AssignmentGroup[]>
   Row: ComponentType<{ group: AssignmentGroup; selected: boolean; courseName: string; fileCount: number; onSelect: () => void }>
-  Detail: ComponentType<{ group: AssignmentGroup; snapshot: Snapshot; onRefresh: () => Promise<void>; onEditAssignment: (assignment: Assignment) => void }>
+  Detail: ComponentType<{ group: AssignmentGroup; snapshot: Snapshot; onRefresh: () => Promise<void>; onEditAssignment: (assignment: Assignment) => void; onOpenAssignment?: (id: string) => void }>
   AssignmentAddon?: ComponentType<{ assignment: Assignment; snapshot: Snapshot }>
 }
 

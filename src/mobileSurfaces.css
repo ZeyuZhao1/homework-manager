@@ -1,4 +1,4 @@
-@media(max-width:780px){
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){
 .mobile-setting-section{border-radius:14px;background:var(--surface);overflow:hidden}
 .mobile-setting-section>summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:19px 18px;list-style:none;font-size:15px;font-weight:600;cursor:pointer}
 .mobile-setting-section>summary::-webkit-details-marker{display:none}
@@ -22,7 +22,7 @@
 .file-relations button{font-size:12px;min-height:32px}
 }
 .mobile-add-course{display:none}
-@media(max-width:780px){
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){
 .app-shell[data-view] .page-header p{display:none}
 .mobile-add-course{display:inline-flex;margin-left:auto;font-size:13px;height:36px;min-height:36px;padding:0 10px}
 .semester-settings-heading small{display:none}
@@ -41,8 +41,8 @@
 .app-shell[data-view] .mobile-summary>span{flex-direction:column;gap:7px;font-size:13px;align-items:flex-start}
 .app-shell[data-view] .mobile-summary strong{font-size:26px;color:var(--blue)}
 }
-@media(max-width:780px){.mobile-semester select,.mobile-course-filter{font-size:16px}}
-@media(max-width:780px){
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){.mobile-semester select,.mobile-course-filter{font-size:16px}}
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){
 .app-shell[data-view] .filter-tabs>button:not(:disabled){flex:1 1 0}
 .app-shell[data-view="files"] .file-page-toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 .app-shell[data-view="files"] .file-page-toolbar>.search-field{grid-column:1/-1;width:100%;background:var(--surface-2);border:0;border-radius:10px}
@@ -55,10 +55,10 @@
 .course-settings-row small{display:none}
 }
 .provider-clear-key{font-size:12px;min-height:32px;padding:0 9px}
-@media(max-width:780px){.provider-row{display:grid;grid-template-columns:32px minmax(0,1fr) 36px 36px;gap:8px}.provider-row>.provider-icon{grid-column:1;grid-row:1}.provider-row>div:nth-child(2){grid-column:2;grid-row:1}.provider-row>.icon-button{grid-row:1;width:36px;min-width:36px}.provider-row>.provider-clear-key{grid-column:2/-1;grid-row:2;justify-self:start}.provider-row strong{font-size:14px}.provider-row small{font-size:12px}}
-@media(max-width:780px){.mobile-setting-section[open] .module-settings-card>.settings-card-title{display:block}.mobile-setting-section[open] .module-settings-card>.settings-card-title h2{display:none}.mobile-setting-section[open] .module-card-actions{display:flex;justify-content:space-between;align-items:center;margin-top:14px}}
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){.provider-row{display:grid;grid-template-columns:32px minmax(0,1fr) 36px 36px;gap:8px}.provider-row>.provider-icon{grid-column:1;grid-row:1}.provider-row>div:nth-child(2){grid-column:2;grid-row:1}.provider-row>.icon-button{grid-row:1;width:36px;min-width:36px}.provider-row>.provider-clear-key{grid-column:2/-1;grid-row:2;justify-self:start}.provider-row strong{font-size:14px}.provider-row small{font-size:12px}}
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){.mobile-setting-section[open] .module-settings-card>.settings-card-title{display:block}.mobile-setting-section[open] .module-settings-card>.settings-card-title h2{display:none}.mobile-setting-section[open] .module-card-actions{display:flex;justify-content:space-between;align-items:center;margin-top:14px}}
 /* Mobile control hierarchy: prominent actions, quiet filters and compact tools. */
-@media(max-width:780px){
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){
 html:has(.app-shell[data-view]),body:has(.app-shell[data-view]){overflow:hidden;background:var(--bg);overscroll-behavior:none}
 .app-shell[data-view] .mobile-create{width:42px;height:42px;border-radius:13px}
 .app-shell[data-view] .mobile-more .icon-button{background:transparent}
@@ -77,7 +77,7 @@ html:has(.app-shell[data-view]),body:has(.app-shell[data-view]){overflow:hidden;
 @media(prefers-reduced-transparency:reduce){.mobile-bottom-nav,:root[data-theme="dark"] .mobile-bottom-nav{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
 @media(prefers-reduced-motion:reduce){.mobile-bottom-nav button{transition:none}}
 /* The app header paints the safe area as part of the same page surface. */
-@media(max-width:780px){
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){
 .sync-gate{padding-top:max(24px,var(--app-safe-top,env(safe-area-inset-top,0px)));padding-bottom:max(24px,env(safe-area-inset-bottom))}
 :root[data-standalone="true"] .import-inbox>header{padding-top:calc(18px + var(--app-safe-top,env(safe-area-inset-top,0px)))}
 :root[data-standalone="true"] .drawer-header{padding-top:calc(18px + var(--app-safe-top,env(safe-area-inset-top,0px)))}
@@ -99,7 +99,7 @@ html:has(.app-shell[data-view]),body:has(.app-shell[data-view]){overflow:hidden;
 
 /* Fixed application viewport, with scrolling restricted to the active pane. */
 :root[data-standalone="true"],:root[data-standalone="true"] body{touch-action:pan-x pan-y}
-@media(max-width:780px){
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){
 body{-webkit-text-size-adjust:100%}
 .mobile-topbar{background:transparent;border:0}
 .modal-backdrop{align-items:stretch;overscroll-behavior:none}
@@ -117,7 +117,7 @@ body{-webkit-text-size-adjust:100%}
 :root:not([data-theme="dark"]) .mobile-bottom-nav{border-color:#b7c4d4;box-shadow:0 8px 28px #203c651c,inset 0 1px 0 #fffc}
 }
 
-@media(max-width:780px){
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){
 .sync-gate{min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-x:hidden;overflow-y:auto;overscroll-behavior:none;-webkit-overflow-scrolling:touch}
 .sync-gate>.settings-card{flex:none;margin-block:auto}
 }

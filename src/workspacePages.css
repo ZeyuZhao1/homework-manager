@@ -1,0 +1,49 @@
+/* Settings are grouped by what the user wants to manage. */
+.workspace-settings{display:grid;grid-template-columns:220px minmax(0,1fr);gap:24px;align-items:start}
+.settings-category-nav{display:grid;gap:5px;padding:5px;border:1px solid var(--border);border-radius:18px;background:var(--surface)}
+.settings-category-nav button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:70px;padding:12px 14px;border:0;border-radius:13px;background:transparent;color:var(--text);text-align:left;cursor:pointer}
+.settings-category-nav button:hover{background:var(--hover)}
+.settings-category-nav button.active{background:var(--blue-soft);color:var(--blue)}
+.settings-category-nav button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.settings-category-nav button span{min-width:0}
+.settings-category-nav strong,.settings-category-nav small{display:block}
+.settings-category-nav strong{font-size:15px;font-weight:600;line-height:1.4}
+.settings-category-nav small{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.4}
+.settings-category-nav svg{flex:none;color:var(--muted)}
+.settings-category-content{min-width:0;max-width:850px}
+.workspace-settings .settings-column[hidden]{display:none}
+.workspace-settings .settings-card{display:block;width:100%;margin:0;border-radius:16px}
+.workspace-settings .settings-card h2{font-size:17px;font-weight:600}
+.workspace-settings .settings-card-title p,.workspace-settings .helper-text{font-size:13px;line-height:1.6}
+.workspace-settings .course-settings-row span,.workspace-settings .semester-settings-heading strong{font-size:14px}
+.workspace-settings .course-settings-row small,.workspace-settings .semester-settings-heading small{font-size:12px}
+
+/* Names and availability lead; paths and history remain available on demand. */
+.file-page-main>strong{font-size:16px;font-weight:600;line-height:1.45}
+.file-page-main>small.file-availability{margin:4px 0 0;color:var(--muted);font-size:13px;line-height:1.45;white-space:normal}
+.file-page-main>small.file-availability.is-unavailable{color:var(--red)}
+.file-page-main .file-relation-details{font-size:13px;margin-top:4px}
+.file-relation-summary-text{gap:3px 8px}
+.file-relation-summary-text>span+span::before{content:'·';margin-right:8px;color:var(--muted)}
+.file-page-actions .file-open-button{min-height:36px;font-size:13px}
+.file-page-actions .file-history-toggle{font-size:12px;color:var(--muted)}
+.file-page-actions .file-history-toggle.is-empty{opacity:.7}
+.history-section>summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;font-size:14px;font-weight:600;color:var(--muted)}
+.history-section>summary::-webkit-details-marker{display:none}
+.history-section>summary span{font-size:12px;font-weight:400}
+.history-section>summary svg{transition:transform .15s ease}
+.history-section[open]>summary svg{transform:rotate(180deg)}
+.history-section>p{margin-top:10px}
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){
+  .workspace-settings{display:block}
+  .settings-category-nav{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:0;border:0;background:transparent;margin-bottom:18px}
+  .settings-category-nav button{min-height:64px;padding:11px 13px;background:var(--surface);border:1px solid var(--border);border-radius:14px}
+  .settings-category-nav button.active{background:var(--blue-soft);border-color:transparent}
+  .settings-category-nav strong{font-size:14px}
+  .settings-category-nav small{font-size:11px}
+  .workspace-settings .settings-card{border:0;padding:20px 18px}
+  .file-page-main>strong{font-size:16px}
+  .app-shell[data-view="files"] .file-page-main .file-relation-details>summary{font-size:13px}
+  .file-page-row .file-page-actions>.file-open-button:disabled{display:inline-flex}
+}
+@media(prefers-reduced-motion:reduce){.history-section>summary svg{transition:none}}

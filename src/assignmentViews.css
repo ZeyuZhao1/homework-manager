@@ -1,0 +1,39 @@
+/* Assignment list and detail share the same restrained type scale. */
+.assignment-table .table-title { gap: 10px; font-size: 16px; line-height: 22px; font-weight: 600; }
+.assignment-table .table-title > span { min-width: 0; }
+.assignment-table .table-title .assignment-series-label { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 13px; line-height: 18px; font-weight: 400; }
+.assignment-table td { font-size: 13px; line-height: 18px; }
+.assignment-table .status { font-size: 12px; line-height: 16px; font-weight: 600; }
+.detail-panel .detail-title h2 { font-size: 20px; line-height: 28px; font-weight: 600; }
+.detail-panel .detail-title p { font-size: 13px; line-height: 18px; }
+.detail-panel .detail-actions { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.detail-panel .detail-actions .button { min-height: 36px; padding: 0 11px; font-size: 13px; }
+.detail-panel .detail-actions .detail-secondary { color: var(--muted); }
+.detail-panel .detail-empty { margin: 0 0 8px; line-height: 18px; }
+.detail-panel .detail-column h3 { margin-bottom: 12px; }
+@media (max-width: 1600px) {
+  .detail-panel .detail-columns { grid-template-columns: 1fr; }
+  .detail-panel .detail-column, .detail-panel .detail-column:first-child, .detail-panel .detail-column:last-child { border-left: 0; border-top: 1px solid var(--border); padding: 16px 0; }
+  .detail-panel .detail-column:first-child { border-top: 0; padding-top: 0; }
+}
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) {
+  .assignment-table-wrap .assignment-table tr.assignment-row { min-height: 74px; padding: 14px 18px; }
+  .assignment-table-wrap .assignment-table .assignment-row > td:first-child { display: grid; grid-template-columns: minmax(0, 1fr) 104px 16px; grid-template-rows: auto auto; gap: 3px 8px; align-items: start; }
+  .assignment-table-wrap .assignment-row .table-title, .assignment-table-wrap .assignment-row .recurring-title { grid-column: 1; grid-row: 1; min-height: 0; padding: 0; font-size: 16px; line-height: 22px; }
+  .assignment-table-wrap .assignment-row .table-title > span, .assignment-table-wrap .assignment-row .recurring-title strong { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 16px; line-height: 22px; font-weight: 600; }
+  .assignment-table-wrap .assignment-row .table-title .assignment-series-label { display: none; }
+  .assignment-table-wrap .assignment-mobile-summary, .assignment-table-wrap .assignment-card-context { display: contents; }
+  .assignment-table-wrap .assignment-card-course { display: -webkit-box; grid-column: 1; grid-row: 2; min-width: 0; overflow: hidden; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 13px; line-height: 18px; color: var(--muted); }
+  .assignment-table-wrap .assignment-card-extra { display: inline; font-size: inherit; }
+  .assignment-table-wrap .assignment-card-due { grid-column: 2; grid-row: 1; font-size: 13px; line-height: 22px; white-space: nowrap; }
+  .assignment-table-wrap .assignment-card-state { position: static; grid-column: 2; grid-row: 2; }
+  .assignment-table-wrap .assignment-card-state .status, .assignment-table-wrap .assignment-card-state .series-state { font-size: 12px; line-height: 16px; padding: 2px 8px; font-weight: 600; border-radius: 999px; }
+  .assignment-table-wrap .assignment-card-state .status-todo { background: var(--surface-2); }
+  .assignment-table-wrap .assignment-row .assignment-card-chevron { display: block; grid-column: 3; grid-row: 1 / 3; align-self: center; color: var(--muted); max-width: 100%; }
+  .detail-panel .detail-actions { justify-content: flex-start; }
+  .detail-panel .detail-actions .button { min-height: 44px; }
+}
+@media (max-width: 360px) {
+  .assignment-table-wrap .assignment-table tr.assignment-row { padding-inline: 14px; }
+  .assignment-table-wrap .assignment-table .assignment-row > td:first-child { grid-template-columns: minmax(0, 1fr) 98px 14px; gap: 3px 6px; }
+}

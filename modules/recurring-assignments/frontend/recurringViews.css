@@ -1,0 +1,46 @@
+/* The recurring views share the app's surface and use separators for hierarchy. */
+.recurring-detail .detail-heading { align-items: flex-start; }
+.recurring-detail .detail-title h2 { font-size: 18px; }
+.recurring-detail .detail-title p { font-size: 13px; line-height: 1.5; }
+.recurring-next { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 18px 0; border-bottom: 1px solid var(--border); }
+.recurring-next > div { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.recurring-next small { color: var(--muted); font-size: 12px; }
+.recurring-next strong { font-size: 16px; overflow-wrap: anywhere; }
+.recurring-timeline-heading { margin-top: 22px; gap: 12px; }
+.recurring-timeline-heading h3 { margin: 0; font-size: 16px; }
+.recurring-timeline-heading span { color: var(--muted); font-size: 12px; text-align: right; }
+.recurring-detail .timeline { margin: 8px 0 20px; }
+.recurring-detail .timeline-item { border-bottom: 1px solid var(--border); padding: 13px 0; }
+.recurring-detail .timeline-copy strong { font-size: 16px; }
+.recurring-detail .timeline-copy small { display: block; margin-top: 4px; font-size: 13px; line-height: 1.45; }
+.recurring-detail .timeline-actions { gap: 5px; flex-wrap: wrap; }
+.recurring-detail .timeline-actions .button { display: inline-flex; align-items: center; gap: 4px; }
+.recurring-detail .catchup-review { display: flex; flex-direction: column; align-items: stretch; margin-top: 16px; }
+.recurring-detail .catchup-review p { font-size: 13px; line-height: 1.5; }
+.recurring-detail .catchup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.recurring-more { border-top: 1px solid var(--border); padding: 16px 0; }
+.recurring-more summary, .recurring-advanced summary { cursor: pointer; font-size: 14px; font-weight: 650; color: var(--text); }
+.recurring-detail .series-summary { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 16px 0; }
+.recurring-detail .series-summary span { padding: 0; border: 0; border-radius: 0; }
+.recurring-detail .series-summary strong { font-size: 14px; }
+.recurring-management { display: flex; flex-wrap: wrap; gap: 8px; }
+.recurring-management .button { display: inline-flex; align-items: center; gap: 6px; }
+.recurring-detail .recurring-shared { margin-top: 0; padding-top: 16px; }
+.recurring-drawer .drawer-body > h3 { font-size: 16px; margin-top: 24px; }
+.recurring-drawer .mode-grid button { min-height: 70px; align-content: center; }
+.recurring-drawer .mode-grid strong { font-size: 14px; }
+.recurring-drawer .mode-grid small { font-size: 12px; line-height: 1.4; }
+.recurring-advanced { margin-top: 24px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 16px 0; }
+.recurring-advanced-body { display: grid; gap: 16px; padding-top: 16px; }
+.recurring-advanced-body h3 { font-size: 16px; margin: 4px 0 -6px; }
+@media (max-width: 900px) {
+  .recurring-detail .timeline-item > .button, .recurring-detail .timeline-actions { grid-column: 2 / -1; }
+}
+@media (max-width: 520px) {
+  .recurring-detail .timeline-copy strong { white-space: normal; overflow-wrap: anywhere; }
+  .recurring-timeline-heading { align-items: baseline; }
+  .recurring-drawer .mode-grid { grid-template-columns: 1fr 1fr; }
+  .recurring-drawer .mode-grid button { grid-template-columns: 1fr; }
+  .recurring-drawer .mode-grid button svg { display: none; }
+  .recurring-drawer .mode-grid button small { grid-column: 1; }
+}

@@ -1,0 +1,46 @@
+/* The import drawer keeps its action visible while its content scrolls. */
+.import-flow { background: var(--surface); }
+.import-flow .drawer-header { border-bottom: 0; }
+.import-progress { display: flex; align-items: center; gap: 10px; padding: 0 24px 15px; color: var(--muted); font-size: 12px; }
+.import-progress span { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.import-progress span.current, .import-progress span.done { color: var(--blue); }
+.import-progress b { font-weight: 650; }
+.import-progress i { height: 1px; background: var(--border); flex: 1; }
+.import-scroll { min-height: 0; overscroll-behavior: contain; }
+.import-section { padding: 20px 0 8px; border-top: 1px solid var(--border); }
+.import-section h3 { margin: 0 0 6px; font-size: 19px; }
+.import-intro { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 20px; }
+.import-source-label { gap: 9px; font-size: 13px; }
+.import-flow .source-textarea { min-height: 170px; margin: 0 0 12px; border-radius: 10px; padding: 12px; font-size: 14px; }
+.import-flow .upload-box { height: 52px; border-radius: 10px; font-size: 13px; }
+.import-flow .attached-list button { min-width: 28px; min-height: 28px; }
+.import-options { margin-top: 20px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.import-options summary { cursor: pointer; padding: 15px 0; color: var(--text); font-size: 13px; font-weight: 650; }
+.import-options > div { display: grid; gap: 14px; padding: 0 0 16px; }
+.import-options .button { justify-self: start; }
+.import-privacy { margin: 16px 0; }
+.import-return { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; border-radius: 10px; color: var(--blue); background: var(--blue-soft); font-size: 12px; line-height: 1.5; }
+.import-return .button { flex: none; }
+.import-draft { margin-bottom: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.import-draft summary { position: relative; cursor: pointer; list-style: none; padding: 15px 36px 15px 15px; }
+.import-draft summary::-webkit-details-marker { display: none; }
+.import-draft-chevron { position: absolute; right: 16px; top: 17px; color: var(--muted); }
+.import-draft[open] .import-draft-chevron { transform: rotate(180deg); }
+.import-draft-title, .import-draft-meta, .import-missing { display: block; overflow-wrap: anywhere; }
+.import-draft-title { color: var(--text); font-weight: 700; font-size: 15px; }
+.import-draft-meta { color: var(--muted); font-size: 13px; line-height: 1.5; margin-top: 5px; }
+.import-missing { color: #a45200; font-size: 12px; line-height: 1.5; margin-top: 5px; }
+.import-draft-fields { border-top: 1px solid var(--border); padding: 14px 15px 4px; }
+.import-draft-fields .form-field { margin-bottom: 13px; }
+.import-draft-actions { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; }
+.import-draft-fields .evidence { padding-bottom: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.import-required { color: #a45200; font-size: 12px; line-height: 1.5; }
+.import-footer { justify-content: space-between; }
+@media (max-width: 600px) {
+  .import-flow { max-height: 100dvh; }
+  .import-flow .drawer-scroll { -webkit-overflow-scrolling: touch; }
+  .import-flow .source-textarea, .import-flow .form-field input, .import-flow .form-field select, .import-flow .form-field textarea { font-size: 16px; }
+  .import-flow .drawer-header, .import-progress { padding-left: 18px; padding-right: 18px; }
+  .import-flow .drawer-scroll { padding-left: 18px; padding-right: 18px; }
+  .import-flow .drawer-footer { padding-left: 18px; padding-right: 18px; }
+}

@@ -4,14 +4,14 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import ts from 'typescript'
 const source = ts.transpileModule(readFileSync(new URL('../src/mobileViewport.ts', import.meta.url),'utf8'), {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replace('export function installMobileViewport','function installMobileViewport')+'\nglobalThis.install = installMobileViewport;'
-function fixture() {
+function fixture({ width = 390, height = 844, coarse = true } = {}) {
   const listeners = new Map(), frames = new Map(), timers = new Map(), values = new Map(); let id=0, focused=false, scrolls=0
   const events = prefix => ({addEventListener:(name,fn)=>listeners.set(prefix+name,fn),removeEventListener:(name)=>listeners.delete(prefix+name)})
-  const root={clientHeight:844,dataset:{},style:{setProperty:(k,v)=>values.set(k,v),removeProperty:k=>values.delete(k)}}
+  const root={clientHeight:height,dataset:{},style:{setProperty:(k,v)=>values.set(k,v),removeProperty:k=>values.delete(k)}}
   const meta={content:'width=device-width, initial-scale=1',getAttribute(){return this.content},setAttribute(k,v){this.content=v}}
-  const visual={...events('visual:'),height:844,scale:1,offsetTop:0}
-  const media=q=>({matches:q.includes('780')||q.includes('coarse'),...events(q)})
-  const context={innerHeight:844,innerWidth:390,scrollY:0,scrollX:0,visualViewport:visual,screen:{orientation:{type:'portrait-primary'}},navigator:{standalone:true},matchMedia:media,document:{...events('document:'),documentElement:root,querySelector:()=>meta,activeElement:{matches:()=>focused},body:{},},requestAnimationFrame:fn=>{frames.set(++id,fn);return id},cancelAnimationFrame:n=>frames.delete(n),setTimeout:fn=>{timers.set(++id,fn);return id},clearTimeout:n=>timers.delete(n),scrollTo:()=>{scrolls++;context.scrollY=0},...events('window:')}
+  const visual={...events('visual:'),height,scale:1,offsetTop:0}
+  const media=q=>({get matches(){if(q.includes('780'))return context.innerWidth<=780||(q.includes('1024')&&context.innerWidth<=1024&&coarse);if(q.includes('pointer: coarse'))return coarse;return false},...events(q)})
+  const context={innerHeight:height,innerWidth:width,scrollY:0,scrollX:0,visualViewport:visual,screen:{orientation:{type:width>height?'landscape-primary':'portrait-primary'}},navigator:{standalone:true},matchMedia:media,document:{...events('document:'),documentElement:root,querySelector:()=>meta,activeElement:{matches:()=>focused},body:{},},requestAnimationFrame:fn=>{frames.set(++id,fn);return id},cancelAnimationFrame:n=>frames.delete(n),setTimeout:fn=>{timers.set(++id,fn);return id},clearTimeout:n=>timers.delete(n),scrollTo:()=>{scrolls++;context.scrollY=0},...events('window:')}
   context.window=context;vm.runInNewContext(source,context);const cleanup=context.install()
   const flush=()=>{for(const [key,fn] of [...frames]){frames.delete(key);fn()}}
   const change=(patch,focus=focused)=>{Object.assign(visual,patch);focused=focus;listeners.get('visual:resize')();flush()}
@@ -26,3 +26,5 @@ test('settling recovery and pageshow clean up all delayed work',()=>{const f=fix
 
 test('resizes-content blur and refocus cannot lose the full-height baseline',()=>{const f=fixture();f.context.innerHeight=400;f.root.clientHeight=400;f.change({height:400},true);f.change({height:400},false);f.change({height:400},true);assert.equal(f.root.dataset.keyboard,'open');assert.equal(f.values.get('--app-viewport-height'),'400px');f.context.innerHeight=844;f.root.clientHeight=844;f.change({height:844},true);assert.equal(f.root.dataset.keyboard,'closed');f.cleanup()})
 test('scaled keyboard geometry uses visible CSS pixels rather than normalized size',()=>{const f=fixture();f.change({height:400/1.5,scale:1.5,offsetTop:140},true);assert.equal(f.root.dataset.keyboard,'open');assert.equal(f.values.get('--app-viewport-height'),`${400/1.5}px`);assert.equal(f.values.get('--app-viewport-top'),'140px');f.cleanup()})
+test('touch landscape above 780px tracks keyboard and restores native canvas',()=>{const f=fixture({width:844,height:390});f.change({height:220,offsetTop:24},true);assert.equal(f.root.dataset.keyboard,'open');assert.equal(f.values.get('--app-viewport-height'),'220px');assert.equal(f.values.get('--app-viewport-top'),'24px');f.change({height:390,offsetTop:0},true);assert.equal(f.root.dataset.keyboard,'closed');assert.equal(f.values.has('--app-viewport-height'),false);assert.equal(f.values.has('--app-viewport-top'),false);f.cleanup()})
+test('wide fine-pointer viewport does not use mobile keyboard geometry',()=>{const f=fixture({width:844,height:390,coarse:false});f.change({height:220,offsetTop:24},true);assert.equal(f.root.dataset.keyboard,'closed');assert.equal(f.values.size,0);f.cleanup()})

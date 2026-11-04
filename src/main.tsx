@@ -7,6 +7,7 @@ import { SyncRuntime } from './sync/SyncRuntime'
 import { installMobileViewport } from './mobileViewport'
 import './mobileCanvas.css'
 import './iosPolish.css'
+import './workspace.css'
 
 const disposeViewport = installMobileViewport()
 if (import.meta.hot) import.meta.hot.dispose(disposeViewport)

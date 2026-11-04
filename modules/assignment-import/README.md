@@ -23,7 +23,8 @@ assignment-import/
 │   └── legacy/                用于安全迁移旧默认提示词
 └── frontend/
     ├── index.tsx               AppModule 入口
-    ├── Dialogs.tsx             输入与审核浮层
+    ├── Dialogs.tsx             分步骤输入与审核浮层
+    ├── importFlow.css          导入流程样式
     ├── SettingsCard.tsx        模块开关、服务商与路由设置
     ├── service.ts              模块前端服务
     ├── types.ts                配置与草稿类型
@@ -44,7 +45,7 @@ assignment-import/
 `frontend/index.tsx` 导出一个 `AppModule`：
 
 - `Action`：在作业页头显示“AI 导入”操作；
-- `Overlay`：收集文字/附件、运行识别、审核草稿并保存；
+- `Overlay`：先收集文字/附件，再运行识别；审核页按项展示摘要，可展开编辑字段与查看原文依据，确认后保存；
 - `SettingsCard`：显示开关、服务商、模型路由和提示词目录。
 
 入口是否可见同时取决于：
@@ -142,7 +143,7 @@ sequenceDiagram
 
 模型输出达到长度上限、拒答、内容拦截、空响应与 JSON 语法错误分别提示原因；错误提示不附带模型原文。独立思考字段、Gemini 的 `thought` 分段及兼容接口开头的完整 `<think>...</think>` 不作为作业数据解析。
 
-保存前 UI 仍允许用户修改所有业务字段。
+保存前 UI 仍允许用户修改所有业务字段。审核时可返回来源，原审核修改会保留；如果来源文字、附件、平台或识别模块发生变化，须恢复原来源或重新识别，不能把旧结果按新来源创建。
 
 ## 5. 服务商配置
 

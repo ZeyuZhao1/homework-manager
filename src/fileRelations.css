@@ -26,7 +26,7 @@
 .file-relation-location { margin-top:10px; font-size:11px; line-height:1.7; }
 .file-relation-location > span { color:var(--muted); }
 .file-relation-location > p { margin:2px 0; color:var(--text); overflow-wrap:anywhere; user-select:text; -webkit-user-select:text; }
-@media(max-width:780px) {
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) {
   .app-shell[data-view="files"] .file-relation-details > summary { min-height:38px; font-size:12px; }
   .file-relation-content { padding-top:10px; }
   .file-relation-assignment { padding-top:12px; padding-bottom:12px; font-size:13px; min-height:44px; }

@@ -51,7 +51,7 @@
   align-self: start;
 }
 
-@media (max-width: 780px) {
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) {
   .date-time-field { gap: 8px; }
   .date-time-control { height: 44px; border-radius: 22px; padding-inline: 15px; font-size: 16px; }
   .date-time-value { line-height: 22px; }
