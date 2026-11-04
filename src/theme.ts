@@ -6,7 +6,7 @@ let systemAppearance: MediaQueryList | undefined
 function paintTheme() {
   const theme = preference === 'system' ? systemAppearance?.matches ? 'dark' : 'light' : preference
   const root = document.documentElement
-  const color = theme === 'dark' ? '#1b1b1d' : '#f0f3f8'
+  const color = theme === 'dark' ? '#17191e' : '#f5f7fa'
   root.dataset.theme = theme
   root.dataset.themePreference = preference
   root.style.colorScheme = theme

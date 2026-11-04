@@ -6,7 +6,7 @@
   const preference = theme === 'dark' || theme === 'light' ? theme : 'system'
   if (preference === 'system') theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
-  const color = theme === 'dark' ? '#1b1b1d' : '#f0f3f8'
+  const color = theme === 'dark' ? '#17191e' : '#f5f7fa'
   root.dataset.theme = theme
   root.dataset.themePreference = preference
   root.dataset.standalone = String(standalone)

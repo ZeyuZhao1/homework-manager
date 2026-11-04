@@ -19,7 +19,7 @@ export async function appearanceAsset(request: Request, assets: Fetcher): Promis
   if (!html && !manifest) return asset
   const queryTheme = url.searchParams.get('theme')
   const theme = manifest && (queryTheme === 'light' || queryTheme === 'dark') ? queryTheme : requestAppearance(request)
-  const color = theme === 'dark' ? '#1b1b1d' : '#f0f3f8'
+  const color = theme === 'dark' ? '#17191e' : '#f5f7fa'
   const response = new Response(asset.body, asset)
   response.headers.delete('etag')
   response.headers.delete('last-modified')
