@@ -20,8 +20,8 @@ test('system appearance changes the complete canvas live and keeps the system pr
   const f = setup(); f.apply('system')
   assert.equal(f.root.dataset.theme, 'light')
   f.media.matches = true; f.handlers.get('system')()
-  assert.equal(f.root.dataset.theme, 'dark'); assert.equal(f.body.style.backgroundColor, '#17191e')
-  assert.equal(f.meta().content, '#17191e'); assert.equal(f.saved.get('homeworkbook:theme'), 'system')
+  assert.equal(f.root.dataset.theme, 'dark'); assert.equal(f.body.style.backgroundColor, '#1b1b1b')
+  assert.equal(f.meta().content, '#1b1b1b'); assert.equal(f.saved.get('homeworkbook:theme'), 'system')
   assert.equal(f.root.dataset.themePreference, 'system')
 })
 test('explicit appearance refreshes canvas and chrome without system overrides or navigation', () => {

@@ -9,11 +9,12 @@ import { AssignmentMobileSummary, dateLabel, errorText, fullDate } from '../../.
 import manifest from '../module.json'
 import { recurring } from './service'
 import { asGroup } from './types'
-import type { Occurrence, SeriesDetail, SeriesInput } from './types'
+import type { Occurrence, SeriesDetail, SeriesInput, SeriesSummary } from './types'
 import './styles.css'
 import './recurringViews.css'
 
 let cachedGroups: AssignmentGroup[] = []
+let cachedSummaries: SeriesSummary[] = []
 const localSeconds = (value:string) => value ? value.length === 16 ? `${value}:00` : value : ''
 const inputDate = (value?:string|null) => value?.slice(0,16) || ''
 const defaultStart = () => { const date=new Date();date.setMinutes(0,0,0);date.setHours(date.getHours()+1);return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}T${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}` }
@@ -103,6 +104,6 @@ function SettingsCard({enabled,snapshot,onToggle}:{enabled:boolean;snapshot:Snap
   return <section className="settings-card"><div className="settings-card-title"><div><h2>周期作业</h2><p>定时、序列、教学周和自定义日期计划。</p></div><button className={`module-toggle ${enabled?'enabled':''}`} role="switch" aria-checked={enabled} onClick={()=>onToggle(!enabled)}><span/>{enabled?'已开启':'已关闭'}</button></div>{enabled?<div className="semester-calendar-settings"><strong>教学周日历</strong>{snapshot.semesters.map(semester=><label className="form-field" key={semester.id}>{semester.name} · 第 1 教学周周一<input type="date" value={calendars[semester.id]||''} onChange={e=>setCalendars(current=>({...current,[semester.id]:e.target.value}))} onBlur={e=>{if(e.target.value)void recurring.saveCalendar(semester.id,e.target.value).catch(err=>window.alert(errorText(err)))}}/></label>)}</div>:<p className="helper-text">关闭后停止自动生成并隐藏周期界面，已生成作业仍会按普通作业显示。</p>}</section>
 }
 
-function AssignmentAddon({assignment,snapshot}:{assignment:Assignment;snapshot:Snapshot}) { const group=cachedGroups.find(item=>item.assignment_ids.includes(assignment.id));if(!group)return null;return <div className="assignment-recurring-source"><Repeat2 size={17}/><div><small>周期来源</small><strong>{group.title}</strong><span>{group.subtitle}</span></div><SharedFiles seriesId={group.id} snapshot={snapshot} editable={false}/></div> }
+function AssignmentAddon({assignment,snapshot}:{assignment:Assignment;snapshot:Snapshot}) { const group=cachedGroups.find(item=>item.assignment_ids.includes(assignment.id));if(!group)return null;const summary=cachedSummaries.find(item=>item.id===group.id);return <section className="assignment-recurring-source" aria-label="周期来源"><div className="assignment-recurring-info"><Repeat2 size={17} aria-hidden="true"/><div><h3>周期来源</h3><strong>{group.title}</strong><p>{summary?<><span>{summary.rule_label}</span><span>{summary.range_label}</span></>:group.subtitle}</p></div></div><SharedFiles seriesId={group.id} snapshot={snapshot} editable={false}/></section> }
 
-export const module: AppModule = { id:manifest.id,descriptor:manifest,savedMessage:'周期任务已保存',Action,Overlay,SettingsCard,assignmentList:{loadGroups:async()=>{cachedGroups=(await recurring.overview()).map(asGroup);return cachedGroups},Row:GroupRow,Detail:SeriesDetailView,AssignmentAddon} }
+export const module: AppModule = { id:manifest.id,descriptor:manifest,savedMessage:'周期任务已保存',Action,Overlay,SettingsCard,assignmentList:{loadGroups:async()=>{cachedSummaries=await recurring.overview();cachedGroups=cachedSummaries.map(asGroup);return cachedGroups},Row:GroupRow,Detail:SeriesDetailView,AssignmentAddon} }

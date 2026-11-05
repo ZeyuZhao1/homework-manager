@@ -8,10 +8,10 @@
   --blue-soft: #e7f0ff; --hover: #f0f5fc; --selected: #eaf2ff;
 }
 :root[data-theme="dark"] {
-  --bg: #17191e; --sidebar: #1c1f25; --surface: #22262d; --surface-2: #2b3039;
-  --text: #f1f4f9; --muted: #a7b0c0; --border: #353c47;
-  --field-bg: #252a32; --field-border: #525e70; --blue: #84b8ff;
-  --blue-soft: #293c58; --hover: #2b3340; --selected: #2b3b52;
+  --bg: #1b1b1b; --sidebar: #202020; --surface: #242424; --surface-2: #2d2d2d;
+  --text: #f3f3f3; --muted: #ababab; --border: #414141;
+  --field-bg: #2c2c2c; --field-border: #555555; --placeholder: #a4a4a4; --blue: #84b8ff;
+  --blue-soft: #303030; --hover: #333333; --selected: #343434;
 }
 button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 button { touch-action: manipulation; }
@@ -188,3 +188,12 @@ button { touch-action: manipulation; }
 
 .overview-queue-arrow { max-width: 100%; }
 @media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) { .app-shell[data-view] > .ai-drawer { width: 100%; left: 0; right: 0; } }
+
+/* Neutral dark surfaces retain accent color on actions and state text only. */
+:root[data-theme="dark"] :is(.detail-field > svg, .detail-icon, .table-title > svg, .file-glyph) { color: var(--muted); }
+:root[data-theme="dark"] .mobile-more-menu { box-shadow: 0 12px 34px #00000040; }
+:root[data-theme="dark"] :is(.modal-backdrop, .drawer-scrim) { background: rgba(0, 0, 0, .48); }
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) {
+  :root[data-theme="dark"] .mobile-bottom-nav { background: rgba(36, 36, 36, .8); border-color: #484848; box-shadow: 0 6px 24px #00000030, inset 0 1px 0 #ffffff0d; -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); }
+}
+@media (prefers-reduced-transparency: reduce) { :root[data-theme="dark"] .mobile-bottom-nav { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; } }

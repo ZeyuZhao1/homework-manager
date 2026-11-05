@@ -139,7 +139,7 @@ test('local Durable Object: authorization, pairing, receipt LWW, dedup, cascades
 
 
 test('appearance HTML and manifest are selected per request, never reused through conditional caching',async()=>{
- for(const [theme,color]of [['light','#f5f7fa'],['dark','#17191e']]){
+ for(const [theme,color]of [['light','#f5f7fa'],['dark','#1b1b1b']]){
   const headers={Cookie:`other=value; homeworkbook_theme=${theme}`,Accept:'text/html','If-None-Match':'"stale-index"'}
   const response=await fetch(base+'/',{headers});assert.equal(response.status,200)
   assert.match(response.headers.get('cache-control'),/private, no-store/);assert.equal(response.headers.get('etag'),null)

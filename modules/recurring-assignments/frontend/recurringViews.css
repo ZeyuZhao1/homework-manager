@@ -26,6 +26,22 @@
 .recurring-management { display: flex; flex-wrap: wrap; gap: 8px; }
 .recurring-management .button { display: inline-flex; align-items: center; gap: 6px; }
 .recurring-detail .recurring-shared { margin-top: 0; padding-top: 16px; }
+/* Keep the source and shared attachments readable inside an assignment detail. */
+.assignment-recurring-source { display: block; margin: 16px 0 20px; padding: 16px; }
+.assignment-recurring-source > .assignment-recurring-info { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; }
+.assignment-recurring-info > svg { flex: none; margin-top: 2px; color: var(--muted); }
+.assignment-recurring-info > div { min-width: 0; }
+.assignment-recurring-info h3, .assignment-recurring-source .recurring-section-title h3 { margin: 0; font-size: 13px; line-height: 1.5; font-weight: 600; }
+.assignment-recurring-info strong { display: block; margin-top: 6px; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.assignment-recurring-info p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.assignment-recurring-info p span { display: block; }
+.assignment-recurring-source > .recurring-shared { display: block; margin-top: 16px; padding-top: 16px; }
+.assignment-recurring-source .recurring-section-title { margin-bottom: 8px; }
+.assignment-recurring-source .shared-file { min-width: 0; padding: 6px 0; }
+.assignment-recurring-source .shared-file > button:first-child { min-width: 0; padding: 0; align-items: flex-start; text-align: left; font-size: 13px; line-height: 1.5; }
+.assignment-recurring-source .shared-file > button:first-child svg { flex: none; margin-top: 2px; }
+.assignment-recurring-source .shared-file > button:first-child span { min-width: 0; overflow-wrap: anywhere; }
+.assignment-recurring-source .detail-empty { margin: 0; }
 .recurring-drawer .drawer-body > h3 { font-size: 16px; margin-top: 24px; }
 .recurring-drawer .mode-grid button { min-height: 70px; align-content: center; }
 .recurring-drawer .mode-grid strong { font-size: 14px; }

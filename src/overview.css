@@ -7,7 +7,7 @@
 .overview-tabs button span{margin-left:4px;color:var(--blue);font-variant-numeric:tabular-nums}
 .overview-queue{margin-top:26px}
 .overview-queue h2{margin:0 0 12px;font-size:16px;line-height:24px;font-weight:650}
-.overview-queue-list{background:var(--surface);border-radius:12px;overflow:hidden}
+.overview-queue-list{background:var(--surface);border-radius:14px;overflow:hidden}
 .overview-queue-item{display:grid;grid-template-columns:minmax(0,1fr) 104px 18px;gap:12px;align-items:center;width:100%;min-height:76px;padding:10px 16px;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--text);text-align:left}
 .overview-queue-item:last-child{border-bottom:0}
 .overview-queue-item:hover{background:var(--hover)}
@@ -25,6 +25,6 @@
 .overview-all button{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-height:44px;padding:0 14px;border:0;background:transparent;color:var(--muted);font-size:14px}
 .overview-all button:hover{color:var(--blue)}
 .overview-content button:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
-@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){.overview-content{margin-top:0}.overview-queue-list{border-radius:0}.overview-queue-item{padding-inline:6px}}
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){.overview-content{margin-top:0}.overview-queue-item{padding-inline:6px}}
 @media(max-width:350px){.overview-queue-item{grid-template-columns:minmax(0,1fr) 104px 16px;gap:6px}}
 @media(prefers-reduced-transparency:reduce){.overview-tabs{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
