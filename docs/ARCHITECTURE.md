@@ -390,3 +390,7 @@ Drive 是文件资产的一种来源。`src/drive/` 通过现有服务边界访�
 `cloud/src/drive.ts` 使用单次、设备绑定的授权流程和 PKCE，Google Picker 通过系统浏览器返回选中文件 ID；原设备持有临时轮询凭据接收结果，回调不创建作业簿会话，也不依赖 Safari 与 PWA 共享 Cookie。授权只申请 `drive.file`。后端仅查询账户和文件元数据，不请求内容，也不对 Drive 文件执行写操作。
 
 OAuth 访问和刷新令牌仅以 AES-GCM 独立加密保存在私有 R2 前缀 `_private/drive-credentials/`，主密钥使用独立 Worker Secret。临时流程表仅保存授权状态、PKCE 验证值及元数据结果，不存提供商令牌；它不进入业务快照、变更流或本地备份。代次校验和短临界区阻止断开账号、撤销设备或并发授权时恢复过期凭据。
+
+### 前端视图扩展
+
+待办日历位于 `src/extensions/calendar/`，通过设置页开启，使用现有待办队列的实际作业和筛选结果。视图开关及布局偏好保存在当前 WebView／浏览器的 localStorage，以 `homeworkbook:view:` 为键前缀，跨标签页通过 storage 事件更新；不增加数据库表、同步实体或外部模块执行权限。日历组件按需加载，日期索引按输入变化重建。

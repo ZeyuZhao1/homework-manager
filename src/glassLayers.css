@@ -1,11 +1,11 @@
 /* Floating layers transmit the surface behind them, without tinting neutral dark mode. */
 :root {
-  --glass-panel: color-mix(in srgb, var(--surface) 82%, transparent);
-  --glass-bar: color-mix(in srgb, var(--surface) 70%, transparent);
+  --glass-panel: color-mix(in srgb, var(--surface) 74%, transparent);
+  --glass-bar: color-mix(in srgb, var(--surface) 58%, transparent);
   --glass-edge: color-mix(in srgb, var(--border) 76%, white);
   --glass-highlight: #ffffff70;
   --glass-shade: #00000018;
-  --glass-scrim: #17202c26;
+  --glass-scrim: #00000026;
 }
 :root[data-theme="dark"] {
   --glass-edge: #ffffff26;
@@ -35,19 +35,23 @@
     -webkit-backdrop-filter: blur(18px);
     backdrop-filter: blur(18px);
   }
-  .sidebar { background: color-mix(in srgb, var(--sidebar) 78%, transparent); }
+  .sidebar { background: color-mix(in srgb, var(--sidebar) 74%, transparent); border-color: var(--glass-edge); box-shadow: inset -1px 0 0 var(--glass-highlight); }
   .mobile-bottom-nav, :root[data-theme="dark"] .mobile-bottom-nav {
     background: var(--glass-bar);
     border-color: var(--glass-edge);
     box-shadow: 0 8px 28px var(--glass-shade), inset 0 1px 0 var(--glass-highlight);
-    -webkit-backdrop-filter: blur(28px);
-    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
   }
   @media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) {
     /* The scrim already blurs the page; avoid another full-screen blur pass. */
-    :is(.modal-backdrop .modal, .modal-backdrop .recurring-drawer, .file-drawer, .app-shell > .ai-drawer, .import-inbox) {
+    :is(.modal-backdrop .modal, .modal-backdrop .recurring-drawer, .file-drawer, .app-shell > .ai-drawer, .import-inbox, .modal-header, .drawer-header, .drawer-heading, .modal-backdrop .modal-footer, .drawer-footer, .modal-backdrop .recurring-drawer > .drawer-footer, .import-inbox > header, .import-inbox > footer, .mobile-detail-bar) {
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
+    }
+    :is(.app-shell .mobile-more-menu, .file-context-menu, .recent-options) {
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
     }
   }
 }

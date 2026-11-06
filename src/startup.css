@@ -1,5 +1,5 @@
 /* Shared by the first HTML paint and React: no blank canvas between startup stages. */
-:root { --startup-bg: #f5f7fa; --startup-text: #20242b; --startup-muted: #65707d; --startup-accent: #2568c5; --startup-panel: #ffffffb8; --startup-edge: #ffffffed; --startup-glow: #ffffffc0; --startup-shadow: #2020200d; }
+:root { --startup-bg: #f5f7fa; --startup-text: #20242b; --startup-muted: #65707d; --startup-accent: #2568c5; --startup-panel: #ffffff96; --startup-edge: #ffffffed; --startup-glow: #ffffffc0; --startup-shadow: #2020200d; }
 :root[data-theme="dark"] { --startup-bg: #1b1b1b; --startup-text: #f3f3f3; --startup-muted: #ababab; --startup-accent: #9ac4ff; --startup-panel: #ffffff08; --startup-edge: #ffffff20; --startup-glow: #ffffff05; --startup-shadow: #00000026; }
 html, body { margin: 0; background: var(--startup-bg); }
 .startup-screen { box-sizing: border-box; position: relative; isolation: isolate; width: 100%; height: 100%; min-height: 100dvh; display: grid; place-items: center; padding: max(28px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); overflow: auto; background: var(--startup-bg); color: var(--startup-text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", sans-serif; text-align: center; }
