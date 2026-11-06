@@ -16,6 +16,7 @@ import { applyTheme } from './theme'
 import type { OverviewFilter } from './overview'
 import './App.css'
 import './mobile.css'
+import { StartupScreen } from './StartupScreen'
 import { SyncGate } from './sync/SyncGate'
 
 type View = 'overview' | 'course' | 'all' | 'files' | 'settings' | 'plans'
@@ -284,7 +285,7 @@ function App() {
     {!selectedGroup && selected ? <AssignmentDetail key={selected.id} printModules={printModules} item={selected} course={snapshot.courses.find(c => c.id === selected.course_id)} links={currentLinks} files={snapshot.files} fileHistory={currentFileHistory} onEdit={() => setEditor(selected)} onDelete={deleteSelected} onAddFile={role => setFileDrawer({ assignmentId: selected.id, role })} onEditLink={editing => setFileDrawer({ assignmentId: selected.id, editing })} onRename={setRenameLink} onStatus={status => setStatus(selected,status)} onRelink={relink} addon={enabledAppModules.map(module=>{const Addon=module.assignmentList?.AssignmentAddon;return Addon?<Addon key={module.id} assignment={selected} snapshot={snapshot}/>:null})}/> : null}
   </> : null
 
-  if (!snapshot) return <div className="loading-screen"><BookOpen size={36} /><span>{loadError ? '暂时无法打开作业簿' : '正在打开作业簿…'}</span>{loadError ? <><p role="alert">{loadError}</p><button className="button button-quiet" onClick={() => { setToast(''); setLoadError(''); void refresh().catch(error => setToast(errorText(error))) }}>重新加载</button></> : null}</div>
+  if (!snapshot) return <StartupScreen error={loadError} onRetry={() => { setToast(''); setLoadError(''); void refresh().catch(error => setToast(errorText(error))) }} />
   return <div className="app-shell" data-view={view} onDragStart={event => event.preventDefault()} onDragOver={event => event.preventDefault()} onDrop={event => event.preventDefault()}>
     {isMobile ? <header className="mobile-topbar" inert={mobileDetailOpen || undefined}><a className="mobile-brand" href="#" onClick={event => { event.preventDefault(); chooseView('overview') }}><BookOpen size={22} strokeWidth={2} /><strong>作业簿</strong></a><div className="mobile-semester"><select value={semesterId} aria-label="选择学期" onChange={event => { setDetailParentId(''); setSemesterId(event.target.value); setCourseId(snapshot.courses.find(course => course.semester_id === event.target.value)?.id || ''); setSelectedId(''); setSelectedGroupId(''); setMoreOpen(false) }}>{snapshot.semesters.map(semester => <option key={semester.id} value={semester.id}>{semester.name}</option>)}</select><ChevronDown size={14} /></div></header> : null}
     <aside className="sidebar"><div className="brand"><div className="brand-mark"><BookOpen size={26} strokeWidth={1.8} /></div><div><strong>作业簿</strong></div></div>

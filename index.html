@@ -11,11 +11,18 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="作业簿" />
     <script src="/theme-init.js"></script>
+    <link rel="stylesheet" href="/src/startup.css" />
+    <script src="/startup-recovery.js" defer></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>作业簿 · 大学作业管理</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><main class="startup-screen" data-static-startup aria-label="打开作业簿"><div class="startup-content">
+      <div class="startup-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14m0-14C9 4 5 4 2 5v15c3-1 7-1 10 1m0-14c3-3 7-3 10-2v15c-3-1-7-1-10 1" /></svg></div>
+      <h1>作业簿</h1><div class="startup-feedback"><p class="startup-status" role="status">正在打开作业簿</p><div class="startup-progress" aria-hidden="true"><span></span></div></div>
+      <div class="startup-recovery" hidden><p class="startup-hint">加载时间较长，可以重新打开。</p><button class="startup-retry" type="button">重新打开</button></div>
+      <noscript><style>.startup-feedback { display: none; }</style><p class="startup-hint">请启用 JavaScript 后重新打开。</p></noscript>
+    </div></main></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

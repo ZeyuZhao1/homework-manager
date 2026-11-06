@@ -1,0 +1,25 @@
+/* Shared by the first HTML paint and React: no blank canvas between startup stages. */
+:root { --startup-bg: #f5f7fa; --startup-text: #20242b; --startup-muted: #65707d; --startup-accent: #2568c5; --startup-panel: #ffffffb8; --startup-edge: #ffffffed; --startup-glow: #ffffffc0; --startup-shadow: #2020200d; }
+:root[data-theme="dark"] { --startup-bg: #1b1b1b; --startup-text: #f3f3f3; --startup-muted: #ababab; --startup-accent: #9ac4ff; --startup-panel: #ffffff08; --startup-edge: #ffffff20; --startup-glow: #ffffff05; --startup-shadow: #00000026; }
+html, body { margin: 0; background: var(--startup-bg); }
+.startup-screen { box-sizing: border-box; position: relative; isolation: isolate; width: 100%; height: 100%; min-height: 100dvh; display: grid; place-items: center; padding: max(28px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); overflow: auto; background: var(--startup-bg); color: var(--startup-text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI", sans-serif; text-align: center; }
+.startup-screen::before { content: ""; position: absolute; z-index: -1; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 38%, var(--startup-glow), transparent 62%); }
+.startup-content { width: min(100%, 360px); padding-block: 24px; display: flex; flex-direction: column; align-items: center; }
+.startup-mark { width: 88px; height: 88px; display: grid; place-items: center; border: 1px solid var(--startup-edge); border-radius: 27px; background: var(--startup-panel); box-shadow: 0 18px 44px var(--startup-shadow), inset 0 1px 0 #ffffff30; color: var(--startup-accent); }
+.startup-mark svg { width: 43px; height: 43px; }
+.startup-content h1 { margin: 26px 0 0; color: inherit; font-size: 28px; line-height: 1.4; letter-spacing: .06em; font-weight: 600; }
+.startup-feedback { margin-top: 16px; }
+.startup-status { margin: 0; color: var(--startup-muted); font-size: 13px; line-height: 1.6; font-weight: 400; }
+.startup-progress { width: 80px; height: 3px; margin: 16px auto 0; overflow: hidden; border-radius: 999px; background: var(--startup-shadow); }
+.startup-progress span { display: block; width: 36px; height: 100%; border-radius: inherit; background: var(--startup-accent); animation: startup-travel 1.6s ease-in-out infinite alternate; }
+.startup-error, .startup-hint { max-width: 100%; margin: 20px 0 0; color: var(--startup-muted); font-size: 13px; font-weight: 400; line-height: 1.65; overflow-wrap: anywhere; }
+.startup-retry { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 20px; padding: 10px 24px; border: 1px solid var(--startup-edge); border-radius: 999px; background: var(--startup-panel); color: var(--startup-accent); font: 500 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; cursor: pointer; text-decoration: none; }
+.startup-retry:hover { box-shadow: 0 3px 14px var(--startup-shadow); }
+.startup-retry:focus-visible { outline: 2px solid var(--startup-accent); outline-offset: 4px; }
+.startup-recovery[hidden] { display: none; }
+#root:has(.app-titlebar) > .startup-screen { flex: 1; min-height: 0; height: auto; }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .startup-mark, .startup-retry { -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); } }
+@keyframes startup-travel { from { transform: translateX(-18px); } to { transform: translateX(62px); } }
+@media (max-height: 420px) { .startup-mark { width: 64px; height: 64px; border-radius: 20px; } .startup-mark svg { width: 34px; height: 34px; } .startup-content { padding-block: 8px; } .startup-content h1 { margin-top: 16px; font-size: 24px; } .startup-feedback { margin-top: 10px; } }
+@media (prefers-reduced-motion: reduce) { .startup-progress span { animation: none; width: 100%; opacity: .6; } }
+@media (prefers-reduced-transparency: reduce) { .startup-mark, .startup-retry { background: var(--startup-bg); -webkit-backdrop-filter: none; backdrop-filter: none; } }

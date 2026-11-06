@@ -4,6 +4,7 @@ import { isTauri } from '@tauri-apps/api/core'
 import type { PairRequest, PairResult } from './protocol'
 import { SessionRequired, webSync } from './web'
 import { IdentityProviders } from './IdentityProviders'
+import { StartupScreen } from '../StartupScreen'
 import { authFeedback } from './authFeedback'
 
 export function SyncGate({ children }: { children: ReactNode }) {
@@ -48,6 +49,7 @@ export function SyncGate({ children }: { children: ReactNode }) {
   }
   const notice = feedback ? <div className={`sync-auth-notice ${feedback.failed ? 'is-error' : ''}`} role={feedback.failed ? 'alert' : 'status'}><span>{feedback.message}</span><button type="button" aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div> : null
   if (ready && !authorization) return <>{notice}{children}</>
+  if (!authorization) return <>{notice}<StartupScreen error={error} onRetry={() => void initialize()} /></>
   return <main className="sync-gate"><section className="settings-card sync-gate-card">
     <header className="sync-gate-heading"><span className="sync-gate-mark" aria-hidden="true">簿</span><div><h1>作业簿</h1><p>连接你的个人学习空间</p></div></header>
     {notice}
