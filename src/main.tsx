@@ -10,6 +10,7 @@ import './iosPolish.css'
 import './workspace.css'
 import './glassLayers.css'
 import './controlShapes.css'
+import './floatingGlass.css'
 
 const disposeViewport = installMobileViewport()
 if (import.meta.hot) import.meta.hot.dispose(disposeViewport)

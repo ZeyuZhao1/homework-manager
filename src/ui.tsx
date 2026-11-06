@@ -98,7 +98,7 @@ export function Modal({ title, onClose, children, footer, wide = false, closeDis
   useDialogFocus(dialogRef, closeModal)
   return createPortal(<div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closeModal() }}>
     <section ref={dialogRef} tabIndex={-1} className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
-      <header className="modal-header"><h2>{title}</h2><button className="icon-button" disabled={closeDisabled} onClick={closeModal} aria-label="关闭"><X size={19} /></button></header>
+      <header className="modal-header"><h2>{title}</h2><button className="icon-button glass-control" disabled={closeDisabled} onClick={closeModal} aria-label="关闭"><X size={19} /></button></header>
       <div className="modal-body">{children}</div>
       {footer ? <footer className="modal-footer">{footer}</footer> : null}
     </section>

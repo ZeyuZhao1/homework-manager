@@ -86,7 +86,7 @@ export function AiDrawer({ courses, onClose, onSettings, onSaved }: { courses: C
   }
   const incomplete = drafts.some(draft => !draft.title.trim() || !courses.some(course => course.id === draft.course_id))
   return <><div className="drawer-scrim" onClick={close} /><aside ref={dialogRef} tabIndex={-1} className="ai-drawer import-flow" role="dialog" aria-modal="true" aria-label="导入作业">
-    <header className="drawer-header"><h2><Sparkles size={20} />导入作业</h2><button className="icon-button" disabled={busy && step === 'review'} onClick={close} aria-label="关闭"><X size={19} /></button></header>
+    <header className="drawer-header"><h2><Sparkles size={20} />导入作业</h2><button className="icon-button glass-control" disabled={busy && step === 'review'} onClick={close} aria-label="关闭"><X size={19} /></button></header>
     <div className="import-progress" aria-label="导入步骤"><span className={step === 'source' ? 'current' : 'done'}>1 <b>添加来源</b></span><i /><span className={step === 'review' ? 'current' : ''}>2 <b>审核并创建</b></span></div>
     <div className="drawer-scroll import-scroll">
       {step === 'source' ? <section className="import-section">

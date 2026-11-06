@@ -1,0 +1,58 @@
+/* Small, independent control surfaces. Keep refraction cues static and local. */
+:root {
+  --floating-glass-fill: rgba(255, 255, 255, .62);
+  --floating-glass-sheen: linear-gradient(145deg, #ffffff9c, #ffffff08 48%, #ffffff42);
+  --floating-glass-edge: #00000016;
+  --floating-glass-light: #ffffffe6;
+  --floating-glass-lowlight: #0000000c;
+  --floating-glass-shadow: #20202014;
+}
+:root[data-theme="dark"] {
+  --floating-glass-fill: rgba(52, 52, 52, .52);
+  --floating-glass-sheen: linear-gradient(145deg, #ffffff18, #ffffff00 48%, #ffffff08);
+  --floating-glass-edge: #ffffff26;
+  --floating-glass-light: #ffffff30;
+  --floating-glass-lowlight: #0000003b;
+  --floating-glass-shadow: #00000038;
+}
+:is(#root, body) .glass-control {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 48px; height: 48px; min-width: 48px; min-height: 48px;
+  padding: 0; gap: 0; border: 1px solid var(--floating-glass-edge); border-radius: 999px;
+  background: var(--surface); color: var(--text); line-height: 1;
+  box-shadow: 0 4px 14px var(--floating-glass-shadow), inset 0 1px 1px var(--floating-glass-light), inset 0 -1px 1px var(--floating-glass-lowlight);
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: transform 120ms ease-out;
+}
+:is(#root, body) .glass-control > svg { flex-shrink: 0; width: 22px; height: 22px; stroke-width: 1.8; }
+:is(#root, body) .glass-control-accent { color: var(--blue); }
+:is(#root, body) .glass-control.glass-control-pill { width: auto; height: auto; padding: 10px 16px; gap: 7px; max-width: 100%; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+:is(#root, body) .glass-control-pill > span { min-width: 0; }
+:is(#root, body) .glass-control:active:not(:disabled) { transform: scale(.96); }
+:is(#root, body) .glass-control:focus-visible { outline: 2px solid var(--blue); outline-offset: 4px; }
+:is(#root, body) .glass-control:disabled { opacity: .48; cursor: default; }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :is(#root, body) .glass-control {
+    background: var(--floating-glass-sheen), var(--floating-glass-fill);
+    -webkit-backdrop-filter: blur(18px) saturate(120%);
+    backdrop-filter: blur(18px) saturate(120%);
+  }
+  :is(#root, body) .mobile-bottom-nav { background: var(--floating-glass-sheen), var(--glass-bar); border-radius: 999px; box-shadow: 0 6px 24px var(--floating-glass-shadow), inset 0 1px 1px var(--floating-glass-light), inset 0 -1px 1px var(--floating-glass-lowlight); }
+}
+@media (hover: hover) {
+  :is(#root, body) .glass-control:hover:not(:disabled) { border-color: var(--muted); }
+}
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) {
+  /* Only the individual controls own glass here; the header remains weightless. */
+  :is(#root, body) .mobile-detail-bar { min-height: calc(68px + var(--mobile-safe-top)); background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  :is(#root, body) .mobile-detail-bar .glass-control { width: 48px; height: 48px; padding: 0; }
+  :is(#root, body) .mobile-detail-bar > span { max-width: calc(100% - 160px); text-align: center; }
+  :is(#root, body) :is(.modal-header, .drawer-header, .drawer-heading, .import-inbox > header) .glass-control { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(#root, body) .glass-control { transition: none; }
+  :is(#root, body) .glass-control:active:not(:disabled) { transform: none; }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :is(#root, body) .glass-control, :is(#root, body) .mobile-bottom-nav { background: var(--surface); border-color: var(--muted); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

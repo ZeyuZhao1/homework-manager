@@ -38,13 +38,16 @@ export function ImportInbox({ modules, snapshot: appSnapshot, onClose, onSaved }
   modules: ModuleDescriptor[]; snapshot: Snapshot; onClose: () => void; onSaved: () => Promise<void>
 }) {
   const dialogRef = useRef<HTMLElement>(null)
-  useDialogFocus(dialogRef, onClose)
   const [moduleId, setModuleId] = useState(modules[0]?.id || '')
   const [source, setSource] = useState<RemoteSnapshot | null>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const [courseChoices, setCourseChoices] = useState<Record<string, CourseChoice>>({})
   const [decisions, setDecisions] = useState<Record<string, ImportDecision>>({})
   const [busy, setBusy] = useState(false)
+  const writing = useRef(false)
+  const [saving, setSaving] = useState(false)
+  const close = () => { if (!writing.current) onClose() }
+  useDialogFocus(dialogRef, close)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState('')
   const load = useCallback(async (id: string) => {
@@ -67,26 +70,28 @@ export function ImportInbox({ modules, snapshot: appSnapshot, onClose, onSaved }
   const edit = (id: string, patch: Partial<ImportDecision>) => setDecisions(current => ({...current,[id]:{...current[id],...patch}}))
   const editCourse = (id: string, patch: Partial<CourseChoice>) => setCourseChoices(current => ({...current,[id]:{...current[id],...patch}}))
   const apply = async () => {
-    if (!source || !preview) return
+    if (busy || writing.current || !source || !preview) return
     const relevant = Object.values(decisions).filter(item => item.action !== 'defer')
     if (!relevant.length) {onClose();return}
     const needed = new Set(relevant.filter(item => item.action !== 'ignore').map(item => item.remote_course_id))
     const courses = Object.values(courseChoices).filter(item => needed.has(item.remote_course_id))
     if (courses.some(item => !item.course_id && (!item.semester_id || !item.new_name.trim()))) {setError('请先匹配课程，或选择学期并填写新课程名称');return}
     if (relevant.some(item => item.action === 'link' && !item.assignment_id)) {setError('请为关联项选择已有作业');return}
+    writing.current = true; setSaving(true)
     setBusy(true);setError('')
     try {
       const payload: ApplyImport = {module_id:moduleId,snapshot:source,courses,decisions:relevant}
       const count = await service.applyAssignmentImport(payload)
+      writing.current = false; setSaving(false)
       await onSaved()
       await load(moduleId)
       setSaved(`已处理 ${count} 项作业`)
-    } catch(e) {setError(errorText(e))} finally {setBusy(false)}
+    } catch(e) {setError(errorText(e))} finally {writing.current = false; setSaving(false); setBusy(false)}
   }
-  return <div className="import-backdrop" onMouseDown={event => {if(event.target===event.currentTarget)onClose()}}>
+  return <div className="import-backdrop" onMouseDown={event => {if(event.target===event.currentTarget)close()}}>
     <aside ref={dialogRef} tabIndex={-1} className="import-inbox" role="dialog" aria-modal="true" aria-labelledby="import-inbox-title">
-      <header><div><small>外部来源</small><h2 id="import-inbox-title">导入待审核</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={20}/></button></header>
-      <div className="import-body">
+      <header><div><small>外部来源</small><h2 id="import-inbox-title">导入待审核</h2></div><button className="icon-button glass-control" disabled={saving} onClick={close} aria-label="关闭"><X size={20}/></button></header>
+      <div className="import-body" inert={saving || undefined}>
         <div className="import-toolbar"><label>来源模块<select value={moduleId} onChange={event => setModuleId(event.target.value)}>{modules.map(module => <option key={module.id} value={module.id}>{module.name}</option>)}</select></label><button className="button button-quiet" onClick={() => void load(moduleId)} disabled={busy}><RefreshCw size={16}/>读取最新结果</button></div>
         {busy && <p className="helper-text" role="status">正在处理…</p>}{error && <p className="import-error" role="alert">{error}</p>}{saved && <p className="helper-text" role="status">{saved}</p>}
         {source && <p className="helper-text">最近检查：{new Date(source.checked_at).toLocaleString('zh-CN')} · {source.courses.length} 门课程 · {source.assignments.length} 项已确认作业。作业数据仅在你确认后写入主程序。</p>}
@@ -100,7 +105,7 @@ export function ImportInbox({ modules, snapshot: appSnapshot, onClose, onSaved }
           {decision.action==='create' && <p className="helper-text">{item.remote.description || '无说明'}{item.remote.url ? ` · ${item.remote.url}` : ''}</p>}
         </section>})}
         {preview && !preview.items.length && <p className="helper-text">没有需要审核的新增或变化。已忽略的版本不会重复提示。</p>}
-      </div><footer><button className="button button-quiet" onClick={onClose}>关闭</button><button className="button button-primary" disabled={busy || !preview?.items.length} onClick={() => void apply()}><Check size={17}/>确认所选处理</button></footer>
+      </div><footer><button className="button button-quiet" disabled={saving} onClick={close}>关闭</button><button className="button button-primary" disabled={busy || !preview?.items.length} onClick={() => void apply()}><Check size={17}/>确认所选处理</button></footer>
     </aside>
   </div>
 }
