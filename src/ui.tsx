@@ -106,7 +106,7 @@ export function Modal({ title, onClose, children, footer, wide = false, closeDis
 }
 
 export function AssignmentMobileSummary({ course, status, due, overdue = false, extra }: { course: string; status: ReactNode; due: string; overdue?: boolean; extra?: ReactNode }) {
-  return <div className="assignment-mobile-summary"><span className="assignment-card-state">{status}</span><div className="assignment-card-context"><span className="assignment-card-course">{course}{extra ? <span className="assignment-card-extra"> · {extra}</span> : null}</span><span className={`assignment-card-due ${overdue ? 'date-overdue' : ''}`}>{due}</span></div><ChevronRight className="assignment-card-chevron" size={16} aria-hidden="true" /></div>
+  return <div className="assignment-mobile-summary"><span className="assignment-card-course">{course}{extra ? <span className="assignment-card-extra"> · {extra}</span> : null}</span><div className="assignment-card-meta"><span className={`assignment-card-due ${overdue ? 'date-overdue' : ''}`}>{due}</span><span className="assignment-card-state">{status}</span></div><ChevronRight className="assignment-card-chevron" size={16} aria-hidden="true" /></div>
 }
 
 export function AssignmentTable({ items, courses, selectedId, onSelect, filesFor, groupRows = [], groupLabels = {} }: { items: Assignment[]; courses: Course[]; selectedId: string; onSelect: (id: string) => void; filesFor: (id: string) => number; groupRows?: { id:string; sortAt:string|null; node:ReactNode }[]; groupLabels?: Record<string, string> }) {

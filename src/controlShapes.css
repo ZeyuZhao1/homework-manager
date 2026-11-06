@@ -1,0 +1,13 @@
+/* Keep selection and search surfaces consistent across the main app and modules. */
+#root select,
+#root .search-field,
+#root input[type="search"],
+#root .recent-toggle {
+  border-radius: 999px;
+}
+
+/* The search icon and input share one surface; the input must not obscure it. */
+#root .search-field input {
+  background: transparent;
+  border-radius: inherit;
+}

@@ -1,0 +1,63 @@
+/* Floating layers transmit the surface behind them, without tinting neutral dark mode. */
+:root {
+  --glass-panel: color-mix(in srgb, var(--surface) 82%, transparent);
+  --glass-bar: color-mix(in srgb, var(--surface) 70%, transparent);
+  --glass-edge: color-mix(in srgb, var(--border) 76%, white);
+  --glass-highlight: #ffffff70;
+  --glass-shade: #00000018;
+  --glass-scrim: #17202c26;
+}
+:root[data-theme="dark"] {
+  --glass-edge: #ffffff26;
+  --glass-highlight: #ffffff12;
+  --glass-shade: #00000040;
+  --glass-scrim: #00000038;
+}
+/* Solid fallbacks also serve browsers without backdrop-filter support. */
+:is(.modal, .file-drawer, .app-shell > .ai-drawer, .import-inbox, .mobile-more-menu, .file-context-menu, .recent-options) { background: var(--surface); }
+@supports (background: color-mix(in srgb, white 80%, transparent)) and ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :is(.modal-backdrop, .drawer-scrim, .import-backdrop),
+  :root[data-theme="dark"] :is(.modal-backdrop, .drawer-scrim, .import-backdrop) {
+    background: var(--glass-scrim);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
+  :is(.modal-backdrop .modal, .modal-backdrop .recurring-drawer, .file-drawer, .app-shell > .ai-drawer, .import-inbox, .app-shell .mobile-more-menu, .file-context-menu, .recent-options) {
+    background: var(--glass-panel);
+    border-color: var(--glass-edge);
+    box-shadow: 0 16px 48px var(--glass-shade), inset 0 1px 0 var(--glass-highlight);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+  }
+  :is(.modal-header, .drawer-header, .drawer-heading, .modal-backdrop .modal-footer, .drawer-footer, .modal-backdrop .recurring-drawer > .drawer-footer, .import-inbox > header, .import-inbox > footer, .mobile-detail-bar) {
+    background: var(--glass-bar);
+    border-color: var(--glass-edge);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+  }
+  .sidebar { background: color-mix(in srgb, var(--sidebar) 78%, transparent); }
+  .mobile-bottom-nav, :root[data-theme="dark"] .mobile-bottom-nav {
+    background: var(--glass-bar);
+    border-color: var(--glass-edge);
+    box-shadow: 0 8px 28px var(--glass-shade), inset 0 1px 0 var(--glass-highlight);
+    -webkit-backdrop-filter: blur(28px);
+    backdrop-filter: blur(28px);
+  }
+  @media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) {
+    /* The scrim already blurs the page; avoid another full-screen blur pass. */
+    :is(.modal-backdrop .modal, .modal-backdrop .recurring-drawer, .file-drawer, .app-shell > .ai-drawer, .import-inbox) {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :is(.modal-backdrop, .drawer-scrim, .import-backdrop),
+  :root[data-theme="dark"] :is(.modal-backdrop, .drawer-scrim, .import-backdrop) { background: #00000060; }
+  :is(.sidebar, .modal-backdrop .modal, .modal-backdrop .recurring-drawer, .file-drawer, .app-shell > .ai-drawer, .import-inbox, .app-shell .mobile-more-menu, .file-context-menu, .recent-options, .mobile-bottom-nav, .modal-header, .drawer-header, .drawer-heading, .modal-backdrop .modal-footer, .drawer-footer, .modal-backdrop .recurring-drawer > .drawer-footer, .import-inbox > header, .import-inbox > footer, .mobile-detail-bar),
+  :root[data-theme="dark"] .mobile-bottom-nav { background: var(--surface); }
+  :is(.sidebar, .modal-backdrop, .drawer-scrim, .import-backdrop, .modal, .modal-backdrop .recurring-drawer, .file-drawer, .app-shell > .ai-drawer, .import-inbox, .app-shell .mobile-more-menu, .file-context-menu, .recent-options, .mobile-bottom-nav, .modal-header, .drawer-header, .drawer-heading, .modal-backdrop .modal-footer, .drawer-footer, .modal-backdrop .recurring-drawer > .drawer-footer, .import-inbox > header, .import-inbox > footer, .mobile-detail-bar),
+  :root[data-theme="dark"] .mobile-bottom-nav { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+:is(.file-context-menu, .recent-options) { border-radius: 14px; }

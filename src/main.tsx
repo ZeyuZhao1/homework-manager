@@ -8,6 +8,8 @@ import { installMobileViewport } from './mobileViewport'
 import './mobileCanvas.css'
 import './iosPolish.css'
 import './workspace.css'
+import './glassLayers.css'
+import './controlShapes.css'
 
 const disposeViewport = installMobileViewport()
 if (import.meta.hot) import.meta.hot.dispose(disposeViewport)

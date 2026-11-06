@@ -30,3 +30,13 @@
 @media(prefers-reduced-transparency:reduce){.overview-tabs{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
 
 .overview-more{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;color:var(--muted);font-size:13px}.overview-more .button{min-height:44px}
+
+/* Keep the queue content inset and vertically balanced on compact screens. */
+.overview-content .overview-queue-item { align-items: center; }
+.overview-queue-main strong { display: block; overflow: visible; }
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) {
+  .overview-content .overview-queue-item { padding-inline: 16px; }
+}
+@media (max-width: 360px) {
+  .overview-content .overview-queue-item { padding-inline: 14px; }
+}
