@@ -101,3 +101,9 @@
     grid-row: 1;
   }
 }
+
+@media (max-width: 480px) {
+  .file-drawer .pin-common select:first-child {
+    flex: 1 0 100%;
+  }
+}

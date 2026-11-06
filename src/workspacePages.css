@@ -47,3 +47,14 @@
   .file-page-row .file-page-actions>.file-open-button:disabled{display:inline-flex}
 }
 @media(prefers-reduced-motion:reduce){.history-section>summary svg{transition:none}}
+
+/* Keep long course and history text inside their cards without covering actions. */
+.workspace-settings .semester-settings-heading>div{flex:1;min-width:0}
+.workspace-settings .semester-settings-heading strong,.workspace-settings .course-settings-row span{overflow-wrap:anywhere}
+.workspace-settings .semester-settings-heading>.button,.workspace-settings .semester-settings-heading>.icon-button{flex:none}
+.file-history-event>div{min-width:0}
+.file-history-heading{flex-wrap:wrap}
+.file-history-event p,.file-history-event .muted{overflow-wrap:anywhere}
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse){
+  .mobile-setting-section .sync-settings .settings-card-title h2,.mobile-setting-section .drive-settings .settings-card-title h2{display:none}
+}

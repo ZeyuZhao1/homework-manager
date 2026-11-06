@@ -78,13 +78,19 @@ export const assignmentImportService = {
     persist({ ...previewConfig(), assignment_provider_id, material_provider_id })
   },
   async openPromptDirectory(): Promise<void> { if (isTauri()) return invoke<void>('open_prompt_directory') },
-  async analyze(text: string, paths: string[], moduleId: string): Promise<AiResult> {
-    if (isTauri()) return service.invokeModule<AiResult>(moduleId, 'assignment.extract', { text, paths })
+  async analyze(text: string, paths: string[], moduleId: string, signal?: AbortSignal): Promise<AiResult> {
+    signal?.throwIfAborted()
+    if (isTauri()) {
+      const result = await service.invokeModule<AiResult>(moduleId, 'assignment.extract', { text, paths })
+      signal?.throwIfAborted()
+      return result
+    }
     if (webSync.isCloud) {
       if (moduleId !== 'builtin.ai.assignment-import') throw new Error('网页仅支持内置 AI 识别模块')
-      const file_ids = await webSync.prepareAiFiles(paths)
+      const file_ids = await webSync.prepareAiFiles(paths, signal)
+      signal?.throwIfAborted()
       const payload: AiAnalyzeRequest = { text, file_ids, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai' }
-      return webSync.request<AiResult>('/ai/analyze', payload)
+      return webSync.request<AiResult>('/ai/analyze', payload, undefined, signal)
     }
     return { assignments: [{ course_name: 'Calculus', course_id: 'preview-course-1', title: text.match(/(?:作业|Problem Set)[^\n。]*/)?.[0] || '示例导入作业', description: text.slice(0, 150), due_at: null, submission_label: '', submission_url: '', submission_notes: '', evidence: '浏览器预览示例' }] }
   },

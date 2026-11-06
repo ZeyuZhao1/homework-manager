@@ -6,6 +6,7 @@ import { errorText } from './ui'
 import type { ModuleDescriptor, Snapshot } from './types'
 import type { ApplyImport, CourseChoice, ImportDecision, ImportItem, ImportPreview, RemoteAssignment, RemoteSnapshot } from './importSync'
 import './ImportInbox.css'
+import './importInboxPolish.css'
 
 const key = (item: ImportItem) => `${item.remote.course_id}:${item.remote.id}`
 const fields = [
@@ -78,8 +79,8 @@ export function ImportInbox({ modules, snapshot: appSnapshot, onClose, onSaved }
       const payload: ApplyImport = {module_id:moduleId,snapshot:source,courses,decisions:relevant}
       const count = await service.applyAssignmentImport(payload)
       await onSaved()
-      setSaved(`已处理 ${count} 项作业`)
       await load(moduleId)
+      setSaved(`已处理 ${count} 项作业`)
     } catch(e) {setError(errorText(e))} finally {setBusy(false)}
   }
   return <div className="import-backdrop" onMouseDown={event => {if(event.target===event.currentTarget)onClose()}}>
@@ -87,6 +88,7 @@ export function ImportInbox({ modules, snapshot: appSnapshot, onClose, onSaved }
       <header><div><small>外部来源</small><h2 id="import-inbox-title">导入待审核</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={20}/></button></header>
       <div className="import-body">
         <div className="import-toolbar"><label>来源模块<select value={moduleId} onChange={event => setModuleId(event.target.value)}>{modules.map(module => <option key={module.id} value={module.id}>{module.name}</option>)}</select></label><button className="button button-quiet" onClick={() => void load(moduleId)} disabled={busy}><RefreshCw size={16}/>读取最新结果</button></div>
+        {busy && <p className="helper-text" role="status">正在处理…</p>}{error && <p className="import-error" role="alert">{error}</p>}{saved && <p className="helper-text" role="status">{saved}</p>}
         {source && <p className="helper-text">最近检查：{new Date(source.checked_at).toLocaleString('zh-CN')} · {source.courses.length} 门课程 · {source.assignments.length} 项已确认作业。作业数据仅在你确认后写入主程序。</p>}
         {source?.warnings.map((warning,index) => <p className="import-warning" key={index}>{warning}</p>)}
         {preview?.courses.filter(item => preview.items.some(task => task.remote.course_id===item.remote.id)).map(item => {const choice=courseChoices[item.remote.id];return <div className="import-course" key={item.remote.id}><strong>{item.remote.name}</strong><small>{item.remote.code} · {item.remote.term}</small><label>对应课程<select value={choice?.course_id || ''} onChange={event => editCourse(item.remote.id,{course_id:event.target.value})}><option value="">新建课程</option>{appSnapshot.courses.map(course => <option key={course.id} value={course.id}>{course.name}</option>)}</select></label>{!choice?.course_id && <div className="import-new-course"><label>学期<select value={choice?.semester_id || ''} onChange={event => editCourse(item.remote.id,{semester_id:event.target.value})}>{appSnapshot.semesters.map(semester => <option key={semester.id} value={semester.id}>{semester.name}</option>)}</select></label><label>新课程名称<input value={choice?.new_name || ''} onChange={event => editCourse(item.remote.id,{new_name:event.target.value})}/></label></div>}</div>})}
@@ -98,7 +100,6 @@ export function ImportInbox({ modules, snapshot: appSnapshot, onClose, onSaved }
           {decision.action==='create' && <p className="helper-text">{item.remote.description || '无说明'}{item.remote.url ? ` · ${item.remote.url}` : ''}</p>}
         </section>})}
         {preview && !preview.items.length && <p className="helper-text">没有需要审核的新增或变化。已忽略的版本不会重复提示。</p>}
-        {busy && <p className="helper-text">正在处理…</p>}{error && <p className="import-error">{error}</p>}{saved && <p className="helper-text">{saved}</p>}
       </div><footer><button className="button button-quiet" onClick={onClose}>关闭</button><button className="button button-primary" disabled={busy || !preview?.items.length} onClick={() => void apply()}><Check size={17}/>确认所选处理</button></footer>
     </aside>
   </div>

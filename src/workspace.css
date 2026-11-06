@@ -197,3 +197,10 @@ button { touch-action: manipulation; }
   :root[data-theme="dark"] .mobile-bottom-nav { background: rgba(36, 36, 36, .8); border-color: #484848; box-shadow: 0 6px 24px #00000030, inset 0 1px 0 #ffffff0d; -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); }
 }
 @media (prefers-reduced-transparency: reduce) { :root[data-theme="dark"] .mobile-bottom-nav { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+
+/* Keep the add menu above floating navigation on short touch screens. */
+@media (max-width: 780px), (max-width: 1024px) and (pointer: coarse) {
+  .mobile-more-menu { max-height: max(88px, calc(var(--app-viewport-height, 100dvh) - var(--mobile-safe-top) - var(--mobile-safe-bottom) - 170px)); overflow-y: auto; overscroll-behavior: contain; }
+}
+.loading-screen { padding: 24px; text-align: center; }
+.loading-screen > p { max-width: min(90vw, 560px); overflow-wrap: anywhere; line-height: 1.5; }

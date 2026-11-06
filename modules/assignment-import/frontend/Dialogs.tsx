@@ -13,21 +13,24 @@ import './importFlow.css'
 
 export function AiDrawer({ courses, onClose, onSettings, onSaved }: { courses: Course[]; onClose: () => void; onSettings: () => void; onSaved: () => Promise<void> }) {
   const dialogRef = useRef<HTMLElement>(null)
-  useDialogFocus(dialogRef, onClose)
+  const [busy, setBusy] = useState(false)
+  const analyzeController = useRef<AbortController | null>(null)
+  const creating = useRef(false)
   const [text, setText] = useState('')
   const [paths, setPaths] = useState<string[]>([])
   const [pastedImages, setPastedImages] = useState<Record<string, string>>({})
   const [pasting, setPasting] = useState(0)
   const [drafts, setDrafts] = useState<AiDraft[]>([])
   const [step, setStep] = useState<'source' | 'review'>('source')
+  const close = () => { if (busy && step === 'review') return; analyzeController.current?.abort(); onClose() }
+  useDialogFocus(dialogRef, close)
   const [snapshot, setSnapshot] = useState<{ text: string; paths: string[]; sourceName: string; moduleId: string } | null>(null)
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [sourceName, setSourceName] = useState('')
   const [modules, setModules] = useState<ModuleDescriptor[]>([{ ...manifest, builtin: true, enabled: true }])
   const [moduleId, setModuleId] = useState(manifest.id)
   const mounted = useRef(true)
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; analyzeController.current?.abort() } }, [])
   useEffect(() => { void service.listModules().then(items => { const enabled = items.filter(module => module.enabled && module.capabilities.includes('assignment.extract')); if (enabled.length) { setModules(enabled); setModuleId(current => enabled.some(module => module.id === current) ? current : enabled[0].id) } }).catch(() => {}) }, [])
   const sourceMatches = snapshot !== null && snapshot.text === text && snapshot.sourceName === sourceName && snapshot.moduleId === moduleId && snapshot.paths.length === paths.length && snapshot.paths.every((path, index) => path === paths[index])
   const paste = async (event: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -58,27 +61,32 @@ export function AiDrawer({ courses, onClose, onSettings, onSaved }: { courses: C
     } catch (reason) { if (mounted.current) setError(errorText(reason)) }
     finally { if (mounted.current) setPasting(current => current - 1) }
   }
-  const pick = async () => { try { const files = await service.pickFiles(); setPaths(current => [...current, ...files]) } catch (e) { setError(errorText(e)) } }
+  const pick = async () => { try { const files = await service.pickFiles(); if (mounted.current) setPaths(current => [...current, ...files]) } catch (e) { if (mounted.current) setError(errorText(e)) } }
   const analyze = async () => {
+    if (analyzeController.current) return
+    const controller = new AbortController()
+    analyzeController.current = controller
     setBusy(true); setError('')
     try {
-      const result = await assignmentImportService.analyze(text, paths, moduleId)
+      const result = await assignmentImportService.analyze(text, paths, moduleId, controller.signal)
+      if (!mounted.current || controller.signal.aborted) return
       if (!Array.isArray(result.assignments)) throw new Error('识别模块返回格式无效')
       if (!result.assignments.length) throw new Error('没有识别到作业，请补充来源内容后重试。')
       setDrafts(result.assignments)
       setSnapshot({ text, paths: [...paths], sourceName, moduleId })
       setStep('review')
-    } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+    } catch (e) { if (mounted.current && !controller.signal.aborted) setError(errorText(e)) } finally { if (analyzeController.current === controller) analyzeController.current = null; if (mounted.current) setBusy(false) }
   }
   const update = (index: number, patch: Partial<AiDraft>) => setDrafts(current => current.map((draft, i) => i === index ? { ...draft, ...patch } : draft))
   const create = async () => {
-    if (!drafts.length || !snapshot || !sourceMatches) return
+    if (creating.current || !drafts.length || !snapshot || !sourceMatches) return
+    creating.current = true
     setBusy(true); setError('')
-    try { await assignmentImportService.saveDrafts(drafts, snapshot.paths, snapshot.sourceName, snapshot.text); await onSaved() } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+    try { await assignmentImportService.saveDrafts(drafts, snapshot.paths, snapshot.sourceName, snapshot.text); await onSaved() } catch (e) { if (mounted.current) setError(errorText(e)) } finally { creating.current = false; if (mounted.current) setBusy(false) }
   }
   const incomplete = drafts.some(draft => !draft.title.trim() || !courses.some(course => course.id === draft.course_id))
-  return <><div className="drawer-scrim" onClick={onClose} /><aside ref={dialogRef} tabIndex={-1} className="ai-drawer import-flow" role="dialog" aria-modal="true" aria-label="导入作业">
-    <header className="drawer-header"><h2><Sparkles size={20} />导入作业</h2><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={19} /></button></header>
+  return <><div className="drawer-scrim" onClick={close} /><aside ref={dialogRef} tabIndex={-1} className="ai-drawer import-flow" role="dialog" aria-modal="true" aria-label="导入作业">
+    <header className="drawer-header"><h2><Sparkles size={20} />导入作业</h2><button className="icon-button" disabled={busy && step === 'review'} onClick={close} aria-label="关闭"><X size={19} /></button></header>
     <div className="import-progress" aria-label="导入步骤"><span className={step === 'source' ? 'current' : 'done'}>1 <b>添加来源</b></span><i /><span className={step === 'review' ? 'current' : ''}>2 <b>审核并创建</b></span></div>
     <div className="drawer-scroll import-scroll">
       {step === 'source' ? <section className="import-section">
@@ -112,15 +120,15 @@ export function AiDrawer({ courses, onClose, onSettings, onSaved }: { courses: C
       </section>}
       {error ? <InlineError>{error}</InlineError> : null}
     </div>
-    <footer className="drawer-footer import-footer">{step === 'source' ? <><button className="button button-quiet" onClick={onClose}>取消</button><button className="button button-primary" onClick={() => void analyze()} disabled={busy || pasting > 0 || (!text.trim() && !paths.length)}><Sparkles size={16} />{busy ? '识别中…' : pasting ? '正在保存图片…' : '开始识别'}</button></> : <><button className="button button-quiet" disabled={busy} onClick={() => { setError(''); setStep('source') }}>返回来源</button><button className="button button-primary" onClick={() => void create()} disabled={busy || !drafts.length || incomplete || !sourceMatches}><Check size={17} />{busy ? '创建中…' : `确认创建（${drafts.length}）`}</button></>}</footer>
+    <footer className="drawer-footer import-footer">{busy ? <span className="import-busy" role="status">{step === 'source' ? '正在处理识别请求。关闭后已发送的请求可能仍在服务端处理。' : '正在创建作业，请等待完成。'}</span> : null}{step === 'source' ? <><button className="button button-quiet" onClick={close}>取消</button><button className="button button-primary" onClick={() => void analyze()} disabled={busy || pasting > 0 || (!text.trim() && !paths.length)}><Sparkles size={16} />{busy ? '识别中…' : pasting ? '正在保存图片…' : '开始识别'}</button></> : <><button className="button button-quiet" disabled={busy} onClick={() => { setError(''); setStep('source') }}>返回来源</button><button className="button button-primary" onClick={() => void create()} disabled={busy || !drafts.length || incomplete || !sourceMatches}><Check size={17} />{busy ? '创建中…' : `确认创建（${drafts.length}）`}</button></>}</footer>
   </aside></>
 }
 
-export function ProviderEditor({ initial, onClose, onSave }: { initial: ProviderInput; onClose: () => void; onSave: (value: ProviderInput) => Promise<void> }) {
+export function ProviderEditor({ initial, error, onClose, onSave }: { initial: ProviderInput; error: string; onClose: () => void; onSave: (value: ProviderInput) => Promise<void> }) {
   const [item,setItem] = useState(initial)
   const cloudId = useRef(initial.id || crypto.randomUUID())
   const [saving,setSaving] = useState(false)
   const save = async () => { if(saving)return;setSaving(true);try { await onSave({ ...item, id: assignmentImportService.isCloud ? cloudId.current : item.id }) } finally { setSaving(false) } }
   const chooseKind = (kind: ProviderInput['kind']) => setItem(current => ({ ...current, kind, base_url: kind === 'custom' ? current.base_url : providerPresets[kind].base_url, model: kind === 'custom' ? current.model : providerPresets[kind].model }))
-  return <Modal title={item.id ? '编辑 AI 服务商' : '添加 AI 服务商'} onClose={onClose} wide footer={<><button className="button button-quiet" onClick={onClose}>取消</button><button className="button button-primary" disabled={saving || !item.name.trim() || !item.model.trim() || !item.base_url.trim()} onClick={() => void save()}>{saving ? '保存中…' : '保存服务商'}</button></>}><div className="form-grid"><label className="form-field">名称<input value={item.name} onChange={e => setItem({ ...item,name:e.target.value })} placeholder="例如 百炼-作业识别" /></label><label className="form-field">类型<select value={item.kind} onChange={e => chooseKind(e.target.value as ProviderInput['kind'])}><option value="bailian">阿里云百炼</option><option value="deepseek">DeepSeek</option><option value="gemini">Google Gemini</option><option value="custom">自定义兼容接口</option></select></label><label className="form-field span-2">API Base URL<input value={item.base_url} onChange={e => setItem({ ...item,base_url:e.target.value })} placeholder="https://…/v1" /></label><label className="form-field">模型名称<input value={item.model} onChange={e => setItem({ ...item,model:e.target.value })} placeholder="例如 qwen3.8-max" /></label>{assignmentImportService.isDesktop || assignmentImportService.isCloud ? <label className="form-field">API Key <small>{item.has_key ? '已配置，留空保留原密钥' : '可在这里填写'}</small><input type="password" value={item.api_key} onChange={e => setItem({ ...item,api_key:e.target.value })} autoComplete="new-password" spellCheck={false} maxLength={4096} placeholder={assignmentImportService.isDesktop ? '仅保存到系统安全凭据存储' : '加密保存到个人云端，不会回显'} /></label> : <p className="helper-text">浏览器演示只保存服务商资料，不接收 API Key。</p>}</div><div className="provider-info"><ShieldCheck size={18} /><span>百炼 PDF 需要支持 PDF 理解的模型；DOCX 需要 qwen-long 或 qwen-doc-turbo。DeepSeek 支持文字和视觉模型的图片输入，不支持原始 PDF 或 DOCX。Gemini 使用原生 API，支持文字、图片和 PDF；当前模块不传入 DOCX。自定义接口默认只按文字、图片能力调用；服务端不支持时会显示错误。</span></div></Modal>
+  return <Modal title={item.id ? '编辑 AI 服务商' : '添加 AI 服务商'} onClose={onClose} closeDisabled={saving} wide footer={<>{error ? <div className="provider-save-error" role="alert">{error}</div> : null}<button className="button button-quiet" disabled={saving} onClick={onClose}>取消</button><button className="button button-primary" disabled={saving || !item.name.trim() || !item.model.trim() || !item.base_url.trim()} onClick={() => void save()}>{saving ? '保存中…' : '保存服务商'}</button></>}><div className="form-grid"><label className="form-field">名称<input value={item.name} onChange={e => setItem({ ...item,name:e.target.value })} placeholder="例如 百炼-作业识别" /></label><label className="form-field">类型<select value={item.kind} onChange={e => chooseKind(e.target.value as ProviderInput['kind'])}><option value="bailian">阿里云百炼</option><option value="deepseek">DeepSeek</option><option value="gemini">Google Gemini</option><option value="custom">自定义兼容接口</option></select></label><label className="form-field span-2">API Base URL<input value={item.base_url} onChange={e => setItem({ ...item,base_url:e.target.value })} placeholder="https://…/v1" /></label><label className="form-field">模型名称<input value={item.model} onChange={e => setItem({ ...item,model:e.target.value })} placeholder="例如 qwen3.8-max" /></label>{assignmentImportService.isDesktop || assignmentImportService.isCloud ? <label className="form-field">API Key <small>{item.has_key ? '已配置，留空保留原密钥' : '可在这里填写'}</small><input type="password" value={item.api_key} onChange={e => setItem({ ...item,api_key:e.target.value })} autoComplete="new-password" spellCheck={false} maxLength={4096} placeholder={assignmentImportService.isDesktop ? '仅保存到系统安全凭据存储' : '加密保存到个人云端，不会回显'} /></label> : <p className="helper-text">浏览器演示只保存服务商资料，不接收 API Key。</p>}</div><div className="provider-info"><ShieldCheck size={18} /><span>百炼 PDF 需要支持 PDF 理解的模型；DOCX 需要 qwen-long 或 qwen-doc-turbo。DeepSeek 支持文字和视觉模型的图片输入，不支持原始 PDF 或 DOCX。Gemini 使用原生 API，支持文字、图片和 PDF；当前模块不传入 DOCX。自定义接口仅支持文字输入。</span></div></Modal>
 }

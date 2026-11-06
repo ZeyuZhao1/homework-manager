@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, ArrowLeft, BookOpen, CalendarDays, ChevronDown, FileText, Folder, Inbox, ClipboardList, Repeat2, Moon, Plus, Search, Settings2, SlidersHorizontal, Sun, X } from 'lucide-react'
 import { service } from './service'
 import { blankAssignment } from './types'
@@ -75,6 +75,8 @@ function App() {
     return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape) }
   }, [moreOpen])
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [loadError, setLoadError] = useState('')
+  const hasLoaded = useRef(false)
   const [themePreview, setThemePreview] = useState<Settings['theme'] | null>(null)
   const themeWrites = useRef<Promise<void>>(Promise.resolve())
   const themeRevision = useRef(0)
@@ -86,6 +88,7 @@ function App() {
   const [assignmentGroups, setAssignmentGroups] = useState<AssignmentGroup[]>([])
   const [filter, setFilter] = useState<Filter>('open')
   const [search, setSearch] = useState('')
+  const deferredSearch = useDeferredValue(search)
   const [editor, setEditor] = useState<Assignment | null>(null)
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const [importInboxOpen, setImportInboxOpen] = useState(false)
@@ -98,9 +101,18 @@ function App() {
   const [moduleDescriptors, setModuleDescriptors] = useState<ModuleDescriptor[]>([])
   const [modulesReady, setModulesReady] = useState(false)
   const indexedNavigation = useRef(new Set<string>())
+  const refreshRevision = useRef(0)
+  const acceptedRefresh = useRef(0)
 
   const refresh = useCallback(async () => {
-    const data = await service.snapshot()
+    const revision = ++refreshRevision.current
+    const data = await service.snapshot().catch(error => { if (!hasLoaded.current) setLoadError(errorText(error)); throw error })
+    // Cloud snapshots already follow server cursors. For local reads, only a newer
+    // successful response supersedes this one; a failed refresh must not discard it.
+    if (!service.isCloud && revision < acceptedRefresh.current) return
+    acceptedRefresh.current = Math.max(acceptedRefresh.current, revision)
+    hasLoaded.current = true
+    setLoadError('')
     setSnapshot(data)
     setSemesterId(current => current && data.semesters.some(s => s.id === current) ? current : data.semesters[0]?.id || '')
     setCourseId(current => current && data.courses.some(c => c.id === current) ? current : data.courses[0]?.id || '')
@@ -129,8 +141,10 @@ function App() {
   useEffect(() => {
     if (!snapshot || !modulesReady || !service.isDesktop) return
     const linkedIds = new Set(snapshot.links.map(link => link.file_id))
+    const historyByFile = new Map<string, Snapshot['file_history'][number]>()
+    for (const event of snapshot.file_history) if (!historyByFile.has(event.file_id)) historyByFile.set(event.file_id, event)
     const files = snapshot.files.filter(file => linkedIds.has(file.id) && !file.missing).map(file => {
-      const history = snapshot.file_history.find(event => event.file_id === file.id)
+      const history = historyByFile.get(file.id)
       return { path:file.path, file_size:history?.file_size ?? null, modified_at_ms:history?.modified_at_ms ?? null }
     })
     if (!files.length) return
@@ -146,27 +160,35 @@ function App() {
   },[snapshot,moduleDescriptors,modulesReady])
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 5000); return () => window.clearTimeout(timer) }, [toast])
 
-  const run = async (work: () => Promise<unknown>, success?: string) => {
-    try { await work(); await refresh(); if (service.isDesktop) window.dispatchEvent(new Event('homeworkbook:local-data-changed')); if (success) setToast(success); return true } catch (error) { setToast(errorText(error)); return false }
+  const run = async (work: () => Promise<unknown>, success?: string, throwOnError = false) => {
+    try { await work(); await refresh(); if (service.isDesktop) window.dispatchEvent(new Event('homeworkbook:local-data-changed')); if (success) setToast(success); return true } catch (error) { setToast(errorText(error)); if (throwOnError) throw error; return false }
   }
   const semesterCourses = useMemo(() => snapshot?.courses.filter(c => c.semester_id === semesterId) || [], [snapshot?.courses, semesterId])
-  const activeCourse = snapshot?.courses.find(c => c.id === courseId)
+  const courseById = useMemo(() => new Map(snapshot?.courses.map(course => [course.id, course])), [snapshot?.courses])
+  const activeCourse = courseById.get(courseId)
   const scoped = useMemo(() => snapshot?.assignments.filter(a => {
-    const course = snapshot.courses.find(c => c.id === a.course_id)
+    const course = courseById.get(a.course_id)
     return course?.semester_id === semesterId && (view !== 'course' || a.course_id === courseId)
-  }) || [], [snapshot, semesterId, view, courseId])
-  const filtered = useMemo(() => scoped.filter(item => {
+  }) || [], [snapshot, semesterId, view, courseId, courseById])
+  const filtered = useMemo(() => {
+    const needle = deferredSearch.trim().toLowerCase()
+    return scoped.filter(item => {
     if (filter === 'open' && !isOpen(item)) return false
     if (filter === 'doing' && item.status !== 'doing') return false
     if (filter === 'done' && item.status !== 'done') return false
     if (filter === 'submitted' && item.status !== 'submitted') return false
     if (filter === 'overdue' && dueState(item) !== 'overdue') return false
     if (filter === 'week' && (!isOpen(item) || !isUpcoming(item.due_at))) return false
-    const needle = search.trim().toLowerCase()
-    return !needle || `${item.title} ${item.description} ${snapshot?.courses.find(c => c.id === item.course_id)?.name}`.toLowerCase().includes(needle)
-  }), [scoped, filter, search, snapshot?.courses])
+    return !needle || `${item.title} ${item.description} ${courseById.get(item.course_id)?.name || ''}`.toLowerCase().includes(needle)
+    })
+  }, [scoped, filter, deferredSearch, courseById])
   const openCount = scoped.filter(isOpen).length
-  const filesFor = (id: string) => snapshot?.links.filter(l => l.assignment_id === id).length || 0
+  const fileCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const link of snapshot?.links || []) counts.set(link.assignment_id, (counts.get(link.assignment_id) || 0) + 1)
+    return counts
+  }, [snapshot?.links])
+  const filesFor = useCallback((id: string) => fileCounts.get(id) || 0, [fileCounts])
   const enabledAppModules = useMemo(()=>modulesReady ? appModules.filter(module => moduleDescriptors.find(item => item.id === module.id)?.enabled !== false) : [],[modulesReady,moduleDescriptors])
   const printModules = useMemo(() => moduleDescriptors.filter(module => !module.builtin && module.enabled && module.capabilities.includes('file.print')), [moduleDescriptors])
   const syncModules = useMemo(() => moduleDescriptors.filter(module => module.enabled && module.capabilities.includes('assignment.sync.snapshot')), [moduleDescriptors])
@@ -191,17 +213,23 @@ function App() {
     if (!snapshot || !modulesReady) return
     const extensions=enabledAppModules.flatMap(module=>module.assignmentList?[module.assignmentList]:[])
     if(!extensions.length){setAssignmentGroups([]);setSelectedGroupId('');return}
-    void Promise.all(extensions.map(extension=>extension.loadGroups(snapshot))).then(values=>setAssignmentGroups(values.flat())).catch(error=>setToast(errorText(error)))
+    let alive = true
+    void Promise.all(extensions.map(extension=>extension.loadGroups(snapshot))).then(values=>{ if (alive) setAssignmentGroups(values.flat()) }).catch(error=>{ if (alive) setToast(errorText(error)) })
+    return () => { alive = false }
   },[snapshot,modulesReady,enabledAppModules])
   // Action lists show real assignments. Plans have their own management view.
   const visibleAssignments = useMemo(() => [...filtered].sort((a, b) => (a.due_at ? new Date(a.due_at).getTime() : Infinity) - (b.due_at ? new Date(b.due_at).getTime() : Infinity)), [filtered])
-  const overviewGroups = assignmentGroups.filter(group => semesterCourses.some(course => course.id === group.course_id))
-  const groupLabels = Object.fromEntries(overviewGroups.flatMap(group => group.assignment_ids.map(id => [id, group.title])))
+  const overviewGroups = useMemo(() => { const courseIds = new Set(semesterCourses.map(course => course.id)); return assignmentGroups.filter(group => courseIds.has(group.course_id)) }, [assignmentGroups, semesterCourses])
+  const groupLabels = useMemo(() => Object.fromEntries(overviewGroups.flatMap(group => group.assignment_ids.map(id => [id, group.title]))), [overviewGroups])
   const selected = selectedId ? snapshot?.assignments.find(assignment => assignment.id === selectedId) : undefined
   const selectedGroup = assignmentGroups.find(group => group.id === selectedGroupId)
-  const currentLinks = snapshot?.links.filter(l => l.assignment_id === selected?.id) || []
-  const assignmentFileIds = new Set([...(currentLinks.map(link => link.file_id)), ...(snapshot?.file_history.filter(event => event.assignment_id === selected?.id).map(event => event.file_id) || [])])
-  const currentFileHistory = snapshot?.file_history.filter(event => assignmentFileIds.has(event.file_id)) || []
+  const currentLinks = useMemo(() => selectedId ? snapshot?.links.filter(link => link.assignment_id === selectedId) || [] : [], [snapshot?.links, selectedId])
+  const currentFileHistory = useMemo(() => {
+    if (!selectedId || !snapshot) return []
+    const ids = new Set(currentLinks.map(link => link.file_id))
+    for (const event of snapshot.file_history) if (event.assignment_id === selectedId) ids.add(event.file_id)
+    return snapshot.file_history.filter(event => ids.has(event.file_id))
+  }, [snapshot, currentLinks, selectedId])
   const saveSettings = async (payload: Settings) => { const saved = await run(() => service.saveSettings(payload), '设置已保存'); if (saved) applyTheme(payload.theme) }
   const setTheme = (theme: Settings['theme']) => {
     if (!snapshot) return
@@ -232,8 +260,8 @@ function App() {
       requestAnimationFrame(() => { const body = detailRef.current?.querySelector('.mobile-detail-body') || mainRef.current; if (body) body.scrollTop = parentDetail.current.scrollTop; if (parentDetail.current.focus?.isConnected) parentDetail.current.focus.focus({ preventScroll: true }); else detailRef.current?.focus({ preventScroll: true }) })
     } else { setMobileDetailOpen(false); setDetailParentId('') }
   }
-  const saveAssignment = async (payload: Assignment) => { const okay = await run(() => service.saveAssignment(payload), payload.id ? '作业已更新' : '作业已创建'); if (!okay) throw new Error('保存失败'); setEditor(current => current === editor ? null : current) }
-  const setStatus = async (item: Assignment, status: Status) => { await run(() => service.saveAssignment({ ...item, status }), '状态已更新') }
+  const saveAssignment = async (payload: Assignment) => { const okay = await run(() => service.saveAssignment(payload), payload.id ? '作业已更新' : '作业已创建', true); if (!okay) throw new Error('保存失败'); setEditor(current => current === editor ? null : current) }
+  const setStatus = async (item: Assignment, status: Status) => { await run(() => service.saveAssignment({ ...item, status }), '状态已更新', true) }
   const deleteSelected = async () => { if (!selected || !window.confirm(`确定删除“${selected.title}”吗？关联记录会移除，磁盘文件不会删除。`)) return; const okay = await run(() => service.deleteAssignment(selected.id), '作业已删除'); if (!okay) return; setSelectedId(''); closeDetail() }
   const deleteSemester = async (id: string) => {
     const semester = snapshot?.semesters.find(item => item.id === id)
@@ -253,10 +281,10 @@ function App() {
   // its scroll position and original focused control without an async reload.
   const detailContent = snapshot && (detailGroup || selected) ? <>
     {detailGroup && GroupDetail ? <div hidden={!!detailParentId} inert={detailParentId ? true : undefined}><GroupDetail key={detailGroup.id} group={detailGroup} snapshot={snapshot} onRefresh={refresh} onEditAssignment={setEditor} onOpenAssignment={openGroupAssignment}/></div> : null}
-    {!selectedGroup && selected ? <AssignmentDetail printModules={printModules} item={selected} course={snapshot.courses.find(c => c.id === selected.course_id)} links={currentLinks} files={snapshot.files} fileHistory={currentFileHistory} onEdit={() => setEditor(selected)} onDelete={deleteSelected} onAddFile={role => setFileDrawer({ assignmentId: selected.id, role })} onEditLink={editing => setFileDrawer({ assignmentId: selected.id, editing })} onRename={setRenameLink} onStatus={status => setStatus(selected,status)} onRelink={relink} addon={enabledAppModules.map(module=>{const Addon=module.assignmentList?.AssignmentAddon;return Addon?<Addon key={module.id} assignment={selected} snapshot={snapshot}/>:null})}/> : null}
+    {!selectedGroup && selected ? <AssignmentDetail key={selected.id} printModules={printModules} item={selected} course={snapshot.courses.find(c => c.id === selected.course_id)} links={currentLinks} files={snapshot.files} fileHistory={currentFileHistory} onEdit={() => setEditor(selected)} onDelete={deleteSelected} onAddFile={role => setFileDrawer({ assignmentId: selected.id, role })} onEditLink={editing => setFileDrawer({ assignmentId: selected.id, editing })} onRename={setRenameLink} onStatus={status => setStatus(selected,status)} onRelink={relink} addon={enabledAppModules.map(module=>{const Addon=module.assignmentList?.AssignmentAddon;return Addon?<Addon key={module.id} assignment={selected} snapshot={snapshot}/>:null})}/> : null}
   </> : null
 
-  if (!snapshot) return <div className="loading-screen"><BookOpen size={36} /><span>正在打开作业簿…</span>{toast ? <p>{toast}</p> : null}</div>
+  if (!snapshot) return <div className="loading-screen"><BookOpen size={36} /><span>{loadError ? '暂时无法打开作业簿' : '正在打开作业簿…'}</span>{loadError ? <><p role="alert">{loadError}</p><button className="button button-quiet" onClick={() => { setToast(''); setLoadError(''); void refresh().catch(error => setToast(errorText(error))) }}>重新加载</button></> : null}</div>
   return <div className="app-shell" data-view={view} onDragStart={event => event.preventDefault()} onDragOver={event => event.preventDefault()} onDrop={event => event.preventDefault()}>
     {isMobile ? <header className="mobile-topbar" inert={mobileDetailOpen || undefined}><a className="mobile-brand" href="#" onClick={event => { event.preventDefault(); chooseView('overview') }}><BookOpen size={22} strokeWidth={2} /><strong>作业簿</strong></a><div className="mobile-semester"><select value={semesterId} aria-label="选择学期" onChange={event => { setDetailParentId(''); setSemesterId(event.target.value); setCourseId(snapshot.courses.find(course => course.semester_id === event.target.value)?.id || ''); setSelectedId(''); setSelectedGroupId(''); setMoreOpen(false) }}>{snapshot.semesters.map(semester => <option key={semester.id} value={semester.id}>{semester.name}</option>)}</select><ChevronDown size={14} /></div></header> : null}
     <aside className="sidebar"><div className="brand"><div className="brand-mark"><BookOpen size={26} strokeWidth={1.8} /></div><div><strong>作业簿</strong></div></div>
@@ -289,7 +317,7 @@ function App() {
         </div>
         <div className="task-workspace">
           <div className="task-workspace-list">
-            {view === 'overview' ? <Overview assignments={scoped} groups={overviewGroups} courses={semesterCourses} onOpenAssignment={openOverviewAssignment} onOpenGroup={openOverviewGroup} onViewAll={showAssignments} selectedId={selectedId} /> : view === 'plans' ? <>
+            {view === 'overview' ? <Overview key={semesterId} assignments={scoped} groups={overviewGroups} courses={semesterCourses} onOpenAssignment={openOverviewAssignment} onOpenGroup={openOverviewGroup} onViewAll={showAssignments} selectedId={selectedId} /> : view === 'plans' ? <>
               <div className="workspace-section-heading"><h2>全部计划</h2><span>{overviewGroups.length} 个</span></div>
               {overviewGroups.length ? <AssignmentTable items={[]} courses={snapshot.courses} selectedId="" onSelect={openOverviewAssignment} filesFor={filesFor} groupRows={overviewGroups.flatMap(group => {
                 const extension = enabledAppModules.find(module => module.id === group.module_id)?.assignmentList
@@ -305,7 +333,7 @@ function App() {
               <div className="filter-tabs" aria-label="筛选作业状态">{(isMobile ? [['open','待处理'],['all','全部'],['submitted','已提交']] : [['open','未提交'],['all','全部'],['doing','进行中'],['done','待提交'],['overdue','已逾期'],['week','7 天内'],['submitted','已提交']]).map(([key,label]) => <button aria-pressed={filter === key} className={filter === key ? 'active' : ''} onClick={() => { setFilter(key as Filter); setSelectedId(''); setSelectedGroupId('') }} key={key}>{label}</button>)}
                 {isMobile ? <label className={`mobile-filter-more${['doing', 'done', 'overdue', 'week'].includes(filter) ? ' is-filtered' : ''}`}><SlidersHorizontal size={19} />{filter === 'doing' ? <span>进行中</span> : filter === 'done' ? <span>待提交</span> : filter === 'overdue' ? <span>已逾期</span> : filter === 'week' ? <span>7 天内</span> : null}<select aria-label="筛选状态" value={filter} onChange={event => { setFilter(event.target.value as Filter); setSelectedId(''); setSelectedGroupId('') }}><option value="open">待处理</option><option value="all">全部</option><option value="doing">进行中</option><option value="done">待提交</option><option value="overdue">已逾期</option><option value="week">7 天内</option><option value="submitted">已提交</option></select></label> : null}
               </div>
-              <div className="workspace-results" role="status"><span>{visibleAssignments.length} 项结果</span>{search || !['open', 'all'].includes(filter) ? <button onClick={() => { setSearch(''); setFilter('open') }}>清除筛选</button> : null}</div>
+              <div className="workspace-results" role="status" aria-busy={search !== deferredSearch}><span>{search !== deferredSearch ? '正在筛选…' : `${visibleAssignments.length} 项结果`}</span>{search || !['open', 'all'].includes(filter) ? <button onClick={() => { setSearch(''); setFilter('open') }}>清除筛选</button> : null}</div>
               <AssignmentTable items={visibleAssignments} courses={snapshot.courses} groupLabels={groupLabels} selectedId={isMobile && !mobileDetailOpen ? '' : selected?.id || ''} onSelect={openOverviewAssignment} filesFor={filesFor} />
             </>}
           </div>
@@ -320,10 +348,10 @@ function App() {
     {editor ? <AssignmentEditor initial={editor} courses={snapshot.courses} recentValues={snapshot.recent_values} onClose={() => setEditor(null)} onSave={saveAssignment} /> : null}
     {enabledAppModules.filter(module => module.id === activeModuleId).map(module => <module.Overlay key={module.id} snapshot={snapshot} onClose={() => setActiveModuleId(null)} onSettings={() => { setActiveModuleId(null); chooseView('settings') }} onSaved={async () => { await refresh(); setActiveModuleId(null); setToast(module.savedMessage) }} />)}
     {importInboxOpen && syncModules.length ? <ImportInbox modules={syncModules} snapshot={snapshot} onClose={() => setImportInboxOpen(false)} onSaved={refresh}/> : null}
-    {fileDrawer ? <FileDrawer snapshot={snapshot} assignmentId={fileDrawer.assignmentId} editing={fileDrawer.editing} initialRole={fileDrawer.role} onClose={() => setFileDrawer(null)} onSaved={async () => { await refresh(); setFileDrawer(current => current === fileDrawer ? null : current); setToast('文件关联已保存') }} onDelete={async id => { await run(() => service.unlinkFile(id), '文件关联已移除'); setFileDrawer(null) }} /> : null}
+    {fileDrawer ? <FileDrawer snapshot={snapshot} assignmentId={fileDrawer.assignmentId} editing={fileDrawer.editing} initialRole={fileDrawer.role} onClose={() => setFileDrawer(null)} onSaved={async () => { await refresh(); setFileDrawer(current => current === fileDrawer ? null : current); setToast('文件关联已保存') }} onDelete={async id => { const okay = await run(() => service.unlinkFile(id), '文件关联已移除', true); if (!okay) throw new Error('移除失败，请重试'); setFileDrawer(null) }} /> : null}
     {renameLink ? <RenameDialog link={renameLink} file={snapshot.files.find(f => f.id === renameLink.file_id)} onClose={() => setRenameLink(null)} onDone={async () => { await refresh(); setRenameLink(current => current === renameLink ? null : current); setToast('文件已原地重命名，可在文件页撤回') }} /> : null}
-    {courseEditor ? <CourseEditor initial={courseEditor} semesters={snapshot.semesters} onClose={() => setCourseEditor(null)} onSave={async value => { const okay = await run(() => service.saveCourse(value), '课程已保存'); if (okay) setCourseEditor(null) }} /> : null}
-    {semesterEditor ? <SemesterEditor initial={semesterEditor} onClose={() => setSemesterEditor(null)} onSave={async value => { const okay = await run(() => service.saveSemester(value), '学期已保存'); if (okay) setSemesterEditor(null) }} /> : null}
+    {courseEditor ? <CourseEditor initial={courseEditor} semesters={snapshot.semesters} onClose={() => setCourseEditor(null)} onSave={async value => { const okay = await run(() => service.saveCourse(value), '课程已保存', true); if (!okay) throw new Error('课程保存失败，请重试'); setCourseEditor(null) }} /> : null}
+    {semesterEditor ? <SemesterEditor initial={semesterEditor} onClose={() => setSemesterEditor(null)} onSave={async value => { const okay = await run(() => service.saveSemester(value), '学期已保存', true); if (!okay) throw new Error('学期保存失败，请重试'); setSemesterEditor(null) }} /> : null}
     {toast ? <div className="toast" role="status"><AlertCircle size={17} />{toast}<button onClick={() => setToast('')} aria-label="关闭提示"><X size={15} /></button></div> : null}
   </div>
 }

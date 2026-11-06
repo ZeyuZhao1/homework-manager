@@ -44,3 +44,7 @@
   .import-flow .drawer-scroll { padding-left: 18px; padding-right: 18px; }
   .import-flow .drawer-footer { padding-left: 18px; padding-right: 18px; }
 }
+
+.import-flow .inline-error { overflow-wrap: anywhere; min-width: 0; }
+.import-footer:has(.import-busy) { flex-wrap: wrap; }
+.import-busy { flex-basis: 100%; color: var(--muted); font-size: 12px; line-height: 1.5; }

@@ -149,3 +149,79 @@ test('Drive references preserve metadata and association without uploaded conten
   assert.equal(webSync.snapshot().links[0].page, '12–15')
   assert.equal(webSync.snapshot().file_history.some(row => row.event_type === 'metadata_refreshed'), true)
 })
+
+test('simultaneous snapshot readers share one request and a failed read can retry', async t => {
+  const { webSync, server } = await fixture(t)
+  let finish
+  t.mock.method(globalThis, 'fetch', () => { server.calls.push({url:'/api/snapshot'}); return new Promise(resolve => { finish = resolve }) })
+  const before = server.calls.length
+  const a = webSync.refresh(), b = webSync.refresh()
+  assert.equal(a, b)
+  assert.equal(server.calls.length, before + 1)
+  finish(Response.json({cursor:server.cursor,entities:server.rows,server_time:''}))
+  await a
+  t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('offline') })
+  await assert.rejects(webSync.refresh(), /offline/)
+  t.mock.method(globalThis, 'fetch', async () => Response.json({cursor:server.cursor,entities:server.rows,server_time:''}))
+  await webSync.refresh()
+})
+
+test('a write obtains a fresh snapshot instead of joining an older in-flight read', async t => {
+  const { webSync, cloudService, server } = await fixture(t)
+  let finishOld, reads = 0
+  const stale = structuredClone({cursor:server.cursor,entities:server.rows,server_time:''})
+  t.mock.method(globalThis, 'fetch', async (url,init={}) => {
+    if(url==='/api/snapshot' && ++reads===1) return new Promise(resolve=>{finishOld=resolve})
+    if(url==='/api/sync') {
+      const data=JSON.parse(init.body).operations[0].changes[0].data
+      Object.assign(server.rows.find(r=>r.entity_id==='a1').data,data);server.cursor++
+      return Response.json({cursor:server.cursor,changes:[],acknowledged:[],has_more:false,server_time:''})
+    }
+    return Response.json({cursor:server.cursor,entities:server.rows,server_time:''})
+  })
+  const old = webSync.refresh()
+  await cloudService.saveAssignment({...webSync.snapshot().assignments[0],status:'doing'})
+  assert.equal(webSync.snapshot().assignments[0].status,'doing')
+  finishOld(Response.json(stale));await old
+  assert.equal(webSync.snapshot().assignments[0].status,'doing')
+})
+
+test('snapshot freshness follows server cursor rather than request start order', async t => {
+  const { webSync, server } = await fixture(t)
+  const pending = []
+  t.mock.method(globalThis, 'fetch', () => new Promise((resolve, reject) => pending.push({ resolve, reject })))
+  const earlier = webSync.refresh(), later = webSync.refresh(true)
+  pending[1].resolve(Response.json({ cursor: server.cursor + 1, entities: server.rows, server_time: 'first' }))
+  await later
+  pending[0].resolve(Response.json({ cursor: server.cursor + 2, entities: server.rows, server_time: 'newer' }))
+  assert.equal((await earlier).server_time, 'newer')
+  const recovery = webSync.refresh(), failed = webSync.refresh(true)
+  pending[3].reject(new TypeError('offline'))
+  await assert.rejects(failed, /offline/)
+  pending[2].resolve(Response.json({ cursor: server.cursor + 3, entities: server.rows, server_time: 'recovered' }))
+  assert.equal((await recovery).server_time, 'recovered')
+})
+
+test('aborting attachment preparation after metadata prevents upload confirmation and transfer', async t => {
+  const { webSync, server, window } = await fixture(t)
+  const controller = new AbortController()
+  const selected=webSync.stageFile(new File(['private synthetic'],'cancel.pdf',{type:'application/pdf'}))
+  let prompts=0;window.confirm=()=>{prompts++;return true}
+  const original=globalThis.fetch
+  t.mock.method(globalThis,'fetch',async(url,init)=>{const response=await original(url,init);if(url==='/api/sync')controller.abort();return response})
+  await assert.rejects(webSync.prepareAiFiles([selected],controller.signal),{name:'AbortError'})
+  assert.equal(prompts,0)
+  assert.equal(server.calls.filter(c=>c.init?.method==='PUT').length,0)
+})
+
+test('aborted model requests forward the abort signal and do not complete',async t=>{
+  const { webSync }=await fixture(t)
+  const controller=new AbortController()
+  t.mock.method(globalThis,'fetch',(_url,init)=>new Promise((resolve,reject)=>{
+    assert.equal(init.signal,controller.signal)
+    init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true})
+  }))
+  const pending=webSync.request('/ai/analyze',{text:'synthetic'},undefined,controller.signal)
+  controller.abort()
+  await assert.rejects(pending,{name:'AbortError'})
+})

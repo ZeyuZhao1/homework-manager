@@ -13,21 +13,33 @@ const selectedIds = new Map<string, string>()
 const baseline = Symbol('cloud-form-baseline')
 function editable<T extends object>(row: T): T { return Object.assign(row, { [baseline]: { ...row } }) }
 export class SessionRequired extends Error {}
-async function request<T>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
-  const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', headers: body === undefined ? {} : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+async function request<T>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST', signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`/api${path}`, { method, credentials: 'same-origin', headers: body === undefined ? {} : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), ...(signal ? { signal } : {}) })
   if (response.status === 401) { window.dispatchEvent(new Event('homeworkbook:session-required')); throw new SessionRequired('请先授权此设备') }
   if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(typeof result.error === 'string' ? result.error : `请求失败 (${response.status})`) }
   return response.status === 204 ? undefined as T : response.json()
 }
 function entities(type: EntityType) { return state.entities.filter(row => row.entity_type === type && row.data !== null).map(row => ({ ...row.data, id: row.entity_id })) as (EntityData & { id: string })[] }
-async function refresh() { const next = await request<CloudSnapshot>('/snapshot'); if (next.cursor >= state.cursor) state = next; return state }
+let snapshotRead: Promise<CloudSnapshot> | undefined
+function refresh(fresh = false): Promise<CloudSnapshot> {
+  if (snapshotRead && !fresh) return snapshotRead
+  const work = request<CloudSnapshot>('/snapshot').then(next => {
+    // Request order does not determine freshness: an earlier request can read a later cursor.
+    if (next.cursor >= state.cursor) state = next
+    return state
+  })
+  snapshotRead = work
+  const release = () => { if (snapshotRead === work) snapshotRead = undefined }
+  void work.then(release, release)
+  return work
+}
 async function mutate(changes: SyncMutation[]) {
   if (!changes.length) return
   // Keep the operation ID stable across transport failures, so an explicit retry cannot replay a mutation.
   const operation = { operation_id: crypto.randomUUID(), changes }
   const send = () => request<SyncResponse>('/sync', { cursor: state.cursor, operations: [operation] })
   try { await send() } catch (error) { if (error instanceof TypeError) await send(); else throw error }
-  await refresh()
+  await refresh(true)
 }
 function patch(type: EntityType, id: string, data: EntityData, original?: EntityData): SyncMutation {
   const old = original || entities(type).find(row => row.id === id)
@@ -58,14 +70,16 @@ async function resolveFile(path: string) {
   selectedIds.set(path, id)
   return id
 }
-async function upload(id: string, file: File) {
+async function upload(id: string, file: File, signal?: AbortSignal) {
+  signal?.throwIfAborted()
   if (entities('file').find(row => row.id === id)?.drive_id) throw new Error('Drive 关联仅保存链接，不能上传文件内容')
   if (file.size > syncLimits.maxFileBytes) throw new Error('文件不能超过 20 MB')
   if (!window.confirm(`上传“${file.name}”的完整内容到个人云端？\n仅本次上传；后续修改不会自动上传。`)) throw new Error('已取消上传；仅保留附件元数据')
-  const response = await fetch(`/api/files/${encodeURIComponent(id)}/content`, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Upload-Confirmed': 'true' }, body: file })
+  signal?.throwIfAborted()
+  const response = await fetch(`/api/files/${encodeURIComponent(id)}/content`, { ...(signal ? { signal } : {}), method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Upload-Confirmed': 'true' }, body: file })
   if (!response.ok) throw new Error('附件上传失败，请检查授权和连接后重试')
   picked.delete(id)
-  await refresh()
+  await refresh(true)
 }
 async function pickFiles(): Promise<string[]> {
   return new Promise(resolve => {
@@ -78,10 +92,10 @@ const desktopOnly = async (): Promise<never> => { throw new Error('此功能需�
 export const webSync = {
   get isCloud() { return cloud }, request, entities, mutate, patch, refresh, snapshot, pickFiles,
   pendingBaselines() { return state.pending_baselines || [] },
-  async initialize() { if (import.meta.env.DEV) return false; cloud = true; await request('/health'); await refresh(); return true },
+  async initialize() { if (import.meta.env.DEV) return false; cloud = true; await request('/health'); await refresh(true); return true },
   async uploadFile(id: string) { if (entities('file').find(row => row.id === id)?.drive_id) throw new Error('Drive 关联仅保存链接，不能上传文件内容'); let file = picked.get(id); if (!file) { const ids = await pickFiles(); file = ids[0] ? picked.get(ids[0]) : undefined } if (!file) throw new Error('未选择文件，未上传任何内容'); await upload(id, file) },
   stageFile(file: File) { const id = `selected:${crypto.randomUUID()}/${file.name}`; picked.set(id, file); return id },
-  async prepareAiFiles(paths: string[]) { const ids: string[] = []; for (const path of paths) { const id = await resolveFile(path); if (entities('file').find(row => row.id === id)?.drive_id) throw new Error('Drive 链接暂不支持 AI 读取，请选择本地附件'); if (!entities('file').find(row => row.id === id)?.cloud_version) { const file = picked.get(id); if (!file) throw new Error('请先为附件上传内容'); await upload(id, file) } ids.push(id) } return ids },
+  async prepareAiFiles(paths: string[], signal?: AbortSignal) { signal?.throwIfAborted(); const ids: string[] = []; for (const path of paths) { signal?.throwIfAborted(); const id = await resolveFile(path); signal?.throwIfAborted(); if (entities('file').find(row => row.id === id)?.drive_id) throw new Error('Drive 链接暂不支持 AI 读取，请选择本地附件'); if (!entities('file').find(row => row.id === id)?.cloud_version) { const file = picked.get(id); if (!file) throw new Error('请先为附件上传内容'); await upload(id, file, signal) } signal?.throwIfAborted(); ids.push(id) } return ids },
 }
 export const cloudService = {
   async snapshot() { await refresh(); return snapshot() },

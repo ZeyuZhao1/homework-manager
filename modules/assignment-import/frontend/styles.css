@@ -9,8 +9,8 @@
 .source-textarea{width:100%;border:1px solid var(--border);border-radius:6px;background:var(--surface);padding:9px 11px;min-height:38px;font-weight:400;font-size:13px;line-height:1.4;outline:none}
 .source-textarea{resize:vertical}
 .source-textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
-.provider-info{display:flex;gap:9px;background:var(--blue-soft);color:var(--blue);font-size:12px;line-height:1.5;padding:12px;border-radius:6px;margin-top:18px}
-.provider-info svg{flex:none}
+.provider-info{display:flex;gap:9px;background:var(--surface-2);color:var(--muted);font-size:12px;line-height:1.5;padding:12px;border-radius:6px;margin-top:18px}
+.provider-info svg{flex:none;color:var(--blue)}
 .drawer-section{padding:23px 0;border-bottom:1px solid var(--border)}
 .step-heading{display:flex;gap:10px;align-items:flex-start;margin-bottom:18px}
 .step-heading b{display:grid;place-items:center;border-radius:50%;width:22px;height:22px;flex:none;background:var(--blue-soft);color:var(--blue);font-size:12px}
@@ -34,3 +34,6 @@
 .provider-icon{width:30px;height:30px;display:grid;place-items:center;background:var(--blue-soft);color:var(--blue);border-radius:6px}
 .settings-empty{font-size:12px;color:var(--muted);background:var(--surface-2);padding:14px;border-radius:6px}
 .ai-drawer{position:fixed;top:0;right:0;bottom:0;width:min(100vw,470px);z-index:31;background:var(--surface);box-shadow:var(--shadow);display:flex;flex-direction:column}
+
+.provider-save-error{flex-basis:100%;max-height:25vh;overflow:auto;overflow-wrap:anywhere;color:var(--red);font-size:12px;line-height:1.5}
+.modal-footer:has(.provider-save-error){flex-wrap:wrap}

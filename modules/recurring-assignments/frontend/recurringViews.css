@@ -60,3 +60,16 @@
   .recurring-drawer .mode-grid button svg { display: none; }
   .recurring-drawer .mode-grid button small { grid-column: 1; }
 }
+/* Keep long names and shared attachments inside the detail column. */
+.recurring-detail .detail-title > div:last-child { min-width: 0; }
+.recurring-detail .detail-title h2, .recurring-detail .detail-title p { overflow-wrap: anywhere; }
+.recurring-detail .recurring-section-title { gap: 12px; }
+.recurring-detail .recurring-section-title .add-inline { width: auto; flex: none; padding: 0 12px; }
+.recurring-detail .shared-file { min-width: 0; gap: 8px; }
+.recurring-detail .shared-file > button:first-child { min-width: 0; text-align: left; align-items: flex-start; }
+.recurring-detail .shared-file > button:first-child svg { flex: none; margin-top: 2px; }
+.recurring-detail .shared-file > button:first-child span { min-width: 0; overflow-wrap: anywhere; }
+.recurring-detail .shared-file > .icon-button { flex: none; }
+.recurring-detail .timeline-copy > div { min-width: 0; }
+.recurring-detail .timeline-copy em { flex: none; }
+.recurring-busy { margin: 0 0 8px; color: var(--muted); font-size: 13px; }

@@ -19,9 +19,16 @@ function useDriveOperation() {
     if (pending.current) return
     const controller = new AbortController(); pending.current = controller; setBusy(true); setError('')
     try { await operation(controller.signal) } catch (reason) { if (alive.current && !controller.signal.aborted) setError(messageOf(reason)) }
-    finally { if (pending.current === controller) pending.current = null; if (alive.current) setBusy(false) }
+    finally { if (pending.current === controller) { pending.current = null; if (alive.current) setBusy(false) } }
   }
-  return { busy, error, run, cancel: () => pending.current?.abort() }
+  const cancel = () => {
+    const controller = pending.current
+    if (!controller) return
+    pending.current = null
+    controller.abort()
+    setBusy(false)
+  }
+  return { busy, error, run, cancel }
 }
 async function requireDevice() {
   if (!await driveService.connectedDesktop()) throw new Error('请先在“个人多设备同步”中连接个人云端并授权此设备，再使用 Google Drive。暂停同步后仍可手动使用 Drive。')
@@ -52,5 +59,6 @@ export function DriveSettings() {
 
 export function DriveFileActions({ file, open = false }: { file: FileAsset; open?: boolean }) {
   const { busy, error, run } = useDriveOperation()
-  return <div className="drive-file-actions"><span className="drive-pill">仅链接</span><button type="button" className="button button-quiet" disabled={busy} onClick={() => void run(async signal => { await requireDevice(); if (!signal.aborted) await driveService.refresh(file) })}><RefreshCw size={14} />{busy ? '刷新中…' : '刷新信息'}</button>{open ? <button type="button" className="button button-quiet" onClick={() => void run(async () => { await service.openFile(file.id) })} disabled={busy}><ExternalLink size={14} />在 Drive 中打开</button> : null}{error ? <small className="drive-error" role="alert">{error}</small> : null}</div>
+  const [refreshed, setRefreshed] = useState(false)
+  return <div className="drive-file-actions"><span className="drive-pill">仅链接</span><button type="button" className="button button-quiet" disabled={busy} onClick={() => { setRefreshed(false); void run(async signal => { await requireDevice(); if (!signal.aborted) { await driveService.refresh(file); if (!signal.aborted) setRefreshed(true) } }) }}><RefreshCw size={14} />{busy ? '刷新中…' : '刷新信息'}</button>{open ? <button type="button" className="button button-quiet" onClick={() => void run(async () => { await service.openFile(file.id) })} disabled={busy}><ExternalLink size={14} />在 Drive 中打开</button> : null}{error ? <small className="drive-error" role="alert">{error}</small> : null}{refreshed && !error ? <small role="status">信息已刷新</small> : null}</div>
 }

@@ -1,0 +1,33 @@
+.import-inbox {
+  overflow-wrap: anywhere;
+}
+
+.import-body {
+  min-height: 0;
+}
+
+.import-inbox label,
+.import-item-heading > div,
+.import-new-course > label {
+  min-width: 0;
+}
+
+.import-course {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+:root[data-theme="dark"] .import-error {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+:root[data-theme="dark"] .import-warning {
+  background: var(--orange-soft);
+  color: var(--orange);
+}
+
+@media (max-width: 620px) {
+  .import-course {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
