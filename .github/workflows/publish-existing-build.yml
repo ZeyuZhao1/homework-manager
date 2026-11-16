@@ -1,0 +1,73 @@
+name: Publish existing desktop build
+
+on:
+  push:
+    branches: [ops/publish-existing-build]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: publish-build-d881b39
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Verify completed source build and all five artifacts
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const runId = 40887394059;
+            const sha = 'd881b39f9c17893698387ace4741e1a55da09b08';
+            const {owner, repo} = context.repo;
+            const {data: run} = await github.rest.actions.getWorkflowRun({owner, repo, run_id: runId});
+            if (run.status !== 'completed' || run.conclusion !== 'success' || run.head_sha !== sha || run.path !== '.github/workflows/ci.yml') throw new Error('Source build is not the expected successful run');
+            const expected = new Map([
+              ['desktop-linux-x64', 12904385795], ['desktop-linux-arm64', 12904365782],
+              ['desktop-windows-arm64', 12903976711], ['desktop-windows-x64', 12903871472],
+              ['desktop-macos-arm64', 12903152874],
+            ]);
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {owner, repo, run_id: runId});
+            if (artifacts.length !== expected.size || artifacts.some(a => a.expired || expected.get(a.name) !== a.id)) throw new Error('Source artifacts are missing, expired or replaced');
+      - uses: actions/checkout@v5
+        with:
+          ref: d881b39f9c17893698387ace4741e1a55da09b08
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Download existing artifacts without rebuilding
+        uses: actions/download-artifact@v7
+        with:
+          github-token: ${{ github.token }}
+          run-id: 40887394059
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+      - name: Require all nine binaries and generate SHA-256 manifest
+        run: node scripts/prepare-release-assets.mjs --checksums
+      - name: Publish the existing build
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-d881b39
+          target_commitish: d881b39f9c17893698387ace4741e1a55da09b08
+          name: 作业簿 0.6.0 · 多平台更新构建 d881b39
+          make_latest: true
+          fail_on_unmatched_files: true
+          body: |
+            本次直接发布已完成的 GitHub Actions 构建产物，没有重新编译。
+
+            来源提交：d881b39f9c17893698387ace4741e1a55da09b08
+            来源构建：https://github.com/ZeyuZhao1/homework-manager/actions/runs/40887394059
+            程序内部版本仍为 0.6.0，使用独立构建标签保留原 v0.6.0 发布与标签。
+
+            包含 Windows x64/ARM64、macOS ARM64、Linux x64/ARM64，共九个程序/安装包及 SHA256SUMS.txt。
+            更新包括可选自托管云同步、Google Drive 关联、手机界面与主题修复、系统打印，以及独立 services.json 服务配置。
+            正常更新保留用户服务配置；通用包不包含私有服务地址、凭据或私人迁移文件。首次连接云端需自行部署和设备授权。
+          files: release-assets/*
