@@ -40,6 +40,15 @@ test('local Durable Object: authorization, pairing, receipt LWW, dedup, cascades
  assert.equal((await sync([op('empty-course','course','empty-c',{semester_id:'s',name:'   '})])).status,400)
  assert.equal((await sync([op('wrong-role','link','invalid-link',{assignment_id:'a',file_id:'missing',role:'unknown'})])).status,400)
  assert.equal((await sync([op('bad-path','course','c',{folder_path:'/private/path'})])).status,400)
+ assert.equal((await sync([op('portable-file','file','portable-file',{name:'Notes.pdf',course_path:'course://c/第一章/Notes.pdf'})])).status,200)
+ for(const [index,reference]of ['/private/file.pdf','C:\\private\\file.pdf','course://c/../file.pdf','course://c//file.pdf','course://c/dir\\file.pdf','course://missing/file.pdf'].entries())assert.equal((await sync([op(`invalid-course-path-${index}`,'file','portable-file',{course_path:reference})])).status,400)
+ assert.equal((await(await api('/api/snapshot')).json()).entities.find(e=>e.entity_id==='portable-file').data.course_path,'course://c/第一章/Notes.pdf')
+ assert.equal((await sync([op('portable-file-clear','file','portable-file',{course_path:null})])).status,200)
+ assert.equal((await sync([op('portable-course','course','portable-course',{semester_id:'s',name:'Portable'}),op('portable-orphan','file','portable-orphan',{name:'Shared.pdf',course_path:'course://portable-course/Shared.pdf'})])).status,200)
+ assert.equal((await sync([op('portable-course-delete','course','portable-course',null)])).status,200)
+ assert.equal((await(await api('/api/snapshot')).json()).entities.find(e=>e.entity_id==='portable-orphan').data.course_path,null)
+
+
  const rollback=await sync([op('rollback-first','semester','should-rollback',{name:'Atomic'}),op('rollback-bad','course','bad-atomic',{semester_id:'absent',name:'Invalid'})]);assert.equal(rollback.status,400)
  assert.equal((await(await api('/api/snapshot')).json()).entities.some(e=>e.entity_id==='should-rollback'),false)
  assert.equal((await sync([op('bad-parent','course','invalid',{semester_id:'absent',name:'Invalid'})])).status,400)

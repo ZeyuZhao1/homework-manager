@@ -156,7 +156,7 @@ pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
     let path = data_dir.join("homework.db");
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
     let schema_version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(|e| e.to_string())?;
-    if schema_version > 8 { return Err("数据库由较新版本创建，请升级应用".into()); }
+    if schema_version > 9 { return Err("数据库由较新版本创建，请升级应用".into()); }
     conn.execute_batch(
         "PRAGMA foreign_keys=ON;
          PRAGMA journal_mode=WAL;
@@ -210,6 +210,9 @@ pub fn init(app: &tauri::AppHandle) -> Result<AppState, String> {
     prune_unused_files(&conn)?;
     crate::modules::initialize(&conn, &data_dir)?;
     crate::sync::migrate(&conn)?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    crate::course_paths::migrate(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(AppState { db: Mutex::new(conn), modules_dir })
 }
 
@@ -239,6 +242,9 @@ pub fn course_identifiers(conn: &Connection) -> Result<Vec<(String,String,String
 pub fn load_snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
     let mut conn = state.db.lock().map_err(|e| e.to_string())?;
     crate::modules::before_snapshot(&mut conn)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    crate::course_paths::migrate(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
     let semesters = conn.prepare("SELECT id,name,source_root FROM semesters ORDER BY name DESC").map_err(|e| e.to_string())?
         .query_map([], |r| Ok(Semester { id: r.get(0)?, name: r.get(1)?, source_root: r.get(2)? })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
@@ -255,9 +261,15 @@ pub fn load_snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
         custom_fields.entry(id).or_default().insert(key,value);
     }
     for assignment in &mut assignments { assignment.custom_fields = custom_fields.remove(&assignment.id).unwrap_or_default(); }
-    let files = conn.prepare("SELECT f.id,f.path,s.name,s.cloud_version IS NOT NULL,s.drive_id,s.drive_resource_key,coalesce(s.drive_unavailable,0),s.mime FROM file_assets f LEFT JOIN sync_files s ON s.id=f.id ORDER BY f.path").map_err(|e| e.to_string())?
+    let mut files = conn.prepare("SELECT f.id,f.path,s.name,s.cloud_version IS NOT NULL,s.drive_id,s.drive_resource_key,coalesce(s.drive_unavailable,0),s.mime FROM file_assets f LEFT JOIN sync_files s ON s.id=f.id ORDER BY f.path").map_err(|e| e.to_string())?
         .query_map([], |r| { let path: String = r.get(1)?; Ok(FileAsset { id:r.get(0)?, missing: !path.starts_with("gdrive:") && !std::path::Path::new(&path).is_file(), path, name:r.get(2)?, cloud_available:r.get(3)?, drive_id:r.get(4)?, drive_resource_key:r.get(5)?, drive_unavailable:r.get(6)?, mime:r.get(7)? }) }).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+    for file in &mut files {
+        match crate::course_paths::resolve(&conn, &file.path) {
+            Ok(path) => { file.path = path; file.missing = !file.path.starts_with("gdrive:") && !std::path::Path::new(&file.path).is_file(); }
+            Err(_) => file.missing = true,
+        }
+    }
     for file in files.iter().filter(|file| !file.missing && file.drive_id.is_none()) {
         let Ok(metadata) = std::fs::metadata(&file.path) else { continue };
         let Ok(modified) = metadata.modified() else { continue };
@@ -280,9 +292,13 @@ pub fn load_snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
     let common_files = conn.prepare("SELECT course_id,file_id,kind,label FROM common_files ORDER BY kind,label").map_err(|e| e.to_string())?
         .query_map([], |r| Ok(CommonFile { course_id:r.get(0)?, file_id:r.get(1)?, kind:r.get(2)?, label:r.get(3)? })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
-    let renames = conn.prepare("SELECT id,file_id,old_path,new_path,changed_at,undone_at FROM rename_history ORDER BY changed_at DESC LIMIT 100").map_err(|e| e.to_string())?
+    let mut renames = conn.prepare("SELECT id,file_id,old_path,new_path,changed_at,undone_at FROM rename_history ORDER BY changed_at DESC LIMIT 100").map_err(|e| e.to_string())?
         .query_map([], |r| Ok(RenameEvent { id:r.get(0)?,file_id:r.get(1)?,old_path:r.get(2)?,new_path:r.get(3)?,changed_at:r.get(4)?,undone_at:r.get(5)? })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+    for rename in &mut renames {
+        rename.old_path = crate::course_paths::resolve(&conn, &rename.old_path).unwrap_or_else(|_| rename.old_path.clone());
+        rename.new_path = crate::course_paths::resolve(&conn, &rename.new_path).unwrap_or_else(|_| rename.new_path.clone());
+    }
     let file_history = conn.prepare("SELECT id,file_id,link_id,assignment_id,assignment_title,event_type,path,details,file_size,modified_at_ms,occurred_at FROM file_history ORDER BY occurred_at DESC,rowid DESC LIMIT 1000").map_err(|e| e.to_string())?
         .query_map([], |r| Ok(FileHistoryEvent { id:r.get(0)?,file_id:r.get(1)?,link_id:r.get(2)?,assignment_id:r.get(3)?,assignment_title:r.get(4)?,event_type:r.get(5)?,path:r.get(6)?,details:r.get(7)?,file_size:r.get(8)?,modified_at_ms:r.get(9)?,occurred_at:r.get(10)? })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
@@ -349,6 +365,10 @@ pub fn delete_semester(state: State<'_, AppState>, id: String) -> Result<(), Str
     for (file_id,path,label) in common_files {
         crate::files::record_file_history(&tx,&file_id,"","","common_removed",&path,&format!("删除学期时取消常用文件：{label}"))?;
     }
+    let course_ids = tx.prepare("SELECT id FROM courses WHERE semester_id=?1").map_err(|e| e.to_string())?
+        .query_map([&id], |r| r.get::<_,String>(0)).map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+    for course_id in course_ids { crate::course_paths::detach(&tx, &course_id)?; }
     tx.execute("DELETE FROM semesters WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
     prune_unused_files(&tx)?;
     tx.commit().map_err(|e| e.to_string())
@@ -358,8 +378,30 @@ pub fn delete_semester(state: State<'_, AppState>, id: String) -> Result<(), Str
 pub fn save_course(state: State<'_, AppState>, mut payload: Course) -> Result<String, String> {
     payload.id = id_or_new(&payload.id);
     if payload.name.trim().is_empty() { return Err("课程名称不能为空".into()); }
-    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let mut connection = state.db.lock().map_err(|e| e.to_string())?;
+    save_course_impl(&mut connection, payload)
+}
+
+fn save_course_impl(connection: &mut Connection, payload: Course) -> Result<String, String> {
+    let conn = connection.transaction().map_err(|e| e.to_string())?;
+    crate::course_paths::migrate(&conn)?;
+    let old_root: Option<String> = conn.query_row("SELECT folder_path FROM courses WHERE id=?1", [&payload.id], |r| r.get(0)).optional().map_err(|e| e.to_string())?;
+    if payload.folder_path.trim().is_empty() {
+        let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM courses WHERE id=?1)", [&payload.id], |r| r.get(0)).map_err(|e| e.to_string())?;
+        if exists { crate::course_paths::detach(&conn, &payload.id)?; }
+    }
     conn.execute("INSERT INTO courses(id,semester_id,name,code,folder_path) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET semester_id=excluded.semester_id,name=excluded.name,code=excluded.code,folder_path=excluded.folder_path", params![payload.id,payload.semester_id,payload.name.trim(),payload.code.trim(),payload.folder_path.trim()]).map_err(|e| e.to_string())?;
+    crate::course_paths::migrate(&conn)?;
+    if old_root.as_deref().is_some_and(|root| root != payload.folder_path.trim()) && !payload.folder_path.trim().is_empty() {
+        let prefix = format!("course://{}/", payload.id);
+        let affected = conn.prepare("SELECT id,path FROM file_assets WHERE substr(path,1,length(?1))=?1").map_err(|e| e.to_string())?
+            .query_map([&prefix], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+        for (id, path) in affected {
+            crate::files::record_file_history(&conn, &id, "", "", "relocated", &path, &format!("课程目录已更新；原目录：{}", old_root.as_deref().unwrap_or_default()))?;
+        }
+    }
+    conn.commit().map_err(|e| e.to_string())?;
     Ok(payload.id)
 }
 
@@ -404,12 +446,6 @@ fn save_assignments_batch_impl(conn: &mut Connection, payload: BatchAssignmentIn
         if item.title.trim().is_empty() || item.course_id.trim().is_empty() { return Err("请为每条作业确认课程和标题".into()); }
         if !["todo","doing","done","submitted"].contains(&item.status.as_str()) { return Err("无效的作业状态".into()); }
     }
-    let paths = payload.paths.iter().map(|path| {
-        if path.starts_with("gdrive:") { return Err("批量作业导入仅支持本机文件".into()); }
-        let canonical = std::fs::canonicalize(path).map_err(|_| format!("文件不存在：{path}"))?;
-        if !canonical.is_file() { return Err(format!("请选择文件：{path}")); }
-        Ok(crate::files::normal_path(&canonical))
-    }).collect::<Result<Vec<_>, String>>()?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut ids = Vec::with_capacity(payload.assignments.len());
     for item in &payload.assignments {
@@ -417,12 +453,14 @@ fn save_assignments_batch_impl(conn: &mut Connection, payload: BatchAssignmentIn
         let timestamp = now();
         tx.execute("INSERT INTO assignments(id,course_id,title,description,due_at,status,submission_label,submission_url,submission_notes,source_name,source_text,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?12)", params![id,item.course_id,item.title.trim(),item.description,item.due_at,item.status,item.submission_label,item.submission_url,item.submission_notes,item.source_name,item.source_text,timestamp]).map_err(|e| e.to_string())?;
         for (field,value) in [("title",&item.title),("submission_label",&item.submission_label),("submission_url",&item.submission_url),("submission_notes",&item.submission_notes)] { remember_value(&tx,field,value)?; }
-        for path in &paths {
+        for raw in &payload.paths {
+            if raw.starts_with("gdrive:") { return Err("批量作业导入仅支持本机文件".into()); }
+            let path = crate::files::registered_course_path(&tx, raw, Some(&item.course_id))?;
             tx.execute("INSERT OR IGNORE INTO file_assets(id,path) VALUES (?1,?2)", params![Uuid::new_v4().to_string(),path]).map_err(|e| e.to_string())?;
-            let file_id: String = tx.query_row("SELECT id FROM file_assets WHERE path=?1", [path], |r| r.get(0)).map_err(|e| e.to_string())?;
+            let file_id: String = tx.query_row("SELECT id FROM file_assets WHERE path=?1", [&path], |r| r.get(0)).map_err(|e| e.to_string())?;
             let link_id = Uuid::new_v4().to_string();
             tx.execute("INSERT INTO assignment_files(id,assignment_id,file_id,role) VALUES (?1,?2,?3,?4)", params![link_id,id,file_id,payload.file_role]).map_err(|e| e.to_string())?;
-            crate::files::record_file_history(&tx,&file_id,&link_id,&id,"linked",path,&format!("角色：{}",payload.file_role))?;
+            crate::files::record_file_history(&tx,&file_id,&link_id,&id,"linked",&path,&format!("角色：{}",payload.file_role))?;
         }
         ids.push(id);
     }
@@ -514,7 +552,7 @@ fn restore_impl(conn: &mut Connection, path: &str) -> Result<(), String> {
     let check: String = source.query_row("PRAGMA integrity_check", [], |r| r.get(0)).map_err(|e| e.to_string())?;
     if check != "ok" { return Err("备份数据库完整性检查失败".into()); }
     let version: i64 = source.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(|e| e.to_string())?;
-    if !(1..=8).contains(&version) { return Err("备份数据库版本不兼容".into()); }
+    if !(1..=9).contains(&version) { return Err("备份数据库版本不兼容".into()); }
     validate_restore_schema(&source)?;
     let stage = RestoreStage(std::env::temp_dir().join(format!("homeworkbook-restore-{}",Uuid::new_v4())));
     std::fs::create_dir(&stage.0).map_err(|e|e.to_string())?;
@@ -538,6 +576,9 @@ fn restore_impl(conn: &mut Connection, path: &str) -> Result<(), String> {
     // Existing user prompts and the live connection remain untouched until all checks succeed.
     crate::modules::initialize(&staged,&stage.0)?;
     crate::sync::migrate(&staged)?;
+    let tx = staged.unchecked_transaction().map_err(|e| e.to_string())?;
+    crate::course_paths::migrate(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
     staged.execute_batch("UPDATE sync_runtime SET enabled=0,replaying=0,cursor=0,baseline_done=0,baseline_pending=0; DELETE FROM sync_outbox; DELETE FROM sync_shadow;").map_err(|e|e.to_string())?;
     let bad_reference:bool=staged.prepare("PRAGMA foreign_key_check").map_err(|e|e.to_string())?.exists([]).map_err(|e|e.to_string())?;
     if bad_reference { return Err("备份含无效的数据关联；当前数据库未改变".into()); }
@@ -576,6 +617,36 @@ mod tests {
         conn.execute_batch("INSERT INTO semesters VALUES('s','Term',''); INSERT INTO courses VALUES('c','s','Course','',''); INSERT INTO assignments(id,course_id,title,created_at,updated_at) VALUES('a','c','Assignment','now','now'); INSERT INTO file_assets VALUES('f','/synthetic/file.pdf');").unwrap();
     }
     #[test]
+    fn offline_course_rebinding_and_backup_restore_preserve_relative_files_atomically() {
+        let root = std::env::temp_dir().join(format!("course-restore-{}",Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("materials")).unwrap();
+        std::fs::write(root.join("materials/notes.pdf"),b"test").unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
+        legacy_schema(&conn);
+        conn.execute("UPDATE courses SET folder_path=?1 WHERE id='c'",[r"D:\Study\Course"]).unwrap();
+        conn.execute("UPDATE file_assets SET path=?1 WHERE id='f'",[r"d:\study\course\materials\notes.pdf"]).unwrap();
+        let course = Course { id:"c".into(),semester_id:"missing".into(),name:"Course".into(),code:String::new(),folder_path:root.to_string_lossy().into() };
+        assert!(save_course_impl(&mut conn,course.clone()).is_err());
+        assert_eq!(conn.query_row("SELECT path FROM file_assets WHERE id='f'",[],|r|r.get::<_,String>(0)).unwrap(),r"d:\study\course\materials\notes.pdf");
+        let mut course = course;
+        course.semester_id = "s".into();
+        save_course_impl(&mut conn,course.clone()).unwrap();
+        let reference: String = conn.query_row("SELECT path FROM file_assets WHERE id='f'",[],|r|r.get(0)).unwrap();
+        assert_eq!(reference,"course://c/materials/notes.pdf");
+        assert!(std::path::Path::new(&crate::course_paths::resolve(&conn,&reference).unwrap()).is_file());
+        crate::sync::migrate(&conn).unwrap();
+        let backup = root.join("backup.db");
+        backup_impl(&conn,backup.to_str().unwrap()).unwrap();
+        course.folder_path.clear();
+        save_course_impl(&mut conn,course).unwrap();
+        assert_eq!(conn.query_row("SELECT path FROM file_assets WHERE id='f'",[],|r|r.get::<_,String>(0)).unwrap(),crate::files::normal_path(&root.join("materials/notes.pdf")));
+        restore_impl(&mut conn,backup.to_str().unwrap()).unwrap();
+        assert_eq!(conn.query_row("SELECT path FROM file_assets WHERE id='f'",[],|r|r.get::<_,String>(0)).unwrap(),reference);
+        assert_eq!(conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),9);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn batch_creates_multiple_assignments_with_one_shared_file_atomically() {
         let dir = std::env::temp_dir().join(format!("homeworkbook-batch-{}",Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -583,8 +654,8 @@ mod tests {
         std::fs::write(&attachment,b"sample").unwrap();
         let mut conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys=ON;
-          CREATE TABLE courses(id TEXT PRIMARY KEY);
-          INSERT INTO courses VALUES('course');
+          CREATE TABLE courses(id TEXT PRIMARY KEY,folder_path TEXT DEFAULT '');
+          INSERT INTO courses(id) VALUES('course');
           CREATE TABLE assignments(id TEXT PRIMARY KEY,course_id TEXT REFERENCES courses(id),title TEXT,description TEXT,due_at TEXT,status TEXT,submission_label TEXT,submission_url TEXT,submission_notes TEXT,source_name TEXT,source_text TEXT,created_at TEXT,updated_at TEXT);
           CREATE TABLE file_assets(id TEXT PRIMARY KEY,path TEXT UNIQUE);
           CREATE TABLE assignment_files(id TEXT PRIMARY KEY,assignment_id TEXT,file_id TEXT,role TEXT);
@@ -600,6 +671,19 @@ mod tests {
         assert_eq!(count(&conn,"file_assets"),1);
         assert!(save_assignments_batch_impl(&mut conn,BatchAssignmentInput{assignments:vec![make("Three","course"),make("Bad","missing")],paths,file_role:"prompt".into()}).is_err());
         assert_eq!(count(&conn,"assignments"),2);
+        for folder in ["one","two"] {
+            std::fs::create_dir(dir.join(folder)).unwrap();
+            std::fs::write(dir.join(folder).join("sheet.pdf"),folder).unwrap();
+        }
+        conn.execute("UPDATE courses SET folder_path=?1 WHERE id='course'",[dir.join("one").to_str().unwrap()]).unwrap();
+        conn.execute("INSERT INTO courses VALUES('other',?1)",[dir.join("two").to_str().unwrap()]).unwrap();
+        let ids = save_assignments_batch_impl(&mut conn,BatchAssignmentInput { assignments:vec![make("Relative one","course"),make("Relative two","other")],paths:vec!["sheet.pdf".into()],file_role:"prompt".into() }).unwrap();
+        for (id, course) in ids.iter().zip(["course","other"]) {
+            assert_eq!(conn.query_row("SELECT f.path FROM file_assets f JOIN assignment_files l ON l.file_id=f.id WHERE l.assignment_id=?1",[id],|r|r.get::<_,String>(0)).unwrap(),format!("course://{course}/sheet.pdf"));
+        }
+        std::fs::remove_file(dir.join("two/sheet.pdf")).unwrap();
+        assert!(save_assignments_batch_impl(&mut conn,BatchAssignmentInput { assignments:vec![make("Rollback one","course"),make("Rollback two","other")],paths:vec!["sheet.pdf".into()],file_role:"prompt".into() }).is_err());
+        assert_eq!(count(&conn,"assignments"),4);
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
@@ -624,7 +708,7 @@ mod tests {
         assert_eq!(field,"第 3 周");
         assert_eq!(common,"textbook");
         let version: i64 = conn.query_row("PRAGMA user_version",[],|row|row.get(0)).unwrap();
-        assert_eq!(version,8);
+        assert_eq!(version,9);
         conn.execute("INSERT INTO file_assets(id,path) VALUES('gdrive-abcdefghij_123','gdrive:abcdefghij_123')",[]).unwrap();
         conn.execute("INSERT INTO sync_files(id,name,mime,drive_id,drive_resource_key,drive_unavailable) VALUES('gdrive-abcdefghij_123','Notes','application/pdf','abcdefghij_123','key_123',1)",[]).unwrap();
         backup_impl(&conn,backup_path.to_str().unwrap()).unwrap();

@@ -119,7 +119,7 @@ const localService = {
     if (desktop) return invoke<void>('unlink_file', { id })
     const link = previewState.links.find(x => x.id === id); const file = previewState.files.find(x => x.id === link?.file_id); if (link && file) trackPreview(file.id,'unlinked',file.path,link,`角色：${link.role}`); previewState.links = previewState.links.filter(x => x.id !== id); persist()
   },
-  async linkModuleFiles(payload: { module_id: string; owner_type: string; owner_id: string; owner_label: string; paths: string[]; role: string; note: string }): Promise<number> {
+  async linkModuleFiles(payload: { course_id?: string; module_id: string; owner_type: string; owner_id: string; owner_label: string; paths: string[]; role: string; note: string }): Promise<number> {
     if (desktop) return invoke<number>('link_module_files', { payload })
     let created = 0
     for (const path of [...new Set(payload.paths)]) {

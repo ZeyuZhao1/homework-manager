@@ -12,7 +12,7 @@ export interface EntityStore {
 const fields: Record<EntityType, string[]> = {
   semester: ['name'], course: ['semester_id','name','code'],
   assignment: ['course_id','title','description','due_at','status','submission_label','submission_url','submission_notes','source_name','source_text','created_at','updated_at','custom_fields'],
-  file: ['name','mime','size','cloud_version','drive_id','drive_resource_key','drive_unavailable'], link: ['assignment_id','file_id','role','page','chapter','problem','note'],
+  file: ['name','mime','size','cloud_version','drive_id','drive_resource_key','drive_unavailable','course_path'], link: ['assignment_id','file_id','role','page','chapter','problem','note'],
   common_file: ['course_id','file_id','kind','label'], module_file_link: ['module_id','owner_type','owner_id','owner_label','file_id','role','note','created_at'],
   setting: ['value'], module_state: ['enabled'], provider: ['name','kind','base_url','model'], ai_setting: ['value'],
   recurring_series: ['course_id','name','title_template','description','submission_label','submission_url','submission_notes','rule_json','due_rule_json','max_occurrences','end_at','status','created_at','updated_at','timezone'],
@@ -98,7 +98,7 @@ export class SqlEntityStore implements EntityStore {
       if(typeof value!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?$/.test(value))throw new ApiError(400,'Invalid date')
       const date=new Date(`${value.length===16?value+':00':value}Z`);if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,value.length)!==value)throw new ApiError(400,'Invalid calendar date')
     }
-    const nullable=['due_at','scheduled_at','end_at','max_occurrences','assignment_id','cloud_version','size','drive_id','drive_resource_key']
+    const nullable=['due_at','scheduled_at','end_at','max_occurrences','assignment_id','cloud_version','size','drive_id','drive_resource_key','course_path']
     for(const [key,value]of Object.entries(merged))if(value===null&&!nullable.includes(key))throw new ApiError(400,'Invalid null field')
     for(const key of ['size','max_occurrences','sequence_no','overridden'])if(merged[key]!=null&&(!Number.isSafeInteger(merged[key])||Number(merged[key])<0))throw new ApiError(400,'Invalid number')
     if(merged.overridden!==undefined&&![0,1].includes(Number(merged.overridden)))throw new ApiError(400,'Invalid override state')
@@ -109,6 +109,12 @@ export class SqlEntityStore implements EntityStore {
     if(type==='recurring_occurrence'&&this.sql.exec("SELECT id FROM entities WHERE type='recurring_occurrence' AND id<>? AND data IS NOT NULL AND ((json_extract(data,'$.series_id')=? AND json_extract(data,'$.sequence_no')=?) OR (? IS NOT NULL AND json_extract(data,'$.assignment_id')=?)) LIMIT 1",id,String(merged.series_id??''),Number(merged.sequence_no??0),typeof merged.assignment_id==='string'?merged.assignment_id:null,typeof merged.assignment_id==='string'?merged.assignment_id:null).toArray().length>0)throw new ApiError(400,'Duplicate recurrence occurrence')
     if(type==='recurring_occurrence' && (!Number.isSafeInteger(merged.sequence_no)||Number(merged.sequence_no)<1||!['planned','blocked','generated','skipped','cancelled'].includes(String(merged.state))))throw new ApiError(400,'Invalid occurrence')
     if(type==='file'){
+      if(merged.course_path!=null){
+        const reference=merged.course_path
+        if(typeof reference!=='string'||reference.length>4096||/[\u0000-\u001f\u007f-\u009f]/.test(reference)||!reference.startsWith('course://'))throw new ApiError(400,'Invalid course reference')
+        const [course,...parts]=reference.slice('course://'.length).split('/')
+        if(!course||/[\\:]/.test(course)||!parts.length||parts.some(part=>!part||part==='.'||part==='..'||part.includes('\\'))||!this.read('course',course)?.data||merged.drive_id)throw new ApiError(400,'Invalid course reference')
+      }
       const drive=merged.drive_id!=null||id.startsWith('gdrive-')
       if(drive){
         if(!validDriveId(merged.drive_id)||id!==`gdrive-${merged.drive_id}`||!validResourceKey(merged.drive_resource_key??undefined)||merged.cloud_version!==undefined||merged.size!=null||merged.drive_unavailable!==undefined&&![0,1].includes(merged.drive_unavailable as number))throw new ApiError(400,'Invalid Google Drive reference')
@@ -130,6 +136,7 @@ export class SqlEntityStore implements EntityStore {
   private cascade(type:EntityType,id:string) {
     for (const row of this.snapshot().entities) {
       if (!row.data) continue
+      if(type==='course'&&row.entity_type==='file'&&typeof row.data.course_path==='string'&&row.data.course_path.startsWith(`course://${id}/`))this.publish('file',row.entity_id,{...row.data,course_path:null})
       const dependent=(parents[row.entity_type]??[]).some(([key,parentType])=>parentType===type && row.data?.[key]===id)
       const moduleOwner=type==='recurring_series' && row.entity_type==='module_file_link' && row.data.owner_id===id
       if (dependent && type==='assignment' && row.entity_type==='recurring_occurrence') { this.publish('recurring_occurrence',row.entity_id,{...row.data,assignment_id:null,state:'skipped'});continue }

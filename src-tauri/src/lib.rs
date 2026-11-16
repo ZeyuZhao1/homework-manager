@@ -1,6 +1,7 @@
 mod db;
 mod drive;
 mod files;
+mod course_paths;
 mod import_sync;
 mod modules;
 mod printing;

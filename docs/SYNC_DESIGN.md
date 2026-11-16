@@ -52,7 +52,7 @@ Payloads mirror database rows except where explicitly narrowed. Each entity has 
 
 - semester: `name`; course: `semester_id,name,code`.
 - assignment: its current domain fields and `custom_fields`; no local path fields.
-- file: `name,mime,size,cloud_version` (optional); local `path` is never transmitted.
+- file: `name,mime,size,cloud_version` (optional), nullable `course_path`. The latter is a validated `course://<course_id>/<relative_path>` reference; it carries only a course ID and paths inside that course. Absolute local `path` and course roots are never transmitted. Desktop resolves the reference against its own course directory; a device without that directory reports the asset as missing.
 - link: `assignment_id,file_id,role,page,chapter,problem,note`.
 - common_file: `course_id,file_id,kind,label`, ID `course_id:file_id`.
 - module_file_link: current fields excluding local paths.
@@ -78,7 +78,7 @@ An existing desktop begins an explicit baseline session before sending its initi
 
 ## Drive references
 
-File payloads additionally support `drive_id`, `drive_resource_key` (nullable), `drive_unavailable` (0/1). A Drive asset uses `gdrive-<id>`; its source ID is immutable. It has no `cloud_version` or uploaded contents. Desktop reconstructs `gdrive:<id>` and stores metadata in schema 8. Regular files may omit or use null Drive IDs; local paths still never enter wire payloads.
+File payloads additionally support `drive_id`, `drive_resource_key` (nullable), `drive_unavailable` (0/1). A Drive asset uses `gdrive-<id>`; its source ID is immutable. It has no `cloud_version` or uploaded contents. Desktop reconstructs `gdrive:<id>` and stores metadata in schema 9. Regular files may omit or use null Drive IDs; absolute local paths still never enter wire payloads.
 
 Authenticated Drive API: `GET /api/drive/status`, `POST /api/drive/flows`, `POST /api/drive/flows/:id/poll`, `POST /api/drive/files/resolve`, `POST /api/drive/files/refresh`, `DELETE /api/drive/connection`. The public callback `GET /api/drive/callback` only completes a device-authorized, expiring state/PKCE flow; it cannot log into the application. Poll credentials are hashed and results are bound to the initiating device and consumed once. Grant-specific expiry uses 409, keeping the application's independent device session intact.
 

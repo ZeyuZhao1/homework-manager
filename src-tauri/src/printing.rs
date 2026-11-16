@@ -12,6 +12,7 @@ fn document_path(conn: &Connection, file_id: &str) -> Result<PathBuf, String> {
         .map_err(|_| "文件记录不存在".to_string())?;
     if path.starts_with("gdrive:") { return Err("Drive 关联仅保存链接，请在 Google Drive 中打开文件后打印".into()); }
     if path.starts_with("cloud://") { return Err("请先下载云端附件到本机，再使用系统打印".into()); }
+    let path = crate::course_paths::resolve(conn, &path)?;
     let path = PathBuf::from(path).canonicalize().map_err(|e| format!("无法读取打印文件：{e}"))?;
     if !path.is_file() { return Err("打印路径不是文件".into()); }
     let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase();
@@ -73,6 +74,10 @@ mod tests {
         }
         let path = document_path(&conn, "pdf").unwrap();
         assert_eq!(read_document(&path).unwrap(), b"%PDF-1.7");
+        conn.execute_batch("CREATE TABLE courses(id TEXT PRIMARY KEY,folder_path TEXT);").unwrap();
+        conn.execute("INSERT INTO courses VALUES('c',?1)", [root.to_str().unwrap()]).unwrap();
+        conn.execute("INSERT INTO file_assets VALUES('relative',?1)", ["course://c/作业 ' #.PDF"]).unwrap();
+        assert_eq!(read_document(&document_path(&conn,"relative").unwrap()).unwrap(),b"%PDF-1.7");
         for id in ["office", "missing", "directory"] { assert!(document_path(&conn, id).is_err()); }
         File::create(&path).unwrap().set_len(MAX_BYTES + 1).unwrap();
         assert!(read_document(&path).unwrap_err().contains("50 MiB"));

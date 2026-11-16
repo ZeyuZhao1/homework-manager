@@ -146,7 +146,7 @@ const SPECS: &[Spec] = &[
         kind: "file",
         table: "sync_files",
         key: "id",
-        columns: &["name", "mime", "size", "cloud_version", "drive_id", "drive_resource_key", "drive_unavailable"],
+        columns: &["name", "mime", "size", "cloud_version", "drive_id", "drive_resource_key", "drive_unavailable", "course_path"],
         filter: "1",
     },
     Spec {
@@ -381,7 +381,7 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(sql_error)?;
-    if version > 8 {
+    if version > 9 {
         return Err("数据库由较新版本创建，请升级应用".into());
     }
     conn.execute_batch("SAVEPOINT sync_migrate")
@@ -393,11 +393,11 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
       CREATE TABLE IF NOT EXISTS sync_shadow(entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,data TEXT,seq INTEGER NOT NULL,PRIMARY KEY(entity_type,entity_id));
       CREATE TABLE IF NOT EXISTS sync_business_history(id TEXT PRIMARY KEY,file_id TEXT NOT NULL DEFAULT '',link_id TEXT NOT NULL DEFAULT '',assignment_id TEXT NOT NULL DEFAULT '',assignment_title TEXT NOT NULL DEFAULT '',event_type TEXT NOT NULL,occurred_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sync_files(id TEXT PRIMARY KEY REFERENCES file_assets(id) ON DELETE CASCADE,name TEXT NOT NULL,mime TEXT NOT NULL DEFAULT 'application/octet-stream',size INTEGER,cloud_version TEXT);
-      PRAGMA user_version=8;").map_err(sql_error)?;
+      PRAGMA user_version=9;").map_err(sql_error)?;
         let columns = { let mut stmt = conn.prepare("PRAGMA table_info(sync_files)").map_err(sql_error)?;
             let rows = stmt.query_map([], |r| r.get::<_,String>(1)).map_err(sql_error)?;
             rows.collect::<Result<Vec<_>,_>>().map_err(sql_error)? };
-        for (column, definition) in [("drive_id", "TEXT"), ("drive_resource_key", "TEXT"), ("drive_unavailable", "INTEGER NOT NULL DEFAULT 0")] {
+        for (column, definition) in [("drive_id", "TEXT"), ("drive_resource_key", "TEXT"), ("drive_unavailable", "INTEGER NOT NULL DEFAULT 0"), ("course_path", "TEXT")] {
             if !columns.iter().any(|c| c == column) { conn.execute_batch(&format!("ALTER TABLE sync_files ADD COLUMN {column} {definition}")).map_err(sql_error)?; }
         }
         let has_baseline: bool = {
@@ -494,7 +494,7 @@ fn install_triggers(conn: &Connection) -> Result<(), String> {
             } else {
                 "update"
             };
-            conn.execute_batch(&format!("DROP TRIGGER IF EXISTS sync_file_identity_{suffix}; CREATE TRIGGER sync_file_identity_{suffix} AFTER {event} ON file_assets WHEN (SELECT enabled=1 AND replaying=0 FROM sync_runtime WHERE id=1) AND NEW.path NOT LIKE 'cloud://%' AND NEW.path NOT LIKE 'gdrive:%' BEGIN INSERT INTO sync_files(id,name) VALUES(NEW.id,(WITH RECURSIVE parts(s) AS (SELECT replace(NEW.path,char(92),'/') UNION ALL SELECT substr(s,instr(s,'/')+1) FROM parts WHERE instr(s,'/')>0) SELECT s FROM parts WHERE instr(s,'/')=0)) ON CONFLICT(id) DO UPDATE SET name=excluded.name; END;")).map_err(sql_error)?;
+            conn.execute_batch(&format!("DROP TRIGGER IF EXISTS sync_file_identity_{suffix}; CREATE TRIGGER sync_file_identity_{suffix} AFTER {event} ON file_assets WHEN (SELECT enabled=1 AND replaying=0 FROM sync_runtime WHERE id=1) AND NEW.path NOT LIKE 'cloud://%' AND NEW.path NOT LIKE 'gdrive:%' BEGIN INSERT INTO sync_files(id,name,course_path) VALUES(NEW.id,(WITH RECURSIVE parts(s) AS (SELECT replace(NEW.path,char(92),'/') UNION ALL SELECT substr(s,instr(s,'/')+1) FROM parts WHERE instr(s,'/')>0) SELECT CASE WHEN NEW.path LIKE 'course://%' THEN replace(replace(s,'%5C',char(92)),'%25','%') ELSE s END FROM parts WHERE instr(s,'/')=0),CASE WHEN NEW.path LIKE 'course://%' THEN NEW.path END) ON CONFLICT(id) DO UPDATE SET name=excluded.name,course_path=excluded.course_path; END;")).map_err(sql_error)?;
         }
     }
     if exists(conn, "file_history")? {
@@ -808,7 +808,7 @@ pub async fn sync_bootstrap(
 fn seed_files(conn: &Connection) -> Result<(), String> {
     let rows = {
         let mut stmt = conn
-            .prepare("SELECT id,path FROM file_assets WHERE id NOT IN (SELECT id FROM sync_files)")
+            .prepare("SELECT id,path FROM file_assets")
             .map_err(sql_error)?;
         let rows = stmt
             .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
@@ -816,7 +816,8 @@ fn seed_files(conn: &Connection) -> Result<(), String> {
         rows.collect::<Result<Vec<_>, _>>().map_err(sql_error)?
     };
     for (id, path) in rows {
-        let name = Path::new(&path)
+        let display_path = if path.starts_with("course://") { path.replace("%5C", "\\").replace("%25", "%") } else { path.clone() };
+        let name = Path::new(&display_path)
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "附件".into());
@@ -825,6 +826,10 @@ fn seed_files(conn: &Connection) -> Result<(), String> {
             params![id, name],
         )
         .map_err(sql_error)?;
+        if !path.starts_with("cloud://") && !path.starts_with("gdrive:") {
+            let reference = path.starts_with("course://").then_some(path.as_str());
+            conn.execute("UPDATE sync_files SET course_path=?2,name=?3 WHERE id=?1 AND (course_path IS NOT ?2 OR name IS NOT ?3)", params![id,reference,name]).map_err(sql_error)?;
+        }
     }
     Ok(())
 }
@@ -1130,6 +1135,12 @@ fn apply_entity(
         .join(" AND ");
     let key_values = keys.iter().map(|(_, v)| value_sql(v)).collect::<Vec<_>>();
     if data.is_none() {
+        if kind == "course" || kind == "semester" {
+            let query = if kind == "course" { "SELECT id FROM courses WHERE id=?1" } else { "SELECT id FROM courses WHERE semester_id=?1" };
+            let courses = conn.prepare(query).map_err(sql_error)?.query_map([id], |r| r.get::<_,String>(0)).map_err(sql_error)?
+                .collect::<Result<Vec<_>,_>>().map_err(sql_error)?;
+            for course_id in courses { crate::course_paths::detach(conn, &course_id)?; }
+        }
         conn.execute(
             &format!("DELETE FROM {} WHERE {where_sql}", spec.table),
             rusqlite::params_from_iter(key_values.clone()),
@@ -1141,20 +1152,30 @@ fn apply_entity(
         return Err("同步实体格式无效".into());
     }
     if kind == "file" {
+        if let Some(reference) = payload.get("course_path").filter(|v| !v.is_null()) {
+            let reference = reference.as_str().ok_or("课程相对引用无效")?;
+            crate::course_paths::validate_reference(reference)?;
+            if payload.get("drive_id").is_some_and(|v| !v.is_null()) { return Err("Drive 引用不能包含课程本机路径".into()); }
+        }
         let drive = payload.get("drive_id").and_then(Value::as_str);
         if let Some(drive) = drive {
             crate::drive::validate_id(drive)?;
             if id != format!("gdrive-{drive}") { return Err("Drive 文件标识不一致".into()); }
         }
         let existing: Option<String> = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [id], |r| r.get(0)).optional().map_err(sql_error)?;
-        if let Some(existing) = existing {
-            if drive.is_some_and(|d| existing != format!("gdrive:{d}")) { return Err("Drive 文件标识不可更改".into()); }
+        if let Some(ref existing) = existing {
+            if drive.is_some_and(|d| *existing != format!("gdrive:{d}")) { return Err("Drive 文件标识不可更改".into()); }
         }
         conn.execute(
             "INSERT OR IGNORE INTO file_assets(id,path) VALUES(?1,?2)",
-            params![id, drive.map(|d| format!("gdrive:{d}")).unwrap_or_else(|| format!("cloud://{id}"))],
+            params![id, drive.map(|d| format!("gdrive:{d}")).unwrap_or_else(|| payload.get("course_path").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| format!("cloud://{id}")))],
         )
         .map_err(sql_error)?;
+        if let Some(reference) = payload.get("course_path").and_then(Value::as_str) {
+            if existing.as_deref().is_some_and(|p| p.starts_with("course://") || p.starts_with("cloud://")) {
+                conn.execute("UPDATE file_assets SET path=?2 WHERE id=?1", params![id,reference]).map_err(sql_error)?;
+            }
+        }
     }
     let mut fields = keys;
     for col in spec.columns {
@@ -1613,12 +1634,13 @@ pub async fn sync_upload_file(
         if !enabled {
             return Err("请先开启同步".into());
         }
-        conn.query_row(
+        let stored: String = conn.query_row(
             "SELECT path FROM file_assets WHERE id=?1",
             [&file_id],
             |r| r.get::<_, String>(0),
         )
-        .map_err(sql_error)?
+        .map_err(sql_error)?;
+        crate::course_paths::resolve(&conn, &stored)?
     };
     if path.starts_with("gdrive:") { return Err("Drive 引用不支持上传或下载文件内容".into()); }
     if path.starts_with("cloud://") {
@@ -1780,6 +1802,7 @@ mod tests {
           CREATE TABLE assignments(id TEXT PRIMARY KEY,course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,title TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',due_at TEXT,status TEXT NOT NULL DEFAULT 'todo',submission_label TEXT NOT NULL DEFAULT '',submission_url TEXT NOT NULL DEFAULT '',submission_notes TEXT NOT NULL DEFAULT '',source_name TEXT NOT NULL DEFAULT '',source_text TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
           CREATE TABLE assignment_custom_fields(assignment_id TEXT REFERENCES assignments(id) ON DELETE CASCADE,field_key TEXT,field_value TEXT,PRIMARY KEY(assignment_id,field_key));
           CREATE TABLE file_assets(id TEXT PRIMARY KEY,path TEXT UNIQUE);
+          CREATE TABLE rename_history(id TEXT PRIMARY KEY,file_id TEXT,old_path TEXT,new_path TEXT,file_size INTEGER,modified_at_ms INTEGER,changed_at TEXT,undone_at TEXT);
           CREATE TABLE assignment_files(id TEXT PRIMARY KEY,assignment_id TEXT REFERENCES assignments(id) ON DELETE CASCADE,file_id TEXT REFERENCES file_assets(id),role TEXT,page TEXT DEFAULT '',chapter TEXT DEFAULT '',problem TEXT DEFAULT '',note TEXT DEFAULT '');
           CREATE TABLE file_history(id TEXT PRIMARY KEY,file_id TEXT,link_id TEXT,assignment_id TEXT,assignment_title TEXT,event_type TEXT,path TEXT,details TEXT,file_size INTEGER,modified_at_ms INTEGER,occurred_at TEXT);
           CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT);
@@ -2078,10 +2101,47 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            8
+            9
         );
         conn.execute_batch("PRAGMA user_version=99").unwrap();
         assert!(migrate(&conn).is_err());
+    }
+
+    #[test]
+    fn course_references_sync_between_roots_without_absolute_paths_or_echo() {
+        let source = database();
+        enable(&source);
+        source.execute("INSERT INTO file_assets VALUES('portable','course://c/第一章/100%25.pdf')",[]).unwrap();
+        let file = pending(&source,100).unwrap().into_iter().flat_map(|op| op.changes).find(|change| change.entity_type == "file").unwrap().data.unwrap();
+        assert_eq!(file["course_path"],"course://c/第一章/100%25.pdf");
+        assert_eq!(file["name"],"100%.pdf");
+        assert!(!file.to_string().contains("/private"));
+        let root = std::env::temp_dir().join(format!("course-sync-{}",uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("第一章")).unwrap();
+        std::fs::write(root.join("第一章/100%.pdf"),b"test").unwrap();
+        let mut target = database();
+        target.execute("UPDATE courses SET folder_path=?1 WHERE id='c'",[root.to_str().unwrap()]).unwrap();
+        enable(&target);
+        replay(&mut target,&response(vec![Entity { entity_type:"file".into(),entity_id:"portable".into(),data:Some(file),seq:1 }],vec![])).unwrap();
+        let path: String = target.query_row("SELECT path FROM file_assets WHERE id='portable'",[],|r|r.get(0)).unwrap();
+        assert!(Path::new(&crate::course_paths::resolve(&target,&path).unwrap()).is_file());
+        assert!(pending(&target,100).unwrap().is_empty());
+        // Paused path changes are captured on resume, including names and subfolders.
+        source.execute_batch("UPDATE sync_runtime SET enabled=0; UPDATE file_assets SET path='course://c/第二章/new.pdf' WHERE id='portable'; UPDATE sync_runtime SET enabled=1;").unwrap();
+        seed_files(&source).unwrap();
+        assert_eq!(source.query_row("SELECT course_path FROM sync_files WHERE id='portable'",[],|r|r.get::<_,String>(0)).unwrap(),"course://c/第二章/new.pdf");
+        assert_eq!(source.query_row("SELECT name FROM sync_files WHERE id='portable'",[],|r|r.get::<_,String>(0)).unwrap(),"new.pdf");
+        for invalid in ["/private/file.pdf","course://c/../file.pdf","course://c/dir\\file.pdf"] {
+            assert!(replay(&mut target,&response(vec![Entity { entity_type:"file".into(),entity_id:"bad".into(),data:Some(json!({"name":"file.pdf","course_path":invalid})),seq:2 }],vec![])).is_err());
+        }
+        assert!(pending(&target,100).unwrap().is_empty());
+        // A remote deletion without a configured local root must never invent
+        // an absolute path such as /第一章/100%.pdf.
+        target.execute_batch("UPDATE sync_runtime SET enabled=0; UPDATE courses SET folder_path='' WHERE id='c'; UPDATE sync_runtime SET enabled=1;").unwrap();
+        replay(&mut target,&response(vec![Entity { entity_type:"course".into(),entity_id:"c".into(),data:None,seq:3 }],vec![])).unwrap();
+        assert_eq!(target.query_row("SELECT path FROM file_assets WHERE id='portable'",[],|r|r.get::<_,String>(0)).unwrap(),"cloud://portable");
+        assert!(pending(&target,100).unwrap().is_empty());
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn reject_credential_urls_redirect_surfaces_and_non_https() {

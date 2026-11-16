@@ -124,8 +124,8 @@ UI -> service.method()
 
 - `PRAGMA foreign_keys=ON`；
 - WAL 模式；
-- 当前 `user_version=7`，可选同步实现位于 `src-tauri/src/sync.rs`、`src/sync/` 与 `cloud/`；
-- 恢复接受版本 1–7，暂存校验后替换并暂停旧设备同步；
+- 当前 `user_version=9`，可选同步实现位于 `src-tauri/src/sync.rs`、`src/sync/` 与 `cloud/`；
+- 恢复接受版本 1–9，暂存校验后替换并暂停旧设备同步；
 - 至少保留一个学期；
 - Snapshot 读取可能记录外部文件变化。
 
@@ -342,4 +342,4 @@ UI/core -> invoke_module -> enabled/capability/path checks
 
 跨平台构建、原生凭据后端、runner 与打包配置以 [平台支持](../docs/PLATFORMS.md) 为准。
 
-Google Drive 入口为 `src/drive/`、`src-tauri/src/drive.rs`、`cloud/src/drive.ts` 与 `drive-credentials.ts`；仅保存元数据，schema 8，真实 OAuth 配置及令牌不得入公开仓库。
+Google Drive 入口为 `src/drive/`、`src-tauri/src/drive.rs`、`cloud/src/drive.ts` 与 `drive-credentials.ts`；仅保存元数据，schema 9，真实 OAuth 配置及令牌不得入公开仓库。

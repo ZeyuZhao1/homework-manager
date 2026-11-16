@@ -211,6 +211,10 @@ interface ModuleDescriptor {
 }
 ```
 
+课程内文件在数据库保存为 `course://<course_id>/<relative_path>`，`Snapshot.files[].path` 返回按本机课程目录解析后的路径；目录未配置或不可访问时保留引用并标记 `missing=true`。目录外绝对路径与 Drive 引用保持兼容。`linkFile`、`linkFilesBatch`、`saveCommonFile` 和 `saveAssignmentsBatch` 的相对输入以对应课程目录为基准，接受 `/`、`\`，拒绝含 `..` 的路径和链接逃逸；不使用进程工作目录。
+
+`linkModuleFiles({module_id, owner_type, owner_id, owner_label, paths, role, note, course_id?})` / `link_module_files` 新增可选 `course_id`，模块提交普通相对路径时必须提供，绝对输入仍会自动识别所属课程目录。`relinkFile` 对已有课程相对引用可接收以其课程目录为基准的新相对路径。所有关联与位置变更仍由核心写入历史。
+
 ### 4.2 浏览、搜索和打开
 
 | 前端服务 | Tauri 命令 | 输入 | 返回/限制 |
@@ -269,7 +273,7 @@ interface RenamePreview {
 | 前端服务 | Tauri 命令 | 行为 |
 | --- | --- | --- |
 | `backup(path)` | `backup_database` | 使用 SQLite backup API 导出当前数据库 |
-| `restore(path)` | `restore_database` | 接受 `user_version` 1–8；暂存库校验核心结构、引用、模块与迁移后再替换，恢复后断开旧设备授权并暂停同步 |
+| `restore(path)` | `restore_database` | 接受 `user_version` 1–9；暂存库校验核心结构、引用、模块与迁移后再替换，恢复后断开旧设备授权并暂停同步 |
 | `compactDatabase()` | `compact_database` | 清理无引用文件记录，截断 WAL 并执行 `VACUUM` |
 
 恢复后会重新初始化内置模块的表与提示词兼容逻辑。备份不含 API Key、提示词、模块文件或实际学习文件。
