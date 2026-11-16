@@ -1,1 +1,36 @@
-.import-backdrop{position:fixed;inset:0;z-index:110;background:#0008;display:flex;justify-content:flex-end}.import-inbox{width:min(760px,100vw);height:100%;background:var(--surface,#fff);color:var(--text,#1b2430);display:flex;flex-direction:column;box-shadow:-8px 0 30px #0002}.import-inbox>header,.import-inbox>footer{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:1px solid #8883}.import-inbox>footer{border-bottom:0;border-top:1px solid #8883;justify-content:flex-end;gap:10px}.import-inbox h2{margin:0}.import-body{padding:20px 24px;overflow:auto;flex:1}.import-toolbar,.import-item-heading,.import-new-course{display:flex;gap:12px;align-items:end;justify-content:space-between}.import-inbox label{display:grid;gap:5px;font-size:13px}.import-inbox input:not([type=checkbox]),.import-inbox select{min-height:36px;max-width:100%;border:1px solid #8886;border-radius:7px;padding:5px 8px;background:transparent;color:inherit}.import-course,.import-item{border:1px solid #8884;border-radius:10px;padding:14px;margin:14px 0}.import-course{display:grid;grid-template-columns:1fr 1fr;gap:8px}.import-course>strong,.import-course>small{grid-column:1/-1}.import-item-heading{align-items:start}.import-item-heading>div{display:grid;gap:5px}.import-item-heading small,.import-course small{opacity:.7}.import-diffs{display:grid;gap:8px;margin-top:12px}.import-inbox .import-diff{display:flex;align-items:start;gap:10px;border-top:1px solid #8883;padding-top:8px}.import-diff span{display:grid;gap:3px}.import-diff small{overflow-wrap:anywhere}.import-warning,.import-error{padding:9px 12px;border-radius:7px;background:#d773241f;color:#9a4a00}.import-error{background:#dc26261c;color:#b91c1c}@media(max-width:620px){.import-course{grid-template-columns:1fr}.import-toolbar,.import-item-heading,.import-new-course{align-items:stretch;flex-direction:column}}
+.import-backdrop{position:fixed;inset:0;z-index:110;background:#101c324d;display:flex;justify-content:flex-end;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+.import-inbox{width:min(760px,100%);max-height:100%;height:100%;min-width:0;background:var(--surface,#fff);color:var(--text,#1b2430);display:flex;flex-direction:column;border-left:1px solid var(--border);box-shadow:-8px 0 40px #0002;outline:none}
+.import-inbox>header,.import-inbox>footer{display:flex;justify-content:space-between;align-items:center;gap:12px;flex:none;padding:18px max(24px,env(safe-area-inset-right)) 18px max(24px,env(safe-area-inset-left));border-bottom:1px solid var(--border)}
+.import-inbox>header{padding-top:max(18px,env(safe-area-inset-top))}
+.import-inbox>footer{border-bottom:0;border-top:1px solid var(--border);justify-content:flex-end;padding-bottom:max(18px,env(safe-area-inset-bottom))}
+.import-inbox h2{margin:0;font-size:22px;line-height:1.35}
+.import-inbox>header small{display:block;color:var(--muted);margin-bottom:4px}
+.import-body{padding:20px 24px;overflow:auto;overscroll-behavior:contain;min-height:0;flex:1}
+.import-review{border:0;margin:0;padding:0;min-width:0}
+.import-toolbar,.import-item-heading,.import-new-course{display:flex;gap:12px;align-items:end;justify-content:space-between;min-width:0}
+.import-toolbar>label{flex:1}
+.import-inbox label{display:grid;gap:6px;font-size:13px;min-width:0}
+.import-inbox input:not([type=checkbox]),.import-inbox select{width:100%;min-width:0;min-height:40px;max-width:100%;border:1px solid var(--border);border-radius:8px;padding:7px 10px;background:var(--surface-2);color:inherit;font-size:14px}
+.import-course,.import-item{border:1px solid var(--border);border-radius:12px;padding:16px;margin:14px 0;background:var(--surface-2);min-width:0;overflow-wrap:anywhere}
+.import-course{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.import-course>strong,.import-course>small,.import-new-course{grid-column:1/-1}
+.import-new-course>label{flex:1}
+.import-item-heading{align-items:start}
+.import-item-heading>div{display:grid;gap:5px;min-width:0;flex:1}
+.import-item-heading>select{flex:0 0 160px;max-width:100%}
+.import-item-heading strong,.import-course>strong{font-size:14px;line-height:1.5}
+.import-item-heading small,.import-course small{color:var(--muted);font-size:12px;line-height:1.5}
+.import-item>label{margin-top:12px}
+.import-diffs{display:grid;gap:10px;margin-top:14px}
+.import-inbox .import-diff{display:flex;align-items:start;gap:10px;border-top:1px solid var(--border);padding-top:10px;cursor:pointer}
+.import-diff input{flex:none;width:17px;height:17px;margin:2px 0;accent-color:var(--blue)}
+.import-diff span{display:grid;gap:4px;min-width:0;line-height:1.5}
+.import-diff small{overflow-wrap:anywhere;white-space:pre-wrap;color:var(--muted)}
+.import-description{font-size:13px;color:var(--muted);line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.import-description p{margin:10px 0 0}
+.import-warning,.import-error{padding:10px 12px;border-radius:8px;background:var(--orange-soft);color:var(--orange);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.import-error{background:var(--red-soft);color:var(--red)}
+@supports(backdrop-filter:blur(1px)){.import-inbox{background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(22px) saturate(140%);-webkit-backdrop-filter:blur(22px) saturate(140%)}}
+@media(max-width:620px){.import-course{grid-template-columns:1fr}.import-toolbar,.import-item-heading,.import-new-course{align-items:stretch;flex-direction:column}.import-item-heading>select{flex:auto;width:100%}.import-inbox>header,.import-inbox>footer{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}.import-body{padding:16px}.import-course,.import-item{padding:13px}.import-inbox input:not([type=checkbox]),.import-inbox select{font-size:16px}.import-inbox>footer .button{flex:1;padding-inline:10px;font-size:13px}}
+@media(max-height:500px){.import-inbox>header,.import-inbox>footer{padding-top:10px;padding-bottom:10px}.import-inbox h2{font-size:18px}.import-inbox>header small{display:none}.import-body{padding-block:12px}}
+@media(prefers-reduced-transparency:reduce){.import-backdrop{backdrop-filter:none;-webkit-backdrop-filter:none}.import-inbox{background:var(--surface);backdrop-filter:none;-webkit-backdrop-filter:none}}

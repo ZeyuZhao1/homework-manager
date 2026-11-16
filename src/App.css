@@ -193,3 +193,7 @@ input,textarea,select,.helper-text,.source-detail p,.file-page-main small,.drawe
 :root:not([data-theme="dark"]) .overview-focus,
 :root:not([data-theme="dark"]) .overview-list,
 :root:not([data-theme="dark"]) .file-page-list{box-shadow:0 1px 3px #203c6510}
+
+/* Touch entry from the responsive audit; keep the current workspace layout. */
+.file-menu-trigger { display: none; }
+@media (hover: none), (max-width: 680px) { .file-menu-trigger { display: inline-grid; flex: none; } }
