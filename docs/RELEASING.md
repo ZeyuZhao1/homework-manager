@@ -32,13 +32,13 @@ node node_modules/@tauri-apps/cli/tauri.js build -- --locked
 
 ## 2. 创建新版本
 
-仅在用户明确授权提交、推送与发布后执行。例如未来发布 `0.7.0`：
+仅在用户明确授权提交、推送与发布后执行。例如未来发布 `0.7.1`：
 
 ```bash
 git add <本次发布文件>
-git commit -m "Release v0.7.0"
-git tag -a v0.7.0 -m "Release v0.7.0"
-git push --atomic origin HEAD:main refs/tags/v0.7.0
+git commit -m "Release v0.7.1"
+git tag -a v0.7.1 -m "Release v0.7.1"
+git push --atomic origin HEAD:main refs/tags/v0.7.1
 ```
 
 推送标签后：
@@ -94,7 +94,7 @@ macOS 可使用 `shasum -a 256 <文件>`，Windows 使用 `Get-FileHash <文件>
 仅当源码标签正确、失败原因是 runner/下载/上传的暂时故障时，允许重新构建同一不可变标签：
 
 ```bash
-gh workflow run release.yml --ref v0.7.0 -f release_tag=v0.7.0
+gh workflow run release.yml --ref v0.7.1 -f release_tag=v0.7.1
 ```
 
 执行 workflow 的 ref 与输入标签必须相同。旧标签仍使用其提交中的旧 workflow，不应把本轮多平台脚本强行用于缺少这些脚本的旧版本。上传失败可能留下不完整 Release，此时先标记为预发布并调查，不能把构建阶段的完整性门禁描述为 GitHub 多文件上传的原子事务。

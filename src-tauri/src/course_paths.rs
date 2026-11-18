@@ -222,7 +222,8 @@ mod tests {
         assert_eq!(conn.query_row("SELECT count(*) FROM file_history", [], |r| r.get::<_,i64>(0)).unwrap(), 1);
         let root = std::env::temp_dir().join(format!("course-portable-{}", Uuid::new_v4()));
         fs::create_dir_all(root.join("第一章")).unwrap();
-        fs::write(root.join("第一章/new.pdf"), b"test").unwrap();
+        let file = root.join("第一章").join("new.pdf");
+        fs::write(&file, b"test").unwrap();
         conn.execute("UPDATE courses SET folder_path=?1 WHERE id='c'", [root.to_str().unwrap()]).unwrap();
         assert!(Path::new(&resolve(&conn, &stored).unwrap()).is_file());
         assert_eq!(input(&conn, r"第一章\new.pdf", Some("c")).unwrap(), resolve(&conn, &stored).unwrap());
@@ -232,7 +233,7 @@ mod tests {
         assert!(input(&conn, "new.pdf", None).is_err());
         assert_eq!(conn.query_row("SELECT path FROM file_history", [], |r| r.get::<_,String>(0)).unwrap(), r"d:\study\课程\第一章\new.pdf");
         detach(&conn, "c").unwrap();
-        assert_eq!(conn.query_row("SELECT path FROM file_assets", [], |r| r.get::<_,String>(0)).unwrap(), crate::files::normal_path(&root.join("第一章/new.pdf")));
+        assert_eq!(conn.query_row("SELECT path FROM file_assets", [], |r| r.get::<_,String>(0)).unwrap(), crate::files::normal_path(&file));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -282,7 +283,7 @@ mod tests {
         fs::create_dir_all(root.join("nested")).unwrap();
         conn.execute("INSERT INTO courses VALUES('parent',?1)", [root.to_str().unwrap()]).unwrap();
         conn.execute("INSERT INTO courses VALUES('child',?1)", [root.join("nested").to_str().unwrap()]).unwrap();
-        let file = root.join("nested/100%25.pdf");
+        let file = root.join("nested").join("100%25.pdf");
         fs::write(&file, b"test").unwrap();
         let reference = stored(&conn, &crate::files::normal_path(&file)).unwrap();
         assert_eq!(reference, "course://child/100%2525.pdf");

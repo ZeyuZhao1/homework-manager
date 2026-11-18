@@ -620,7 +620,8 @@ mod tests {
     fn offline_course_rebinding_and_backup_restore_preserve_relative_files_atomically() {
         let root = std::env::temp_dir().join(format!("course-restore-{}",Uuid::new_v4()));
         std::fs::create_dir_all(root.join("materials")).unwrap();
-        std::fs::write(root.join("materials/notes.pdf"),b"test").unwrap();
+        let notes = root.join("materials").join("notes.pdf");
+        std::fs::write(&notes, b"test").unwrap();
         let mut conn = Connection::open_in_memory().unwrap();
         legacy_schema(&conn);
         conn.execute("UPDATE courses SET folder_path=?1 WHERE id='c'",[r"D:\Study\Course"]).unwrap();
@@ -639,7 +640,7 @@ mod tests {
         backup_impl(&conn,backup.to_str().unwrap()).unwrap();
         course.folder_path.clear();
         save_course_impl(&mut conn,course).unwrap();
-        assert_eq!(conn.query_row("SELECT path FROM file_assets WHERE id='f'",[],|r|r.get::<_,String>(0)).unwrap(),crate::files::normal_path(&root.join("materials/notes.pdf")));
+        assert_eq!(conn.query_row("SELECT path FROM file_assets WHERE id='f'",[],|r|r.get::<_,String>(0)).unwrap(),crate::files::normal_path(&notes));
         restore_impl(&mut conn,backup.to_str().unwrap()).unwrap();
         assert_eq!(conn.query_row("SELECT path FROM file_assets WHERE id='f'",[],|r|r.get::<_,String>(0)).unwrap(),reference);
         assert_eq!(conn.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),9);
