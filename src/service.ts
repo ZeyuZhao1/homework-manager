@@ -4,6 +4,7 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import type { Assignment, CommonFile, Course, DirectoryEntry, FileHistoryEvent, FileLink, FileRole, LinkBatchInput, LinkInput, ModuleDescriptor, NamingInput, OpenFileResult, RenamePreview, Semester, Settings, Snapshot } from './types'
 import type { ApplyImport, ImportPreview, RemoteSnapshot } from './importSync'
 import { cloudService, webSync } from './sync/web'
+import type { MacosChromeState } from './types'
 import type { DriveFileInfo } from './drive/types'
 
 const desktop = isTauri()
@@ -37,8 +38,32 @@ function trackPreview(fileId: string, eventType: FileHistoryEvent['event_type'],
   previewState.file_history.unshift({ id:newId(), file_id:fileId, link_id:link?.id || '', assignment_id:link?.assignment_id || '', assignment_title:previewState.assignments.find(a => a.id === link?.assignment_id)?.title || '', event_type:eventType, path, details, file_size:null, modified_at_ms:null, occurred_at:new Date().toISOString() })
 }
 
+export type MacosContentControl = {
+  id: string
+  kind: 'button' | 'segments' | 'select' | 'menu'
+  x: number
+  y: number
+  width: number
+  height: number
+  label: string
+  options: { id: string; name: string }[]
+  selected: string
+  disabled: boolean
+  context?: string
+  opaque?: boolean
+  tint?: 'accent' | 'destructive'
+  symbol?: 'plus' | 'pencil' | 'trash' | 'chevron.right'
+}
+
 const localService = {
   isDesktop: desktop,
+  isMacDesktop: desktop && /Macintosh/.test(navigator.userAgent),
+  async updateMacosChrome(state: MacosChromeState): Promise<boolean> {
+    return this.isMacDesktop ? invoke<boolean>('update_macos_chrome', { state }) : false
+  },
+  async updateMacosContentControls(controls: MacosContentControl[]): Promise<boolean> {
+    return this.isMacDesktop ? invoke<boolean>('update_macos_content_controls', { controls }) : false
+  },
   async driveRequest<T = unknown>(action: string, payload?: unknown): Promise<T> {
     if (!desktop) throw new Error('Google Drive 需要连接个人云端')
     return invoke<T>('drive_request', { action, payload: payload ?? null })

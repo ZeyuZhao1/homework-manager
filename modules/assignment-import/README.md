@@ -42,6 +42,8 @@ assignment-import/
 
 ## 2. 前端集成
 
+macOS 桌面可从顶部工具栏的「作业工具」菜单打开「AI 导入」。
+
 `frontend/index.tsx` 导出一个 `AppModule`：
 
 - `Action`：在作业页头显示“AI 导入”操作；

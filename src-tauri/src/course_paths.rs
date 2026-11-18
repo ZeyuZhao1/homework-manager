@@ -1,6 +1,6 @@
 //! Portable references live in SQLite; callers receive paths for this machine.
 use rusqlite::{params, Connection};
-use std::{fs, path::{Path, PathBuf}};
+use std::{fs, io::ErrorKind, path::{Path, PathBuf}};
 
 const PREFIX: &str = "course://";
 
@@ -45,7 +45,12 @@ pub(crate) fn stored(conn: &Connection, path: &str) -> Result<String, String> {
         if let Some(relative) = relative_to(&root, path).or_else(|| canonical.as_deref().and_then(|root| relative_to(root, path))) {
             let reference = format!("{PREFIX}{id}/{relative}");
             validate_reference(&reference)?;
-            return Ok(reference);
+            let root = Path::new(&root);
+            if !root.is_absolute() || root_is_offline(root)
+                || join_reference(root, &relative).is_ok_and(|file| check_containment(root, &file).is_ok())
+            {
+                return Ok(reference);
+            }
         }
     }
     Ok(path.into())
@@ -57,25 +62,42 @@ pub(crate) fn resolve(conn: &Connection, path: &str) -> Result<String, String> {
     let (id, relative) = reference.split_once('/').ok_or("课程相对路径无效")?;
     let root: String = conn.query_row("SELECT folder_path FROM courses WHERE id=?1", [id], |r| r.get(0)).map_err(|_| "文件所属课程不存在")?;
     if root.is_empty() || !Path::new(&root).is_absolute() { return Err("请设置本机的课程文件夹".into()); }
-    let mut result = PathBuf::from(&root);
+    let result = join_reference(Path::new(&root), relative)?;
+    check_containment(Path::new(&root), &result)?;
+    Ok(crate::files::normal_path(&result))
+}
+
+fn join_reference(root: &Path, relative: &str) -> Result<PathBuf, String> {
+    let mut result = root.to_path_buf();
     for part in relative.split('/') {
         let part = part.replace("%5C", "\\").replace("%25", "%");
-        if part.is_empty() || part == "." || part == ".." || part.contains('/') || (cfg!(windows) && (part.contains('\\') || part.contains(':'))) {
-            return Err("课程相对路径不能超出课程文件夹".into());
+        if part.is_empty() || part == "." || part == ".." || part.contains('/')
+            || (cfg!(windows) && (part.contains('\\') || part.contains(':') || part.ends_with(['.', ' ']))) {
+            return Err("课程相对路径无效或与本机路径规则不兼容".into());
         }
         result.push(part);
     }
-    // Also reject symlinks that lead outside the root, including missing files
-    // below an existing symlinked directory.
-    let base = fs::canonicalize(&root).map_err(|_| "课程文件夹不存在")?;
-    let mut ancestor = result.as_path();
-    while !ancestor.exists() {
-        ancestor = ancestor.parent().ok_or("课程相对路径无效")?;
+    Ok(result)
+}
+
+fn check_containment(root: &Path, result: &Path) -> Result<(), String> {
+    let base = fs::canonicalize(root).map_err(|_| "课程文件夹不存在或无法访问")?;
+    if !base.is_dir() {
+        return Err("课程路径不是文件夹".into());
     }
-    if !fs::canonicalize(ancestor).map_err(|e| e.to_string())?.starts_with(base) {
-        return Err("路径超出课程文件夹".into());
+    // Use symlink_metadata so a dangling symlink itself is checked. Treat
+    // permission and lookup errors as failures instead of as missing files.
+    for ancestor in result.ancestors() {
+        match fs::symlink_metadata(ancestor) {
+            Ok(_) => {
+                let actual = fs::canonicalize(ancestor).map_err(|_| "课程文件的符号链接无效或路径无法访问")?;
+                return if actual.starts_with(&base) { Ok(()) } else { Err("路径超出课程文件夹".into()) };
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(_) => return Err("课程文件路径无法访问".into()),
+        }
     }
-    Ok(crate::files::normal_path(&result))
+    Err("课程相对路径无效".into())
 }
 
 /// Relative user input always uses a course root, never the process directory.
@@ -90,6 +112,10 @@ pub(crate) fn input(conn: &Connection, raw: &str, course_id: Option<&str>) -> Re
     resolve(conn, &format!("{PREFIX}{id}/{relative}"))
 }
 
+fn root_is_offline(root: &Path) -> bool {
+    fs::symlink_metadata(root).is_err_and(|error| error.kind() == ErrorKind::NotFound)
+}
+
 /// Run inside the caller's transaction, before replacing a course's old root.
 /// This is lexical so backups from another OS can migrate while files are offline.
 pub(crate) fn migrate(conn: &Connection) -> Result<(), String> {
@@ -99,7 +125,13 @@ pub(crate) fn migrate(conn: &Connection) -> Result<(), String> {
     for (id, old) in paths {
         let new = stored(conn, &old)?;
         if new == old { continue; }
-        conn.execute("UPDATE file_assets SET path=?2 WHERE id=?1", params![id,new]).map_err(|e| e.to_string())?;
+        // A synced reference and its pre-migration absolute path can already
+        // coexist. Preserve both asset IDs and their existing associations.
+        let moved = conn.execute(
+            "UPDATE file_assets SET path=?2 WHERE id=?1 AND NOT EXISTS(SELECT 1 FROM file_assets WHERE path=?2)",
+            params![id,new],
+        ).map_err(|e| e.to_string())?;
+        if moved == 0 { continue; }
         crate::files::record_file_history(conn, &id, "", "", "relocated", &old, "已保存为课程目录内的相对路径")?;
     }
     // Rename targets must follow the same course when undoing after migration.
@@ -120,27 +152,33 @@ pub(crate) fn migrate(conn: &Connection) -> Result<(), String> {
 pub(crate) fn detach(conn: &Connection, course_id: &str) -> Result<(), String> {
     let root: String = conn.query_row("SELECT folder_path FROM courses WHERE id=?1", [course_id], |r| r.get(0)).map_err(|e| e.to_string())?;
     let prefix = format!("{PREFIX}{course_id}/");
-    let expand = |path: String| -> String {
-        let Some(relative) = path.strip_prefix(&prefix) else { return path; };
-        if root.is_empty() || !Path::new(&root).is_absolute() { return path; }
-        let separator = if windows_path(&root) { "\\" } else { "/" };
-        let parts = relative.split('/').map(|p| p.replace("%5C", "\\").replace("%25", "%")).collect::<Vec<_>>();
-        format!("{}{separator}{}", root.trim_end_matches(['/', '\\']), parts.join(separator))
+    let root = Path::new(&root);
+    let offline = root_is_offline(root);
+    let expand = |path: &str| -> Option<String> {
+        let relative = path.strip_prefix(&prefix)?;
+        if !root.is_absolute() || validate_reference(path).is_err() { return None; }
+        let expanded = join_reference(root, relative).ok()?;
+        if !offline && check_containment(root, &expanded).is_err() { return None; }
+        Some(crate::files::normal_path(&expanded))
     };
     let files = conn.prepare("SELECT id,path FROM file_assets").map_err(|e| e.to_string())?
         .query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
     for (id, path) in files {
         if !path.starts_with(&prefix) { continue; }
-        let path = if root.is_empty() || !Path::new(&root).is_absolute() { format!("cloud://{id}") } else { expand(path) };
-        conn.execute("UPDATE file_assets SET path=?2 WHERE id=?1", params![id,path]).map_err(|e| e.to_string())?;
+        let path = expand(&path).unwrap_or_else(|| format!("cloud://{id}"));
+        let moved = conn.execute(
+            "UPDATE file_assets SET path=?2 WHERE id=?1 AND NOT EXISTS(SELECT 1 FROM file_assets WHERE path=?2 AND id<>?1)",
+            params![id,path],
+        ).map_err(|e| e.to_string())?;
+        if moved == 0 { continue; }
         crate::files::record_file_history(conn, &id, "", "", "relocated", &path, "取消课程目录绑定，保留文件当前位置")?;
     }
     let renames = conn.prepare("SELECT id,old_path,new_path FROM rename_history").map_err(|e| e.to_string())?
         .query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
     for (id, old, new) in renames {
-        conn.execute("UPDATE rename_history SET old_path=?2,new_path=?3 WHERE id=?1", params![id,expand(old),expand(new)]).map_err(|e| e.to_string())?;
+        conn.execute("UPDATE rename_history SET old_path=?2,new_path=?3 WHERE id=?1", params![id,expand(&old).unwrap_or(old),expand(&new).unwrap_or(new)]).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -196,6 +234,45 @@ mod tests {
         detach(&conn, "c").unwrap();
         assert_eq!(conn.query_row("SELECT path FROM file_assets", [], |r| r.get::<_,String>(0)).unwrap(), crate::files::normal_path(&root.join("第一章/new.pdf")));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn detach_never_promotes_an_escaping_or_dangling_symlink() {
+        let conn = database();
+        let temp = std::env::temp_dir().join(format!("course-detach-{}", Uuid::new_v4()));
+        let root = temp.join("course");
+        let outside = temp.join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("example.pdf"), b"test").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
+        std::os::unix::fs::symlink(outside.join("missing"), root.join("dangling")).unwrap();
+        conn.execute("INSERT INTO courses VALUES('c',?1)", [root.to_str().unwrap()]).unwrap();
+        conn.execute("INSERT INTO file_assets VALUES('a','course://c/escape/example.pdf'),('b','course://c/dangling/example.pdf')", []).unwrap();
+        assert!(resolve(&conn, "course://c/escape/example.pdf").is_err());
+        assert!(resolve(&conn, "course://c/dangling/example.pdf").is_err());
+        assert_eq!(stored(&conn, root.join("escape/example.pdf").to_str().unwrap()).unwrap(), root.join("escape/example.pdf").to_str().unwrap());
+        detach(&conn, "c").unwrap();
+        for id in ["a", "b"] {
+            let path: String = conn.query_row("SELECT path FROM file_assets WHERE id=?1", [id], |r| r.get(0)).unwrap();
+            assert_eq!(path, format!("cloud://{id}"));
+        }
+        assert!(outside.join("example.pdf").is_file());
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn migration_keeps_existing_asset_ids_when_paths_collide() {
+        let conn = database();
+        let root = std::env::temp_dir().join(format!("course-duplicate-{}", Uuid::new_v4()));
+        let absolute = root.join("sheet.pdf");
+        conn.execute("INSERT INTO courses VALUES('c',?1)", [root.to_str().unwrap()]).unwrap();
+        conn.execute("INSERT INTO file_assets VALUES('older',?1),('synced','course://c/sheet.pdf')", [absolute.to_str().unwrap()]).unwrap();
+        migrate(&conn).unwrap();
+        detach(&conn, "c").unwrap();
+        assert_eq!(conn.query_row("SELECT count(*) FROM file_assets", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
+        assert_eq!(conn.query_row("SELECT path FROM file_assets WHERE id='synced'", [], |r| r.get::<_, String>(0)).unwrap(), "course://c/sheet.pdf");
     }
 
     #[test]

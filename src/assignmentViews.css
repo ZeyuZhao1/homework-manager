@@ -45,3 +45,12 @@
 @media (min-width: 781px) {
   .task-workspace-list .assignment-table th:nth-child(4), .task-workspace-list .assignment-table td:nth-child(4) { padding-inline: 5px; }
 }
+
+.detail-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-width: 0; width: 100%; }
+.detail-title-row .detail-title { min-width: 0; }
+.detail-title-row .detail-title h2 { overflow-wrap: anywhere; }
+.detail-close { flex: none; margin-top: -3px; }
+.detail-body .detail-field > div { min-width: 0; overflow-wrap: anywhere; }
+
+.detail-panel .detail-command-bar { margin: -8px 0 14px; }
+.detail-panel .detail-command-bar .detail-actions { justify-content: flex-start; }

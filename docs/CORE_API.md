@@ -26,6 +26,22 @@ Vite 开发预览使用 LocalStorage 示例状态。生产网页版通过同源 
 - 日期时间是本地时间字符串 `YYYY-MM-DDTHH:mm:ss`，不携带时区；
 - 空 DDL 使用 `null`，而不是空字符串。
 
+### macOS 原生窗口状态
+
+`service.updateMacosChrome(state: MacosChromeState): Promise<boolean>` 在 macOS 桌面调用 `update_macos_chrome`，仅允许主窗口更新；非 macOS 或浏览器返回 `false`。状态使用 camelCase：`semesters`、`courses` 为 `{ id, name }` 数组，`semesterId`、`courseId`、`view`、`showPlans`、`showSearch`、`searchReset`、`showAddAssignment`、`canAddAssignment`、`theme` 和 `blocked` 描述当前界面。`assignmentFilter` 提供选中的状态及可用选项，仅在作业列表显示。`tools` 使用 `{ id, name }` 提供当前页面可用的工具菜单项。完整类型以 `src/types.ts` 为准。
+
+原生导航通过 `homeworkbook:macos-chrome-action` 自定义事件返回 `{ action, value }`；React 验证并处理视图、学期、课程、搜索、新增及主题动作。`quick-add-assignment` 表示系统菜单栏的新建作业动作。`set-theme` 接收 `system`、`light` 或 `dark`，用于应用菜单的外观选择。`filter` 和 `tool` 事件使用对应菜单项 ID，React 校验后执行筛选或打开对应入口。`searchReset` 改变时清空原生搜索；搜索事件带上同名字段，React 忽略清空前的迟到事件。输入法组合过程不提交搜索。模态对话框打开时阻断原生导航。接口只同步界面状态，不直接写入数据库或操作学习文件。
+
+### macOS 页面原生控件
+
+`service.updateMacosContentControls(controls): Promise<boolean>` 通过主窗口命令 `update_macos_content_controls` 更新当前可见的内嵌控件。每项包含实例 `id`、`kind`（`button`、`segments` 或 `select`）、CSS 视口矩形、`label`、`options`、`selected` 与 `disabled`。空数组移除原生控件。浏览器和其他桌面平台继续渲染网页控件。
+
+页面控件的 `kind: "menu"` 使用首个选项作为原生下拉菜单的固定标题，其余选项对应命令。切换作业时复用原生控件，可用 `context` 标识当前作业。原生动作回传相同的 `context`，网页忽略来自旧作业的动作。选择器可用 `opaque` 在控件本身的胶囊区域挡住滚动正文。
+
+页面按钮可用 `tint` 指定系统强调色（`accent`）或删除操作的系统红色（`destructive`），用 `symbol` 选择受支持的 SF Symbol（`plus`、`pencil`、`trash`、`chevron.right`）。这些字段只影响原生按钮的外观。macOS 26 及以上用 AppKit 玻璃着色。
+
+`homeworkbook:macos-chrome-action` 的 `content` 动作携带控件实例与选项。React 校验目标当前可用后，调用已有的筛选、编辑、删除确认或附件流程。
+
 ## 2. 核心数据类型
 
 权威 TypeScript 定义位于 `src/types.ts`，Rust 对应定义位于 `src-tauri/src/db.rs` 和 `files.rs`。
@@ -211,7 +227,7 @@ interface ModuleDescriptor {
 }
 ```
 
-课程内文件在数据库保存为 `course://<course_id>/<relative_path>`，`Snapshot.files[].path` 返回按本机课程目录解析后的路径；目录未配置或不可访问时保留引用并标记 `missing=true`。目录外绝对路径与 Drive 引用保持兼容。`linkFile`、`linkFilesBatch`、`saveCommonFile` 和 `saveAssignmentsBatch` 的相对输入以对应课程目录为基准，接受 `/`、`\`，拒绝含 `..` 的路径和链接逃逸；不使用进程工作目录。
+课程内文件在数据库保存为 `course://<course_id>/<relative_path>`，`Snapshot.files[].path` 返回按本机课程目录解析后的路径；目录未配置或不可访问时保留引用并标记 `missing=true`。目录外绝对路径与 Drive 引用保持兼容。浏览时保留配置的课程根路径，同时检查规范化路径仍在该目录内。解除绑定时，越界或损坏的符号链接保留为可重新定位的附件记录。`linkFile`、`linkFilesBatch`、`saveCommonFile` 和 `saveAssignmentsBatch` 的相对输入以对应课程目录为基准，接受 `/`、`\`，拒绝含 `..` 的路径和链接逃逸；不使用进程工作目录。
 
 `linkModuleFiles({module_id, owner_type, owner_id, owner_label, paths, role, note, course_id?})` / `link_module_files` 新增可选 `course_id`，模块提交普通相对路径时必须提供，绝对输入仍会自动识别所属课程目录。`relinkFile` 对已有课程相对引用可接收以其课程目录为基准的新相对路径。所有关联与位置变更仍由核心写入历史。
 

@@ -32,13 +32,13 @@ node node_modules/@tauri-apps/cli/tauri.js build -- --locked
 
 ## 2. 创建新版本
 
-仅在用户明确授权提交、推送与发布后执行。例如未来发布 `0.6.0`：
+仅在用户明确授权提交、推送与发布后执行。例如未来发布 `0.7.0`：
 
 ```bash
 git add <本次发布文件>
-git commit -m "Release v0.6.0"
-git tag -a v0.6.0 -m "Release v0.6.0"
-git push --atomic origin HEAD:main refs/tags/v0.6.0
+git commit -m "Release v0.7.0"
+git tag -a v0.7.0 -m "Release v0.7.0"
+git push --atomic origin HEAD:main refs/tags/v0.7.0
 ```
 
 推送标签后：
@@ -85,7 +85,7 @@ sha256sum -c SHA256SUMS.txt
 
 macOS 可使用 `shasum -a 256 <文件>`，Windows 使用 `Get-FileHash <文件> -Algorithm SHA256`，与清单逐项比较。
 
-安装烟雾测试至少覆盖：新建与编辑作业、关联临时材料、打开文件和目录、重命名及撤回、AI 密钥保存后重启读取、粘贴截图、周期作业、导出/恢复数据库，以及窗口控制。Linux 应验证 X11 和 Wayland，macOS 验证原生窗口控件。跨系统恢复后原文件绝对路径通常失效，需要重新定位；数据库备份不包含凭据或实际文件。
+安装烟雾测试至少覆盖：新建与编辑作业、关联临时材料、打开文件和目录、重命名及撤回、AI 密钥保存后重启读取、粘贴截图、周期作业、导出/恢复数据库，以及窗口控制。Linux 应验证 X11 和 Wayland，macOS 验证原生窗口、侧栏、工具栏、搜索和模态对话框期间的导航阻断，并分别在 macOS 26+ 与受支持的旧系统检查外观和交互。macOS 构建使用 26 或更新 SDK，CI 使用 `macos-26` ARM64；最低运行版本为 macOS 11。跨系统恢复后原文件绝对路径通常失效，需要重新定位；数据库备份不包含凭据或实际文件。
 
 ## 5. 失败与重建
 
@@ -94,7 +94,7 @@ macOS 可使用 `shasum -a 256 <文件>`，Windows 使用 `Get-FileHash <文件>
 仅当源码标签正确、失败原因是 runner/下载/上传的暂时故障时，允许重新构建同一不可变标签：
 
 ```bash
-gh workflow run release.yml --ref v0.6.0 -f release_tag=v0.6.0
+gh workflow run release.yml --ref v0.7.0 -f release_tag=v0.7.0
 ```
 
 执行 workflow 的 ref 与输入标签必须相同。旧标签仍使用其提交中的旧 workflow，不应把本轮多平台脚本强行用于缺少这些脚本的旧版本。上传失败可能留下不完整 Release，此时先标记为预发布并调查，不能把构建阶段的完整性门禁描述为 GitHub 多文件上传的原子事务。

@@ -18,6 +18,7 @@ before(async()=>{
 })
 after(async()=>{process?.kill('SIGTERM');if(process)await new Promise(resolve=>process.once('exit',resolve));await rm(temp,{recursive:true,force:true})})
 test('local Durable Object: authorization, pairing, receipt LWW, dedup, cascades, uploads and revocation',async()=>{
+ assert.deepEqual((await (await api('/api/health',{auth:null})).json()).capabilities,{course_paths:true})
  assert.equal((await api('/api/snapshot',{auth:null})).status,401)
  const publicProviders=await(await api('/api/recovery/providers',{auth:null})).json();assert.deepEqual(publicProviders,{providers:[{id:'github',enabled:false},{id:'google',enabled:false}]})
  assert.equal((await api('/api/recovery/github',{auth:null,method:'DELETE'})).status,401)
@@ -32,6 +33,10 @@ test('local Durable Object: authorization, pairing, receipt LWW, dedup, cascades
  r=await api('/api/pair/poll',{auth:null,method:'POST',body:pair});assert.equal((await r.json()).state,'expired')
  let result=await sync([op('create-sem','semester','s',{name:'First'}),op('create-course','course','c',{semester_id:'s',name:'Course',code:'X'}),op('create-assignment','assignment','a',{course_id:'c',title:'A',status:'todo'})]);assert.equal(result.status,200)
  let cursor=result.data.cursor
+ const compatibleBatch=await sync([{operation_id:'legacy-path-only',changes:[]}],cursor)
+ assert.equal(compatibleBatch.status,200)
+ assert.deepEqual(compatibleBatch.data.acknowledged,['legacy-path-only'])
+ assert.equal(compatibleBatch.data.changes.length,0)
  result=await sync([op('edit-name','semester','s',{name:'Later'})],cursor);assert.equal(result.status,200)
  result=await sync([op('edit-name','semester','s',{name:'REPLAY MUST NOT WIN'})],result.data.cursor);assert.equal(result.data.changes.length,0)
  result=await sync([op('field-title','assignment','a',{title:'Edited'}),op('field-status','assignment','a',{status:'done'})]);assert.equal(result.status,200)

@@ -40,6 +40,8 @@ Set-Location homework-manager
 pnpm install --frozen-lockfile
 ```
 
+macOS 本地构建需 macOS 26 或更新 SDK（相应 Xcode 或 Command Line Tools）；最低运行版本仍为 macOS 11。原生侧栏、工具栏与搜索需在桌面应用中验证：覆盖学期和课程切换、搜索及输入法、主题、窗口缩放/全屏、对话框打开时的导航阻断和辅助功能；在 macOS 26+ 检查系统 Liquid Glass，并在旧系统检查原生回退外观。待办列表和作业详情正文独立滚动时，应检查固定栏控件的窗口坐标保持稳定。另需检查缩放时的对齐、切换作业后的目标、弹窗期间的遮挡和禁用，以及应用内原有的保存和确认流程。浏览器预览无法验证 AppKit。
+
 Rust 依赖会在第一次 `cargo test` 或 Tauri 构建时由 Cargo 下载。`rusqlite` 使用 bundled SQLite，不要求系统预装 SQLite 开发库。
 
 ## 3. 运行模式

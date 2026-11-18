@@ -8,6 +8,8 @@ The desktop application remains local-first. Sync is disabled until explicitly c
 
 Each user deploys an independent single-owner service in their own Cloudflare account. The repository distributes code and placeholder templates, not access to the maintainer's infrastructure. Public builds have no production endpoint or authorization; desktop endpoints are configured at runtime and web API requests are same-origin. Public CI must remain local-only. See [self-hosting](../deploy/cloudflare/README.md) for the operational source of truth.
 
+Desktop clients check `capabilities.course_paths` in `GET /api/health`. Older services still receive records and attachment metadata. Course-relative references stay local and are queued for sync when the service advertises support.
+
 ## Privacy and behavior
 
 - No private domain, account ID, resource ID, deployment resource name, route, OAuth identity or credential belongs in the repository or a public desktop bundle. Production configuration lives outside the checkout. Public examples contain synthetic values only.

@@ -4,6 +4,10 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { service } from './service'
 
 export function TitleBar() {
+  return service.isMacDesktop ? null : <DesktopTitleBar />
+}
+
+function DesktopTitleBar() {
   const [maximized, setMaximized] = useState(false)
   const [nativeControls, setNativeControls] = useState<boolean | null>(null)
   useEffect(() => {

@@ -40,7 +40,8 @@ flowchart LR
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/TitleBar.tsx` | 无系统装饰的主题标题栏和受权限约束的窗口控制 |
+| `src/TitleBar.tsx` | Windows/Linux 自定义标题栏和受权限约束的窗口控制；macOS 使用系统窗口 |
+| `src/macosChrome.ts` | macOS 原生导航状态、动作及对话框阻断同步 |
 | `src/App.tsx` | 应用壳、导航、筛选、选中态、模块入口和刷新协调 |
 | `src/pages.tsx` | 文件页与设置页 |
 | `src/ui.tsx` | 作业表格、详情、日期/状态展示和通用 UI |
@@ -69,7 +70,8 @@ Rust 实现按责任分为：
 - `db.rs`：领域记录、完整快照、核心 CRUD、备份/恢复；
 - `files.rs`：文件路径、关联、目录浏览、历史、改名与撤回；
 - `printing.rs`：当前文件校验、仅限主窗口的二进制读取与系统打印对话框；
-- `window.rs`：启动窗口尺寸与位置；内容区域最大 1200×800 逻辑像素，含边框的窗口不超过工作区宽高的 85%；
+- `macos_chrome.rs` 与 `native/macos_chrome.m`：主窗口状态传递与 AppKit 原生导航；
+- `window.rs`：启动窗口尺寸与位置；macOS 使用 AppKit 可用屏幕区域与全局点坐标，其余平台按物理工作区计算；
 - `modules.rs`：内置/外部模块发现、启用状态和调用宿主；
 - `import_sync.rs`：通用来源快照校验、导入差异预览和事务应用；
 - `modules/registry.rs`：两个内置模块的后端注册清单；
@@ -382,9 +384,9 @@ Tauri 标识符为 `app.homeworkbook.local`。Windows 上主要目录为：
 
 修改公共数据结构或模块能力时，应同步更新 [CORE_API.md](CORE_API.md)、[MODULES.md](../MODULES.md) 和相关测试。
 
-自定义标题栏由 `main.tsx` 在应用内容上方挂载，加载状态也保留窗口控制；Tauri 关闭系统装饰并仅额外授权最小化、切换最大化、关闭和拖动。关联文件菜单通过渲染回调使用打印组件的操作，打印选项、配置和结果弹窗保留在菜单之外，避免菜单关闭导致打印状态丢失。
+Windows 和 Linux 的自定义标题栏由 `main.tsx` 在应用内容上方挂载，加载状态也保留窗口控制；窗口操作只授权最小化、切换最大化、关闭和拖动。macOS 使用系统窗口，首次状态同步后以 `NSSplitViewController` 承载原生侧栏与原有 WebView 内容，并使用 `NSToolbar`、`NSSearchToolbarItem` 和 `NSMenuToolbarItem`。AppKit 通过侧栏跟踪分隔项将开关放在左侧，应用级外观与系统窗口背景共同控制深浅色。React 保持导航、内容、表单和模块状态的所有权；原生控件通过动作事件交回 React，应用内模态对话框打开时禁用原生导航。 待办视图切换和筛选使用列表头部的 `NSSegmentedControl`。待办和作业详情中的内嵌控件由 `src/macosContentControls.ts` 将页面位置和选项同步至 AppKit，覆盖视图定位于同一窗口的 WebView 上方并使用 WebView 的安全区，与工具栏下的 CSS 视口对齐。待办与详情正文使用各自的滚动区域。固定的原生按钮允许底层正文从其下方滚过，滚动区域为首尾内容留出空间。应用菜单复用原生 responder chain 的系统命令，并将作业、课程、导航和外观动作交给 React。React 复用原有操作，桥接成功后隐藏对应的网页控件，布局或弹窗变化时更新原生控件。窄窗口使用单栏详情和网页控件。关联文件菜单通过渲染回调使用打印组件的操作，打印选项、配置和结果弹窗保留在菜单之外，避免菜单关闭导致打印状态丢失。
 
-核心原生构建目标、各系统数据根目录和发布矩阵见 [平台支持](PLATFORMS.md)。Wayland 的几何设置失败只记录启动诊断，主窗口仍会显示；macOS 平台配置启用原生控件与 Overlay 标题栏。
+核心原生构建目标、各系统数据根目录和发布矩阵见 [平台支持](PLATFORMS.md)。Wayland 的几何设置失败只记录启动诊断，主窗口仍会显示；macOS 平台配置启用系统窗口装饰；macOS 26 及以上系统为标准 AppKit 控件提供 Liquid Glass，旧系统使用其原生外观。
 
 
 ### Google Drive 元数据来源

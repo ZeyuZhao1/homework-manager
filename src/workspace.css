@@ -204,3 +204,8 @@ button { touch-action: manipulation; }
 }
 .loading-screen { padding: 24px; text-align: center; }
 .loading-screen > p { max-width: min(90vw, 560px); overflow-wrap: anywhere; line-height: 1.5; }
+
+.task-workspace:not([data-has-detail]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.task-workspace:not([data-has-detail]) .task-workspace-detail { display: none; }

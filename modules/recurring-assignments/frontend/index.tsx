@@ -19,7 +19,9 @@ const localSeconds = (value:string) => value ? value.length === 16 ? `${value}:0
 const inputDate = (value?:string|null) => value?.slice(0,16) || ''
 const defaultStart = () => { const date=new Date();date.setMinutes(0,0,0);date.setHours(date.getHours()+1);return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}T${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}` }
 
-function Action({onOpen}:{onOpen:()=>void}) { return <button className="button button-quiet" onClick={onOpen}><Repeat2 size={17}/>周期作业</button> }
+const actionLabel = '周期作业'
+
+function Action({onOpen}:{onOpen:()=>void}) { return <button className="button button-quiet" onClick={onOpen}><Repeat2 size={17}/>{actionLabel}</button> }
 
 function GroupRow({group,selected,courseName,fileCount,onSelect}:{group:AssignmentGroup;selected:boolean;courseName:string;fileCount:number;onSelect:()=>void}) {
   const total=group.completed+group.active+group.planned+group.skipped
@@ -110,4 +112,4 @@ function SettingsCard({enabled,snapshot,onToggle}:{enabled:boolean;snapshot:Snap
 
 function AssignmentAddon({assignment,snapshot}:{assignment:Assignment;snapshot:Snapshot}) { const group=cachedGroups.find(item=>item.assignment_ids.includes(assignment.id));if(!group)return null;const summary=cachedSummaries.find(item=>item.id===group.id);return <section className="assignment-recurring-source" aria-label="周期来源"><div className="assignment-recurring-info"><Repeat2 size={17} aria-hidden="true"/><div><h3>周期来源</h3><strong>{group.title}</strong><p>{summary?<><span>{summary.rule_label}</span><span>{summary.range_label}</span></>:group.subtitle}</p></div></div><SharedFiles seriesId={group.id} snapshot={snapshot} editable={false}/></section> }
 
-export const module: AppModule = { id:manifest.id,descriptor:manifest,savedMessage:'周期任务已保存',Action,Overlay,SettingsCard,assignmentList:{loadGroups:async()=>{cachedSummaries=await recurring.overview();cachedGroups=cachedSummaries.map(asGroup);return cachedGroups},Row:GroupRow,Detail:SeriesDetailView,AssignmentAddon} }
+export const module: AppModule = { id:manifest.id,descriptor:manifest,savedMessage:'周期任务已保存',actionLabel,Action,Overlay,SettingsCard,assignmentList:{loadGroups:async()=>{cachedSummaries=await recurring.overview();cachedGroups=cachedSummaries.map(asGroup);return cachedGroups},Row:GroupRow,Detail:SeriesDetailView,AssignmentAddon} }

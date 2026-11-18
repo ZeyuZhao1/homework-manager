@@ -11,9 +11,15 @@ import './workspace.css'
 import './glassLayers.css'
 import './controlShapes.css'
 import './floatingGlass.css'
+import './macosChrome.css'
+import { service } from './service'
+import { installMacosContentControls } from './macosContentControls'
 
+if (service.isMacDesktop) document.documentElement.dataset.macosDesktop = 'true'
+
+const disposeContentControls = installMacosContentControls()
 const disposeViewport = installMobileViewport()
-if (import.meta.hot) import.meta.hot.dispose(disposeViewport)
+if (import.meta.hot) import.meta.hot.dispose(() => { disposeViewport(); disposeContentControls() })
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

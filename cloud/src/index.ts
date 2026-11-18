@@ -23,7 +23,7 @@ export class PersonalSpace extends DurableObject<Env> {
     const path=new URL(request.url).pathname,method=request.method
     const origin=request.headers.get('origin')
     if(origin && origin!==new URL(request.url).origin && !['GET','HEAD'].includes(method))throw new ApiError(403,'Same-origin request required')
-    if(path==='/api/health'&&method==='GET')return json({protocol:1,service:'homework-personal-sync'})
+    if(path==='/api/health'&&method==='GET')return json({protocol:1,service:'homework-personal-sync',capabilities:{course_paths:true}})
     if(path==='/api/bootstrap'&&method==='POST')return this.auth.bootstrap(request)
     if(path==='/api/pair/start'&&method==='POST')return this.auth.start(request)
     if(path==='/api/pair/poll'&&method==='POST')return this.auth.poll(request)

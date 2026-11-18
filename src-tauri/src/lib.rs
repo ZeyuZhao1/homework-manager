@@ -6,13 +6,14 @@ mod import_sync;
 mod modules;
 mod printing;
 mod window;
+mod macos_chrome;
 mod sync;
 mod service_config;
 
 use tauri::Manager;
 
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -43,6 +44,8 @@ pub fn run() {
             sync::sync_remove_cloud_file,
             printing::read_system_print_document,
             printing::show_system_print_dialog,
+            macos_chrome::update_macos_chrome,
+            macos_chrome::update_macos_content_controls,
             db::load_snapshot,
             db::save_semester,
             db::delete_semester,
@@ -85,7 +88,27 @@ pub fn run() {
             modules::assignment_import::save_routing,
             modules::assignment_import::prompt_directory,
             modules::assignment_import::open_prompt_directory,
-        ])
-        .run(tauri::generate_context!())
-        .expect("failed to start 作业簿");
+        ]);
+    #[cfg(target_os = "macos")]
+    let builder = builder.on_window_event(|window, event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            if window.label() == "main" {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        }
+    });
+    builder
+        .build(tauri::generate_context!())
+        .expect("failed to start 作业簿")
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                if let Some(window) = _app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }

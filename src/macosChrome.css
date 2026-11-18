@@ -1,0 +1,402 @@
+/* AppKit owns material on macOS. Web content uses opaque surfaces and system type. */
+:root[data-macos-desktop] {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", system-ui, sans-serif;
+  --bg: #f5f5f7;
+  --surface: #fff;
+  --surface-2: #efeff2;
+  --field-bg: #f5f5f7;
+  --text: #202023;
+  --muted: #62636b;
+  --border: #dedee4;
+  --hover: #f1f3f7;
+  --selected: #e9f1fc;
+  --inspector: #f9f9fb;
+  --field-border: #d2d2d9;
+  --workspace-radius: 14px;
+}
+
+:root[data-macos-desktop][data-theme="dark"] {
+  --bg: #1d1d1f;
+  --surface: #252527;
+  --surface-2: #2d2d30;
+  --field-bg: #2b2b2e;
+  --text: #f1f1f4;
+  --muted: #a8a8af;
+  --border: #3d3d42;
+  --hover: #2f2f32;
+  --selected: #29394d;
+  --inspector: #222225;
+  --field-border: #48484e;
+}
+
+:root[data-macos-desktop] .main-content {
+  background: var(--bg);
+}
+
+:root[data-macos-desktop] :is(
+  .sidebar, .modal, .recurring-drawer, .file-drawer, .ai-drawer, .import-inbox,
+  .modal-header, .modal-footer, .drawer-header, .drawer-heading, .drawer-footer,
+  .import-inbox > header, .import-inbox > footer, .mobile-detail-bar,
+  .mobile-more-menu, .file-context-menu, .recent-options, .mobile-bottom-nav
+) {
+  background: var(--surface);
+  border-color: var(--border);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root[data-macos-desktop] :is(.modal-backdrop, .drawer-scrim, .import-backdrop) {
+  background: #0006;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root[data-macos-desktop] :is(#root, body) .glass-control {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root[data-macos-desktop] :is(.startup-mark, .startup-retry) {
+  background: var(--surface);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app-shell[data-native-chrome] > .main-content {
+  padding-bottom: 24px;
+}
+
+/* Keep the DOM control in layout and available as a fallback until AppKit confirms installation. */
+[data-native-installed] { visibility: hidden !important; }
+
+/* macOS action controls use pill outlines; content rows retain their own shape. */
+:root[data-macos-desktop] #root :is(
+  button.button, button.icon-button, button.add-inline, button.glass-control,
+  .overview-tabs, .overview-tabs > button, .overview-layout, .overview-layout > button
+) {
+  border-radius: 9999px;
+}
+
+:root[data-macos-desktop] #root :is(.status-select, .overview-all > button) {
+  border-radius: 9999px;
+}
+
+:root[data-macos-desktop] #root .status-select {
+  min-inline-size: 104px;
+}
+
+:root[data-macos-desktop] #root .detail-column > .add-inline {
+  inline-size: max-content;
+  max-inline-size: 100%;
+  padding-inline: 18px;
+}
+
+/* Use pull-down menus in the split inspector and inline actions in the single-page detail. */
+.detail-menu { display: none; }
+
+/* Keep controls in the list header. Only the results and inspector body scroll. */
+.app-shell[data-native-chrome]:is([data-view="overview"], [data-view="files"], [data-view="settings"]),
+.app-shell[data-native-workspace] {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+.app-shell[data-native-chrome][data-view="overview"] > .main-content,
+.app-shell[data-native-workspace]:is([data-view="all"], [data-view="course"], [data-view="plans"]) > .main-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 20px clamp(16px, 3vw, 30px) 0;
+}
+.app-shell[data-native-chrome][data-view="overview"] .page-header,
+.app-shell[data-native-workspace] .page-header { flex: none; margin-bottom: 10px; }
+.app-shell[data-native-chrome][data-view="overview"] .page-header h1,
+.app-shell[data-native-workspace] .page-header h1 { font-size: 26px; line-height: 32px; margin-bottom: 0; }
+.app-shell[data-native-chrome][data-view="overview"] .task-workspace,
+.app-shell[data-native-workspace] .task-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+.app-shell[data-native-workspace] .task-workspace[data-has-detail] {
+  grid-template-columns: minmax(0, 1.2fr) minmax(294px, 1fr);
+}
+.app-shell[data-native-workspace] .task-workspace:not([data-has-detail]) .task-workspace-detail { display: none; }
+.app-shell[data-native-workspace] .task-workspace-list { min-height: 0; overflow: auto; padding-bottom: 20px; }
+.app-shell[data-native-chrome][data-view="overview"] .task-workspace-list { display: flex; flex-direction: column; min-height: 0; overflow: hidden; padding-bottom: 0; }
+.app-shell[data-native-chrome] .overview-content { display: flex; flex: 1; flex-direction: column; min-height: 0; margin: 0; position: relative; }
+.app-shell[data-native-chrome] .overview-controls { flex: none; padding-bottom: 16px; }
+.app-shell[data-native-chrome] .overview-meta { min-height: 32px; margin-bottom: 10px; }
+.app-shell[data-native-chrome] .overview-selectors { gap: 8px 12px; }
+.app-shell[data-native-chrome] .overview-tabs,
+.app-shell[data-native-chrome] .overview-layout { height: 34px; padding: 2px; }
+.app-shell[data-native-chrome] .overview-selectors .overview-tabs { flex-basis: min(100%, 210px); }
+.app-shell[data-native-chrome] .overview-selectors .overview-layout { flex-basis: min(100%, 120px); }
+.app-shell[data-native-chrome] .overview-selectors button { min-width: 0; min-height: 0; padding: 0 3px; font-size: 13px; }
+.app-shell[data-native-chrome] .overview-meta .overview-all button { min-height: 32px; padding: 0 13px; font-size: 13px; }
+.app-shell[data-native-chrome] .overview-meta .overview-all {
+  position: absolute;
+  inset: auto 12px 14px auto;
+  z-index: 1;
+}
+.app-shell[data-native-chrome] .overview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 0 60px;
+  scroll-padding-bottom: 60px;
+}
+.app-shell[data-native-chrome] .overview-meta .overview-all button:not([data-native-installed]) {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.app-shell[data-native-chrome] .overview-queue { margin-top: 0; }
+.app-shell[data-native-chrome] .overview-queue-list { border: 1px solid var(--border); border-radius: 12px; }
+.app-shell[data-native-chrome] .overview-queue-item { min-height: 61px; padding: 11px 14px; }
+.app-shell[data-native-chrome] .overview-queue-main strong { font-size: 14px; line-height: 20px; }
+.app-shell[data-native-workspace] .assignment-table-wrap { border-radius: 12px; }
+.app-shell[data-native-workspace] [data-has-detail] .assignment-table th:nth-child(n+5),
+.app-shell[data-native-workspace] [data-has-detail] .assignment-table td:nth-child(n+5) { display: none; }
+.app-shell[data-native-workspace] .assignment-table th,
+.app-shell[data-native-workspace] .assignment-table td { padding-inline: 10px; }
+.app-shell[data-native-workspace] [data-has-detail] .assignment-table th:first-child { width: 43%; }
+.app-shell[data-native-workspace] [data-has-detail] .assignment-table th:nth-child(2) { width: 18%; }
+.app-shell[data-native-workspace] [data-has-detail] .assignment-table th:nth-child(3) { width: 22%; }
+.app-shell[data-native-workspace] [data-has-detail] .assignment-table th:nth-child(4) { width: 17%; }
+.app-shell[data-native-chrome] .overview-queue-item.selected { box-shadow: inset 3px 0 var(--blue); }
+
+@media (min-width: 781px) {
+  .app-shell[data-native-workspace] .task-workspace-detail {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    margin: 0;
+    padding: 16px 14px 0;
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: var(--workspace-radius) var(--workspace-radius) 0 0;
+    background: var(--inspector);
+  }
+  .app-shell[data-native-workspace] .task-workspace-detail .detail-panel {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .app-shell[data-native-workspace] .task-workspace-detail .detail-icon { display: none; }
+  .app-shell[data-native-workspace] .detail-panel .detail-heading { flex: none; margin: 0 0 8px; padding: 0; border: 0; }
+  .app-shell[data-native-workspace] .detail-viewport {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+  .app-shell[data-native-workspace] .detail-command-bar {
+    position: absolute;
+    inset: 0 5px auto 0;
+    z-index: 1;
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    background: transparent;
+    pointer-events: none;
+  }
+  .app-shell[data-native-workspace] .detail-command-bar :is(button, select) { pointer-events: auto; }
+  .app-shell[data-native-workspace] .detail-title h2 { font-size: 19px; line-height: 25px; overflow-wrap: anywhere; }
+  .app-shell[data-native-workspace] .detail-panel .detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: 6px; }
+  .app-shell[data-native-workspace] .detail-web-action { display: none; }
+  .app-shell[data-native-workspace] .detail-menu {
+    display: block;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    padding: 0 6px 0 10px;
+    font: inherit;
+    font-size: 13px;
+  }
+  .app-shell[data-native-workspace] .detail-actions .status-select { inline-size: 92px; min-inline-size: 92px; }
+  .app-shell[data-native-workspace] .detail-add { inline-size: 100px; background: var(--blue-soft); }
+  .app-shell[data-native-workspace] .detail-more { inline-size: 62px; }
+  .app-shell[data-native-workspace] .detail-body {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: calc(var(--detail-command-height, 34px) + 16px) 0 24px;
+    scroll-padding-top: calc(var(--detail-command-height, 34px) + 8px);
+    scrollbar-gutter: stable;
+  }
+  .app-shell[data-native-workspace] .detail-column > .add-inline { display: none; }
+  .app-shell[data-native-workspace] .task-workspace-detail .detail-columns { grid-template-columns: 1fr; }
+  .app-shell[data-native-workspace] .task-workspace-detail .detail-column { border-left: 0; border-top: 1px solid var(--border); padding: 18px 0; }
+  .app-shell[data-native-workspace] .task-workspace-detail .detail-column:first-child { border-top: 0; padding-top: 0; }
+  .app-shell[data-native-workspace] .task-workspace-detail .detail-series:not([hidden]) { flex: 1; min-height: 0; overflow: auto; }
+}
+
+.workspace-inspector-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  min-height: 28px;
+}
+.workspace-inspector-tools .icon-button { margin-inline-start: auto; }
+.workspace-inspector-tools .workspace-back { margin: 0; }
+.app-shell[data-native-chrome]:not([data-native-workspace]):not([data-view="overview"]) > .main-content { padding-bottom: 24px; }
+
+/* Shared, restrained surfaces for the pages and forms surrounding the workspace. */
+:root[data-macos-desktop] #root :is(.settings-card, .file-page-list) {
+  border: 1px solid var(--border);
+  border-radius: var(--workspace-radius);
+  background: var(--surface);
+  box-shadow: none;
+}
+:root[data-macos-desktop] #root .settings-category-nav button { min-height: 56px; border-radius: 10px; }
+:root[data-macos-desktop] #root .settings-category-nav strong { font-size: 13px; }
+:root[data-macos-desktop] #root .settings-category-nav small { font-size: 12px; }
+:root[data-macos-desktop] #root .workspace-settings .settings-card { padding: 20px; }
+:root[data-macos-desktop] #root .workspace-settings .settings-card h2 { font-size: 16px; }
+:root[data-macos-desktop] #root .file-page-main > strong { font-size: 14px; }
+:root[data-macos-desktop] #root .file-page-icon { border-radius: 8px; }
+:root[data-macos-desktop] #root .form-field { font-size: 13px; font-weight: 600; }
+:root[data-macos-desktop] #root .form-field :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border-radius: 8px;
+  background: var(--field-bg);
+  padding-inline: 11px;
+}
+:root[data-macos-desktop] #root :is(.modal, .file-drawer, .recurring-drawer, .ai-drawer, .import-inbox) { box-shadow: var(--shadow); }
+
+/* Match the fixed headers across the task, file and settings workspaces. */
+.app-shell[data-native-chrome]:is([data-view="files"], [data-view="settings"]) > .main-content {
+  padding: 20px clamp(16px, 3vw, 30px) 0;
+}
+.app-shell[data-native-chrome]:is([data-view="files"], [data-view="settings"]) .page-header {
+  flex: none;
+  margin-bottom: 16px;
+}
+.app-shell[data-native-chrome]:is([data-view="files"], [data-view="settings"]) .page-header h1 {
+  margin-bottom: 0;
+  font-size: 26px;
+  line-height: 32px;
+}
+.app-shell[data-native-chrome][data-view="settings"] > .main-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+  min-height: 0;
+}
+.app-shell[data-native-chrome][data-view="settings"] .workspace-settings {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+.app-shell[data-native-chrome] .settings-category-nav { position: static; }
+.app-shell[data-native-chrome] .settings-category-content {
+  display: flex;
+  position: relative;
+  align-self: stretch;
+  min-height: 0;
+}
+.app-shell[data-native-chrome] .settings-scroll {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  min-width: 0;
+  padding-bottom: 24px;
+}
+.app-shell[data-native-chrome] [data-connections] > .settings-scroll {
+  padding-top: 48px;
+  scroll-padding-top: 48px;
+}
+.app-shell[data-native-chrome] .connection-switcher {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  pointer-events: none;
+  background: transparent;
+  margin: 0;
+}
+.app-shell[data-native-chrome] .connection-switcher button { pointer-events: auto; }
+@media (max-width: 780px) {
+  .app-shell[data-native-chrome][data-view="settings"] .workspace-settings {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    align-items: stretch;
+  }
+  .app-shell[data-native-chrome] .settings-category-nav { margin: 0; }
+  .app-shell[data-native-chrome] .settings-category-nav button { min-height: 45px; }
+  .app-shell[data-native-chrome] .settings-category-nav small { display: none; }
+}
+.app-shell[data-native-chrome][data-view="files"] > .main-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.app-shell[data-native-chrome][data-view="files"] .file-workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.app-shell[data-native-chrome] .file-page-toolbar {
+  flex: none;
+  margin-bottom: 12px;
+}
+.app-shell[data-native-chrome] .file-workspace-body {
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 20px;
+}
+.app-shell[data-native-chrome] .file-page-toolbar :is(select, .search-field) {
+  min-height: 34px;
+  height: 34px;
+}
+.app-shell[data-native-chrome] .file-page-toolbar > select { font-size: 13px; }
+
+:root[data-macos-desktop] .detail-panel :is(.detail-title-row, .detail-actions) { min-width: 0; }
+:root[data-macos-desktop] .detail-actions .status-select { min-height: 34px; }
+:root[data-macos-desktop] .detail-actions .status-select[data-native-opaque] {
+  background-color: var(--surface-2);
+}
+
+:root[data-macos-desktop] .modal-backdrop .modal {
+  border-radius: 18px;
+  overflow: hidden;
+}
+:root[data-macos-desktop] :is(.modal-header, .drawer-header, .drawer-heading, .import-inbox > header) {
+  padding-block: 15px;
+  border-bottom: 1px solid var(--border);
+}
+:root[data-macos-desktop] :is(.modal-footer, .drawer-footer, .import-inbox > footer) {
+  padding-block: 12px;
+  border-top: 1px solid var(--border);
+}
+:root[data-macos-desktop] :is(.modal-header, .drawer-header, .drawer-heading) .icon-button {
+  width: 32px;
+  height: 32px;
+}
+:root[data-macos-desktop] :is(.modal-body, .drawer-scroll, .detail-body, .file-workspace-body) {
+  overscroll-behavior: contain;
+}

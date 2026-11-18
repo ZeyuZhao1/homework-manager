@@ -397,18 +397,36 @@ fn relink_file_impl(conn: &rusqlite::Connection, file_id: &str, path: &str) -> R
 
 fn course_root(conn: &rusqlite::Connection, course_id: &str) -> Result<PathBuf, String> {
     let root: String = conn.query_row("SELECT folder_path FROM courses WHERE id=?1", [course_id], |r| r.get(0)).map_err(|e| e.to_string())?;
-    if root.is_empty() { return Err("此课程尚未关联文件夹".into()); }
-    fs::canonicalize(root).map_err(|_| "课程文件夹不存在".into())
+    let root = PathBuf::from(root);
+    if !root.is_absolute() { return Err("请设置本机的课程文件夹".into()); }
+    if !root.is_dir() { return Err("课程文件夹不存在或无法访问".into()); }
+    Ok(root)
 }
 
 #[tauri::command]
 pub fn browse_directory(state: State<'_, AppState>, course_id: String, relative_path: String) -> Result<Vec<DirectoryEntry>, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
-    let root = course_root(&conn, &course_id)?;
-    let requested = fs::canonicalize(root.join(&relative_path))
-        .or_else(|_| fs::canonicalize(root.join(relative_path.replace('\\', "/"))))
-        .map_err(|_| "文件夹不存在".to_string())?;
-    if !requested.starts_with(&root) || !requested.is_dir() { return Err("路径超出课程文件夹".into()); }
+    browse_course_directory(&conn, &course_id, &relative_path)
+}
+
+fn browse_course_directory(conn: &rusqlite::Connection, course_id: &str, relative: &str) -> Result<Vec<DirectoryEntry>, String> {
+    let root = course_root(conn, course_id)?;
+    let base = fs::canonicalize(&root).map_err(|_| "课程文件夹不存在或无法访问")?;
+    let lookup = |relative: &Path| {
+        if relative.components().any(|part| !matches!(part, std::path::Component::Normal(_) | std::path::Component::CurDir)) {
+            return Err("路径超出课程文件夹");
+        }
+        let requested = root.join(relative);
+        let actual = fs::canonicalize(&requested).map_err(|_| "文件夹不存在")?;
+        if !actual.starts_with(&base) || !actual.is_dir() { return Err("路径超出课程文件夹"); }
+        Ok(requested)
+    };
+    // Keep the configured path in picker rows even when the root is a symlink.
+    // On Unix a literal backslash in a directory name takes precedence.
+    let requested = match lookup(Path::new(relative)) {
+        Err("文件夹不存在") if relative.contains('\\') => lookup(Path::new(&relative.replace('\\', "/")))?,
+        result => result?,
+    };
     let mut entries = Vec::new();
     for entry in fs::read_dir(requested).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -547,6 +565,29 @@ mod tests {
         LinkInput { id:String::new(),assignment_id:assignment_id.into(),path:path.to_string_lossy().to_string(),role:role.into(),page:String::new(),chapter:String::new(),problem:String::new(),note:String::new() }
     }
     fn naming(section: &str) -> NamingInput { NamingInput { material:"textbook".into(),sections:section.into(),version:"1".into(),scope_kind:"section".into() } }
+
+    #[cfg(unix)]
+    #[test]
+    fn course_picker_uses_the_configured_root_and_rejects_escape() {
+        let temp = std::env::temp_dir().join(format!("course-browse-{}", Uuid::new_v4()));
+        let actual = temp.join("actual");
+        let configured = temp.join("configured");
+        fs::create_dir_all(actual.join("第一章")).unwrap();
+        fs::write(actual.join("第一章/练习.pdf"), b"test").unwrap();
+        std::os::unix::fs::symlink(&actual, &configured).unwrap();
+        std::os::unix::fs::symlink(&temp, actual.join("escape")).unwrap();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE courses(id TEXT PRIMARY KEY,folder_path TEXT)", []).unwrap();
+        conn.execute("INSERT INTO courses VALUES('c',?1)", [configured.to_str().unwrap()]).unwrap();
+        let items = browse_course_directory(&conn, "c", "").unwrap();
+        assert_eq!(items[0].path, normal_path(&configured.join("第一章")));
+        let items = browse_course_directory(&conn, "c", "第一章").unwrap();
+        assert_eq!(items[0].path, normal_path(&configured.join("第一章/练习.pdf")));
+        assert_eq!(registered_course_path(&conn, &items[0].path, Some("c")).unwrap(), "course://c/第一章/练习.pdf");
+        assert!(browse_course_directory(&conn, "c", "../actual").is_err());
+        assert!(browse_course_directory(&conn, "c", "escape").is_err());
+        fs::remove_dir_all(temp).unwrap();
+    }
 
     #[test]
     fn registered_drive_references_support_common_and_module_links() {

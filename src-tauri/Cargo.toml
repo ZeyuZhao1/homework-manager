@@ -1,6 +1,6 @@
 [package]
 name = "homework-manager"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 
 [lib]
@@ -9,6 +9,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+
+[target.'cfg(target_os = "macos")'.build-dependencies]
+cc = "1"
 
 [dependencies]
 tauri = { version = "2", features = [] }

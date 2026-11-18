@@ -2,7 +2,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { AlertCircle, ArrowLeft, BookOpen, CalendarDays, ChevronDown, ChevronLeft, FileText, Folder, Inbox, ClipboardList, Repeat2, Moon, Plus, Search, Settings2, SlidersHorizontal, Sun, X } from 'lucide-react'
 import { service } from './service'
 import { blankAssignment } from './types'
-import type { Assignment, Course, FileAsset, FileLink, FileRole, ModuleDescriptor, Semester, Settings, Snapshot, Status } from './types'
+import type { Assignment, Course, FileAsset, FileLink, FileRole, MacosChromeState, ModuleDescriptor, Semester, Settings, Snapshot, Status } from './types'
 import { AssignmentDetail, AssignmentTable, dueState, errorText, isOpen } from './ui'
 import { CourseEditor, SemesterEditor } from './dialogs'
 import { appModules } from './moduleRegistry'
@@ -18,9 +18,20 @@ import './App.css'
 import './mobile.css'
 import { StartupScreen } from './StartupScreen'
 import { SyncGate } from './sync/SyncGate'
+import { useMacosChrome } from './macosChrome'
 
 type View = 'overview' | 'course' | 'all' | 'files' | 'settings' | 'plans'
-type Filter = 'open' | 'all' | 'doing' | 'done' | 'overdue' | 'submitted' | 'week'
+const assignmentFilters = [
+  { id: 'open', name: '未提交' },
+  { id: 'all', name: '全部' },
+  { id: 'doing', name: '进行中' },
+  { id: 'done', name: '待提交' },
+  { id: 'overdue', name: '已逾期' },
+  { id: 'week', name: '7 天内' },
+  { id: 'submitted', name: '已提交' },
+] as const
+const compactAssignmentFilters = [{ id: 'open', name: '待处理' }, assignmentFilters[1], assignmentFilters[6]] as const
+type Filter = (typeof assignmentFilters)[number]['id']
 
 function isUpcoming(value: string | null) {
   if (!value) return false
@@ -50,7 +61,7 @@ function App() {
     const scrollTop = main?.scrollTop || 0
     detailRef.current?.focus()
     const handleKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || document.querySelector('[role="menu"]')) return
+      if (event.defaultPrevented || detailRef.current?.inert || event.isComposing || event.keyCode === 229 || document.querySelector('[role="menu"]')) return
       if (event.key === 'Escape') {
         if (document.querySelector('.modal-backdrop, .drawer-scrim')) return
         event.preventDefault(); detailRef.current?.querySelector<HTMLButtonElement>('.mobile-detail-bar button')?.click()
@@ -89,6 +100,8 @@ function App() {
   const [assignmentGroups, setAssignmentGroups] = useState<AssignmentGroup[]>([])
   const [filter, setFilter] = useState<Filter>('open')
   const [search, setSearch] = useState('')
+  const [searchReset, setSearchReset] = useState(0)
+  const searchRevision = useRef(0)
   const deferredSearch = useDeferredValue(search)
   const [editor, setEditor] = useState<Assignment | null>(null)
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
@@ -133,7 +146,11 @@ function App() {
     update(); window.addEventListener('homeworkbook:module-state-changed',update)
     return () => window.removeEventListener('homeworkbook:module-state-changed',update)
   }, [refreshModules])
-  useEffect(() => { mainRef.current?.scrollTo({ top: 0, left: 0 }) }, [view, courseId])
+  useEffect(() => {
+    const main = mainRef.current
+    main?.scrollTo({ top: 0, left: 0 })
+    if (service.isMacDesktop) main?.querySelector('.task-workspace-list')?.scrollTo({ top: 0, left: 0 })
+  }, [view, courseId])
   const currentTheme = themePreview ?? snapshot?.settings.theme
   useEffect(() => {
     if (!currentTheme) return
@@ -245,21 +262,34 @@ function App() {
       if (!saved) applyTheme(snapshot.settings.theme)
     })
   }
-  const openCourse = (id: string) => { setDetailParentId(''); setMobileDetailOpen(false); setMoreOpen(false); setCourseId(id); setView('course'); setFilter('open'); setSearch(''); setSelectedId(''); setSelectedGroupId('') }
-  const chooseView = (next: View) => { setDetailParentId(''); mainRef.current?.scrollTo({ top: 0, left: 0 }); setMobileDetailOpen(false); setMoreOpen(false); setView(next); setFilter('open'); setSearch(''); setSelectedId(''); setSelectedGroupId('') }
+  const clearSearch = () => {
+    setSearch('')
+    if (service.isMacDesktop) setSearchReset(++searchRevision.current)
+  }
+  const openCourse = (id: string) => { setDetailParentId(''); setMobileDetailOpen(false); setMoreOpen(false); setCourseId(id); setView('course'); setFilter('open'); clearSearch(); setSelectedId(''); setSelectedGroupId('') }
+  const chooseView = (next: View) => { setDetailParentId(''); mainRef.current?.scrollTo({ top: 0, left: 0 }); setMobileDetailOpen(false); setMoreOpen(false); setView(next); setFilter('open'); clearSearch(); setSelectedId(''); setSelectedGroupId('') }
   const showAssignments = (nextFilter: OverviewFilter) => { chooseView('all'); setFilter(nextFilter); mainRef.current?.scrollTo({ top: 0 }) }
   const openOverviewAssignment = (id: string) => { setDetailParentId(''); setSelectedId(id); setSelectedGroupId(''); setMobileDetailOpen(true); setMoreOpen(false) }
   const openOverviewGroup = (id: string) => { setDetailParentId(''); setSelectedGroupId(id); setSelectedId(''); setMobileDetailOpen(true); setMoreOpen(false) }
+  const seriesScrollArea = () => detailRef.current?.querySelector('.mobile-detail-body') ||
+    mainRef.current?.closest('[data-native-workspace]')?.querySelector('.detail-series') || mainRef.current
   const openGroupAssignment = (id: string) => {
-    parentDetail.current = { scrollTop: (detailRef.current?.querySelector('.mobile-detail-body') || mainRef.current)?.scrollTop || 0, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null }
+    parentDetail.current = { scrollTop: seriesScrollArea()?.scrollTop || 0, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null }
     setDetailParentId(selectedGroupId); setSelectedGroupId(''); setSelectedId(id); setMobileDetailOpen(true)
     requestAnimationFrame(() => { const body = detailRef.current?.querySelector('.mobile-detail-body'); if (body) body.scrollTop = 0; detailRef.current?.focus({ preventScroll: true }) })
   }
   const closeDetail = () => {
     if (detailParentId && assignmentGroups.some(group => group.id === detailParentId)) {
       setSelectedGroupId(detailParentId); setSelectedId(''); setDetailParentId('')
-      requestAnimationFrame(() => { const body = detailRef.current?.querySelector('.mobile-detail-body') || mainRef.current; if (body) body.scrollTop = parentDetail.current.scrollTop; if (parentDetail.current.focus?.isConnected) parentDetail.current.focus.focus({ preventScroll: true }); else detailRef.current?.focus({ preventScroll: true }) })
+      requestAnimationFrame(() => { const body = seriesScrollArea(); if (body) body.scrollTop = parentDetail.current.scrollTop; if (parentDetail.current.focus?.isConnected) parentDetail.current.focus.focus({ preventScroll: true }); else detailRef.current?.focus({ preventScroll: true }) })
     } else { setMobileDetailOpen(false); setDetailParentId('') }
+  }
+  const dismissInspector = () => {
+    setSelectedId('')
+    setSelectedGroupId('')
+    setDetailParentId('')
+    setMobileDetailOpen(false)
+    mainRef.current?.focus({ preventScroll: true })
   }
   const saveAssignment = async (payload: Assignment) => { const okay = await run(() => service.saveAssignment(payload), payload.id ? '作业已更新' : '作业已创建', true); if (!okay) throw new Error('保存失败'); setEditor(current => current === editor ? null : current) }
   const setStatus = async (item: Assignment, status: Status) => { await run(() => service.saveAssignment({ ...item, status }), '状态已更新', true) }
@@ -281,71 +311,146 @@ function App() {
   // Keep the source plan mounted while reading a child; returning then restores
   // its scroll position and original focused control without an async reload.
   const detailContent = snapshot && (detailGroup || selected) ? <>
-    {detailGroup && GroupDetail ? <div hidden={!!detailParentId} inert={detailParentId ? true : undefined}><GroupDetail key={detailGroup.id} group={detailGroup} snapshot={snapshot} onRefresh={refresh} onEditAssignment={setEditor} onOpenAssignment={openGroupAssignment}/></div> : null}
-    {!selectedGroup && selected ? <AssignmentDetail key={selected.id} printModules={printModules} item={selected} course={snapshot.courses.find(c => c.id === selected.course_id)} links={currentLinks} files={snapshot.files} fileHistory={currentFileHistory} onEdit={() => setEditor(selected)} onDelete={deleteSelected} onAddFile={role => setFileDrawer({ assignmentId: selected.id, role })} onEditLink={editing => setFileDrawer({ assignmentId: selected.id, editing })} onRename={setRenameLink} onStatus={status => setStatus(selected,status)} onRelink={relink} addon={enabledAppModules.map(module=>{const Addon=module.assignmentList?.AssignmentAddon;return Addon?<Addon key={module.id} assignment={selected} snapshot={snapshot}/>:null})}/> : null}
+    {detailGroup && GroupDetail ? <div className="detail-series" hidden={!!detailParentId} inert={detailParentId ? true : undefined}><GroupDetail key={detailGroup.id} group={detailGroup} snapshot={snapshot} onRefresh={refresh} onEditAssignment={setEditor} onOpenAssignment={openGroupAssignment}/></div> : null}
+    {!selectedGroup && selected ? <AssignmentDetail printModules={printModules} item={selected} onClose={!isMobile ? dismissInspector : undefined} course={snapshot.courses.find(c => c.id === selected.course_id)} links={currentLinks} files={snapshot.files} fileHistory={currentFileHistory} onEdit={() => setEditor(selected)} onDelete={deleteSelected} onAddFile={role => setFileDrawer({ assignmentId: selected.id, role })} onEditLink={editing => setFileDrawer({ assignmentId: selected.id, editing })} onRename={setRenameLink} onStatus={status => setStatus(selected,status)} onRelink={relink} addon={enabledAppModules.map(module=>{const Addon=module.assignmentList?.AssignmentAddon;return Addon?<Addon key={module.id} assignment={selected} snapshot={snapshot}/>:null})}/> : null}
   </> : null
 
+  const chooseSemester = (id: string) => {
+    if (!snapshot?.semesters.some(semester => semester.id === id)) return
+    setDetailParentId('')
+    setSemesterId(id)
+    setCourseId(snapshot.courses.find(course => course.semester_id === id)?.id || '')
+    setSelectedId('')
+    setSelectedGroupId('')
+    setMoreOpen(false)
+  }
+  const addAssignment = () => {
+    const course = view === 'course' ? activeCourse : semesterCourses[0]
+    if (course) setEditor(blankAssignment(course.id))
+  }
+  const addCourse = () => setCourseEditor({ id: '', semester_id: semesterId, name: '', code: '', folder_path: '' })
+  const toggleTheme = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')
+  const showPlans = enabledAppModules.some(module => module.assignmentList)
+  const showAddAssignment = view !== 'files' && view !== 'settings'
+  const canAddAssignment = semesterCourses.length > 0 && (view !== 'course' || !!activeCourse)
+  const showSearch = view === 'all' || view === 'course'
+  const selectFilter = (next: Filter) => {
+    setFilter(next)
+    setSelectedId('')
+    setSelectedGroupId('')
+  }
+  const inboxLabel = pendingImportCount ? `导入待审核 (${pendingImportCount})` : '导入待审核'
+  const showInbox = syncModules.length > 0
+  const semesters = snapshot?.semesters
+  const chrome = useMemo<Omit<MacosChromeState, 'blocked'> | null>(() => {
+    if (!service.isMacDesktop || !semesters) return null
+    return {
+      semesters: semesters.map(({ id, name }) => ({ id, name })),
+      courses: semesterCourses.map(({ id, name }) => ({ id, name })),
+      semesterId, courseId: view === 'course' ? courseId : '', view,
+      showPlans, showSearch, searchReset, showAddAssignment, canAddAssignment,
+      assignmentFilter: showSearch ? { selected: filter, options: [...assignmentFilters] } : null,
+      tools: showAddAssignment ? [
+        ...enabledAppModules.flatMap(module => module.actionLabel ? [{ id: `module:${module.id}`, name: module.actionLabel }] : []),
+        ...(showInbox ? [{ id: 'inbox', name: inboxLabel }] : []),
+      ] : [],
+      theme: currentTheme ?? 'system',
+    }
+  }, [semesters, semesterCourses, semesterId, courseId, view, showPlans, showSearch, searchReset, showAddAssignment, canAddAssignment, filter, enabledAppModules, showInbox, inboxLabel, currentTheme])
+  const nativeChrome = useMacosChrome(chrome, ({ action, value, searchReset: revision }) => {
+    if (action === 'view') {
+      switch (value) {
+        case 'overview': case 'all': case 'files': case 'settings': chooseView(value); break
+        case 'plans': if (showPlans) chooseView(value); break
+      }
+    } else if (action === 'semester') chooseSemester(value)
+    else if (action === 'course' && semesterCourses.some(course => course.id === value)) openCourse(value)
+    else if (action === 'search' && showSearch && revision === searchRevision.current) setSearch(value)
+    else if (action === 'filter' && showSearch) {
+      const next = assignmentFilters.find(option => option.id === value)
+      if (next) selectFilter(next.id)
+    } else if (action === 'tool' && showAddAssignment) {
+      if (value === 'inbox' && showInbox) setImportInboxOpen(true)
+      else {
+        const module = enabledAppModules.find(item => item.actionLabel && value === `module:${item.id}`)
+        if (module) setActiveModuleId(module.id)
+      }
+    } else if (action === 'quick-add-assignment' && canAddAssignment) addAssignment()
+    else if (action === 'add-course' && semesterId) addCourse()
+    else if (action === 'add-assignment' && showAddAssignment) addAssignment()
+    else if (action === 'toggle-theme') toggleTheme()
+    else if (action === 'set-theme' && (value === 'system' || value === 'light' || value === 'dark')) setTheme(value)
+  })
+
+  const detailCovered = !!(editor || fileDrawer || renameLink || activeModuleId || importInboxOpen || courseEditor || semesterEditor)
+  const webActions = nativeChrome ? enabledAppModules.filter(module => !module.actionLabel) : enabledAppModules
+
   if (!snapshot) return <StartupScreen error={loadError} onRetry={() => { setToast(''); setLoadError(''); void refresh().catch(error => setToast(errorText(error))) }} />
-  return <div className="app-shell" data-view={view} onDragStart={event => event.preventDefault()} onDragOver={event => event.preventDefault()} onDrop={event => event.preventDefault()}>
-    {isMobile ? <header className="mobile-topbar" inert={mobileDetailOpen || undefined}><a className="mobile-brand" href="#" onClick={event => { event.preventDefault(); chooseView('overview') }}><BookOpen size={22} strokeWidth={2} /><strong>作业簿</strong></a><div className="mobile-semester"><select value={semesterId} aria-label="选择学期" onChange={event => { setDetailParentId(''); setSemesterId(event.target.value); setCourseId(snapshot.courses.find(course => course.semester_id === event.target.value)?.id || ''); setSelectedId(''); setSelectedGroupId(''); setMoreOpen(false) }}>{snapshot.semesters.map(semester => <option key={semester.id} value={semester.id}>{semester.name}</option>)}</select><ChevronDown size={14} /></div></header> : null}
-    <aside className="sidebar"><div className="brand"><div className="brand-mark"><BookOpen size={26} strokeWidth={1.8} /></div><div><strong>作业簿</strong></div></div>
-      <div className="semester-row"><CalendarDays className="semester-icon" size={16} aria-hidden="true" /><select value={semesterId} onChange={event => { setDetailParentId(''); setSemesterId(event.target.value); setCourseId(snapshot.courses.find(c => c.semester_id === event.target.value)?.id || ''); setSelectedId(''); setSelectedGroupId('') }} aria-label="选择学期">{snapshot.semesters.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}</select><ChevronDown className="semester-chevron" size={15} aria-hidden="true" /></div>
+  return <div className="app-shell" data-view={view} data-native-chrome={nativeChrome || undefined} data-native-workspace={nativeChrome && !isMobile || undefined} onDragStart={event => event.preventDefault()} onDragOver={event => event.preventDefault()} onDrop={event => event.preventDefault()}>
+    {isMobile && !nativeChrome ? <header className="mobile-topbar" inert={mobileDetailOpen || undefined}><a className="mobile-brand" href="#" onClick={event => { event.preventDefault(); chooseView('overview') }}><BookOpen size={22} strokeWidth={2} /><strong>作业簿</strong></a><div className="mobile-semester"><select value={semesterId} aria-label="选择学期" onChange={event => chooseSemester(event.target.value)}>{snapshot.semesters.map(semester => <option key={semester.id} value={semester.id}>{semester.name}</option>)}</select><ChevronDown size={14} /></div></header> : null}
+    {!nativeChrome ? <aside className="sidebar"><div className="brand"><div className="brand-mark"><BookOpen size={26} strokeWidth={1.8} /></div><div><strong>作业簿</strong></div></div>
+      <div className="semester-row"><CalendarDays className="semester-icon" size={16} aria-hidden="true" /><select value={semesterId} onChange={event => chooseSemester(event.target.value)} aria-label="选择学期">{snapshot.semesters.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}</select><ChevronDown className="semester-chevron" size={15} aria-hidden="true" /></div>
       <nav className="main-nav" aria-label="主导航"><button className={view === 'overview' ? 'active' : ''} onClick={() => chooseView('overview')}><ClipboardList size={19} />待办</button><button className={view === 'all' ? 'active' : ''} onClick={() => chooseView('all')}><FileText size={19} />作业</button>{enabledAppModules.some(module => module.assignmentList) ? <button className={view === 'plans' ? 'active' : ''} onClick={() => chooseView('plans')}><Repeat2 size={19} />周期计划</button> : null}<button className={view === 'files' ? 'active' : ''} onClick={() => chooseView('files')}><Folder size={19} />文件</button><button className={view === 'settings' ? 'active' : ''} onClick={() => chooseView('settings')}><Settings2 size={19} />设置</button></nav>
-      <div className="sidebar-section-title"><span>我的课程</span><button className="icon-button tiny" onClick={() => setCourseEditor({ id: '', semester_id: semesterId, name: '', code: '', folder_path: '' })} title="添加课程"><Plus size={18} /></button></div><nav className="course-nav" aria-label="课程">{semesterCourses.map(course => <button key={course.id} className={view === 'course' && course.id === courseId ? 'active' : ''} onClick={() => openCourse(course.id)}><BookOpen className="course-nav-icon" size={18} strokeWidth={1.6} /><span>{course.name}</span></button>)}</nav>
-      <div className="sidebar-bottom"><button onClick={() => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')}>{snapshot.settings.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}{snapshot.settings.theme === 'system' ? '切换明暗' : snapshot.settings.theme === 'dark' ? '浅色模式' : '深色模式'}</button></div>
-    </aside>
+      <div className="sidebar-section-title"><span>我的课程</span><button className="icon-button tiny" onClick={addCourse} title="添加课程"><Plus size={18} /></button></div><nav className="course-nav" aria-label="课程">{semesterCourses.map(course => <button key={course.id} className={view === 'course' && course.id === courseId ? 'active' : ''} onClick={() => openCourse(course.id)}><BookOpen className="course-nav-icon" size={18} strokeWidth={1.6} /><span>{course.name}</span></button>)}</nav>
+      <div className="sidebar-bottom"><button onClick={toggleTheme}>{snapshot.settings.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}{snapshot.settings.theme === 'system' ? '切换明暗' : snapshot.settings.theme === 'dark' ? '浅色模式' : '深色模式'}</button></div>
+    </aside> : null}
     <main ref={mainRef} tabIndex={-1} className="main-content" inert={isMobile && mobileDetailOpen || undefined}>
 
-      {!snapshot.semesters.length ? <div className="settings-card"><p>先添加学期，再建立课程和作业。</p><button className="button button-primary" onClick={() => setSemesterEditor({ id: '', name: '', source_root: '' })}>添加学期</button></div> : !semesterCourses.length ? <div className="settings-card"><p>当前学期还没有课程。</p><button className="button button-primary" onClick={() => setCourseEditor({ id: '', semester_id: semesterId, name: '', code: '', folder_path: '' })}>添加课程</button></div> : null}
+      {!snapshot.semesters.length ? <div className="settings-card"><p>先添加学期，再建立课程和作业。</p><button className="button button-primary" onClick={() => setSemesterEditor({ id: '', name: '', source_root: '' })}>添加学期</button></div> : !semesterCourses.length ? <div className="settings-card"><p>当前学期还没有课程。</p><button className="button button-primary" onClick={addCourse}>添加课程</button></div> : null}
       {(view === 'course' || view === 'overview' || view === 'all' || view === 'plans') ? <>
         <div className="page-header">
           <div><h1>{view === 'course' ? activeCourse?.name || '课程' : view === 'overview' ? '待办' : view === 'plans' ? '周期计划' : '作业'}</h1>{view !== 'overview' ? <p>{view === 'plans' ? `${overviewGroups.length} 个计划` : `${scoped.length} 项作业 · ${openCount} 项未提交`}</p> : null}</div>
           <div className="header-actions desktop-actions">
-            {syncModules.length ? <button className="button button-quiet" onClick={() => setImportInboxOpen(true)}><Inbox size={17}/>导入待审核{pendingImportCount ? ` (${pendingImportCount})` : ''}</button> : null}
-            {enabledAppModules.map(module => <module.Action key={module.id} onOpen={() => setActiveModuleId(module.id)} />)}
-            <button className="button button-primary glass-control glass-control-pill glass-control-accent" disabled={!semesterCourses.length} onClick={() => setEditor(blankAssignment(view === 'course' ? courseId : semesterCourses[0]?.id || ''))}><Plus size={18} />新建作业</button>
+            {!nativeChrome && showInbox ? <button className="button button-quiet" onClick={() => setImportInboxOpen(true)}><Inbox size={17}/>{inboxLabel}</button> : null}
+            {webActions.map(module => <module.Action key={module.id} onOpen={() => setActiveModuleId(module.id)} />)}
+            {!nativeChrome ? <button className="button button-primary glass-control glass-control-pill glass-control-accent" disabled={!canAddAssignment} onClick={addAssignment}><Plus size={18} />新建作业</button> : null}
           </div>
-          {isMobile ? <div className="mobile-header-actions"><div className="mobile-more" ref={moreRef}>
+          {isMobile && (!nativeChrome || webActions.length > 0) ? <div className="mobile-header-actions"><div className="mobile-more" ref={moreRef}>
             <button className="mobile-create glass-control glass-control-accent" aria-label="新增" aria-expanded={moreOpen} aria-controls="mobile-create-actions" onClick={() => setMoreOpen(open => !open)}><Plus size={23} /></button>
             {moreOpen ? <div className="mobile-more-menu" id="mobile-create-actions" onClick={() => setMoreOpen(false)}>
-              <button className="button button-quiet" disabled={!semesterCourses.length} onClick={() => setEditor(blankAssignment(view === 'course' ? courseId : semesterCourses[0]?.id || ''))}><Plus size={17} />新建作业</button>
-              {enabledAppModules.map(module => <module.Action key={module.id} onOpen={() => setActiveModuleId(module.id)} />)}
-              {enabledAppModules.some(module => module.assignmentList) ? <button className="button button-quiet" onClick={() => chooseView('plans')}><Repeat2 size={17} />管理周期计划</button> : null}
+              {!nativeChrome ? <button className="button button-quiet" disabled={!canAddAssignment} onClick={addAssignment}><Plus size={17} />新建作业</button> : null}
+              {webActions.map(module => <module.Action key={module.id} onOpen={() => setActiveModuleId(module.id)} />)}
+              {!nativeChrome && showPlans ? <button className="button button-quiet" onClick={() => chooseView('plans')}><Repeat2 size={17} />管理周期计划</button> : null}
               {syncModules.length ? <button className="button button-quiet" onClick={() => setImportInboxOpen(true)}><Inbox size={17} />导入待审核{pendingImportCount ? ` (${pendingImportCount})` : ''}</button> : null}
               {service.isCloud ? <button className="button button-quiet" onClick={() => void refresh().catch(error => setToast(errorText(error)))}>刷新数据</button> : null}
             </div> : null}
           </div></div> : null}
         </div>
-        <div className="task-workspace">
+        <div className="task-workspace" data-has-detail={!!detailContent || undefined}>
           <div className="task-workspace-list">
             {view === 'overview' ? <Overview key={semesterId} assignments={scoped} groups={overviewGroups} courses={semesterCourses} onOpenAssignment={openOverviewAssignment} onOpenGroup={openOverviewGroup} onViewAll={showAssignments} selectedId={selectedId} /> : view === 'plans' ? <>
-              <div className="workspace-section-heading"><h2>全部计划</h2><span>{overviewGroups.length} 个</span></div>
-              {overviewGroups.length ? <AssignmentTable items={[]} courses={snapshot.courses} selectedId="" onSelect={openOverviewAssignment} filesFor={filesFor} groupRows={overviewGroups.flatMap(group => {
+              {overviewGroups.length ? <AssignmentTable mode="plans" items={[]} courses={snapshot.courses} selectedId="" onSelect={openOverviewAssignment} filesFor={filesFor} groupRows={overviewGroups.flatMap(group => {
                 const extension = enabledAppModules.find(module => module.id === group.module_id)?.assignmentList
                 if (!extension) return []
                 const Row = extension.Row
                 return [{ id: group.id, sortAt: group.next_at, node: <Row group={group} selected={selectedGroupId === group.id} courseName={snapshot.courses.find(course => course.id === group.course_id)?.name || '课程'} fileCount={snapshot.module_file_links.filter(link => link.module_id === group.module_id && link.owner_id === group.id).length} onSelect={() => openOverviewGroup(group.id)} /> }]
               })} /> : <div className="empty-list"><Repeat2 size={28}/><strong>尚无周期计划</strong><span>使用新增入口安排每周或按序生成的作业。</span></div>}
             </> : <>
-              <div className="section-heading assignment-toolbar">
+              {!nativeChrome ? <div className="section-heading assignment-toolbar">
                 <select className="mobile-course-filter" aria-label="筛选课程" value={view === 'course' ? courseId : ''} onChange={event => event.target.value ? openCourse(event.target.value) : chooseView('all')}><option value="">全部课程</option>{semesterCourses.map(course => <option key={course.id} value={course.id}>{course.name}</option>)}</select>
                 <div className="search-field"><Search size={16} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索作业" aria-label="搜索作业" /></div>
-              </div>
-              <div className="filter-tabs" aria-label="筛选作业状态">{(isMobile ? [['open','待处理'],['all','全部'],['submitted','已提交']] : [['open','未提交'],['all','全部'],['doing','进行中'],['done','待提交'],['overdue','已逾期'],['week','7 天内'],['submitted','已提交']]).map(([key,label]) => <button aria-pressed={filter === key} className={filter === key ? 'active' : ''} onClick={() => { setFilter(key as Filter); setSelectedId(''); setSelectedGroupId('') }} key={key}>{label}</button>)}
-                {isMobile ? <label className={`mobile-filter-more${['doing', 'done', 'overdue', 'week'].includes(filter) ? ' is-filtered' : ''}`}><SlidersHorizontal size={19} />{filter === 'doing' ? <span>进行中</span> : filter === 'done' ? <span>待提交</span> : filter === 'overdue' ? <span>已逾期</span> : filter === 'week' ? <span>7 天内</span> : null}<select aria-label="筛选状态" value={filter} onChange={event => { setFilter(event.target.value as Filter); setSelectedId(''); setSelectedGroupId('') }}><option value="open">待处理</option><option value="all">全部</option><option value="doing">进行中</option><option value="done">待提交</option><option value="overdue">已逾期</option><option value="week">7 天内</option><option value="submitted">已提交</option></select></label> : null}
-              </div>
-              <div className="workspace-results" role="status" aria-busy={search !== deferredSearch}><span>{search !== deferredSearch ? '正在筛选…' : `${visibleAssignments.length} 项结果`}</span>{search || !['open', 'all'].includes(filter) ? <button onClick={() => { setSearch(''); setFilter('open') }}>清除筛选</button> : null}</div>
+              </div> : null}
+              {!nativeChrome ? <div className="filter-tabs" aria-label="筛选作业状态">{(isMobile ? compactAssignmentFilters : assignmentFilters).map(({ id: key, name: label }) => <button aria-pressed={filter === key} className={filter === key ? 'active' : ''} onClick={() => selectFilter(key)} key={key}>{label}</button>)}
+                {isMobile ? <label className={`mobile-filter-more${['doing', 'done', 'overdue', 'week'].includes(filter) ? ' is-filtered' : ''}`}><SlidersHorizontal size={19} />{filter === 'doing' ? <span>进行中</span> : filter === 'done' ? <span>待提交</span> : filter === 'overdue' ? <span>已逾期</span> : filter === 'week' ? <span>7 天内</span> : null}<select aria-label="筛选状态" value={filter} onChange={event => selectFilter(event.target.value as Filter)}><option value="open">待处理</option><option value="all">全部</option><option value="doing">进行中</option><option value="done">待提交</option><option value="overdue">已逾期</option><option value="week">7 天内</option><option value="submitted">已提交</option></select></label> : null}
+              </div> : null}
+              <div className="workspace-results" role="status" aria-busy={search !== deferredSearch}><span>{search !== deferredSearch ? '正在筛选…' : `${assignmentFilters.find(option => option.id === filter)?.name ?? '全部'} · ${visibleAssignments.length} 项`}</span>{search || !['open', 'all'].includes(filter) ? <button onClick={() => { clearSearch(); setFilter('open') }}>清除筛选</button> : null}</div>
               <AssignmentTable items={visibleAssignments} courses={snapshot.courses} groupLabels={groupLabels} selectedId={isMobile && !mobileDetailOpen ? '' : selected?.id || ''} onSelect={openOverviewAssignment} filesFor={filesFor} />
             </>}
           </div>
-          {!isMobile ? <aside className="task-workspace-detail" aria-label="当前选择的详情">{detailParentId ? <button className="workspace-back glass-control glass-control-pill" onClick={closeDetail}><ArrowLeft size={16}/>返回周期计划</button> : null}{detailContent || <div className="workspace-detail-empty"><FileText size={28}/><p>选择{view === 'plans' ? '一个计划' : '一项作业'}查看详情</p></div>}</aside> : null}
+          {!isMobile ? <aside className="task-workspace-detail" aria-label="当前选择的详情">
+            {(detailParentId || selectedGroup) && detailContent ? <div className="workspace-inspector-tools">
+              {detailParentId ? <button className="workspace-back glass-control glass-control-pill" onClick={closeDetail}><ArrowLeft size={16}/>返回周期计划</button> : null}
+              {selectedGroup ? <button className="icon-button tiny" type="button" aria-label="关闭详情" title="关闭详情" onClick={dismissInspector}><X size={16} aria-hidden="true" /></button> : null}
+            </div> : null}
+            {detailContent || <div className="workspace-detail-empty"><FileText size={28}/><p>选择{view === 'plans' ? '一个计划' : '一项作业'}查看详情</p></div>}
+          </aside> : null}
         </div>
       </> : null}
-      {view === 'files' ? <FilesPage snapshot={snapshot} onRelink={relink} onOpenAssignment={id => { const assignment = snapshot.assignments.find(a => a.id === id); if (assignment) { setCourseId(assignment.course_id); setSemesterId(snapshot.courses.find(course => course.id === assignment.course_id)?.semester_id || semesterId); setDetailParentId(''); setSelectedId(id); setView('course'); setFilter('all'); setSearch(''); setSelectedGroupId(''); setMobileDetailOpen(true); setMoreOpen(false) } }} onUndo={id => { void run(() => service.undoRename(id), '文件名已撤回') }} /> : null}
+      {view === 'files' ? <FilesPage snapshot={snapshot} onRelink={relink} onOpenAssignment={id => { const assignment = snapshot.assignments.find(a => a.id === id); if (assignment) { setCourseId(assignment.course_id); setSemesterId(snapshot.courses.find(course => course.id === assignment.course_id)?.semester_id || semesterId); setDetailParentId(''); setSelectedId(id); setView('course'); setFilter('all'); clearSearch(); setSelectedGroupId(''); setMobileDetailOpen(true); setMoreOpen(false) } }} onUndo={id => { void run(() => service.undoRename(id), '文件名已撤回') }} /> : null}
       {view === 'settings' ? <><SettingsPage snapshot={themePreview ? { ...snapshot, settings: { ...snapshot.settings, theme: themePreview } } : snapshot} onThemeChange={setTheme} onSaveSettings={payload => { void saveSettings(payload) }} onEditCourse={setCourseEditor} onAddSemester={() => setSemesterEditor({ id: '', name: '', source_root: '' })} onDeleteSemester={id => { void deleteSemester(id) }} onBackup={async () => { const path = await service.pickBackupSave(); if (path) void run(() => service.backup(path), '数据库备份已保存') }} onRestore={async () => { const path = await service.pickBackupOpen(); if (path && window.confirm('恢复备份会替换当前数据库记录。关联文件仍在原位置。确定继续吗？')) void run(() => service.restore(path), '数据库已恢复，请检查文件链接') }} /></> : null}
     </main>
-    {isMobile ? <nav className="mobile-bottom-nav" aria-label="主导航" inert={mobileDetailOpen || undefined}>{([{ key: 'overview', label: '待办', Icon: ClipboardList }, { key: 'all', label: '作业', Icon: FileText }, { key: 'files', label: '文件', Icon: Folder }, { key: 'settings', label: '设置', Icon: Settings2 }] as const).map(({key, label, Icon}) => <button key={key} className={view === key || key === 'all' && (view === 'course' || view === 'plans') ? 'active' : ''} aria-current={view === key || key === 'all' && (view === 'course' || view === 'plans') ? 'page' : undefined} onClick={() => chooseView(key)}><Icon size={21} strokeWidth={1.8} /><span>{label}</span></button>)}</nav> : null}
-    {isMobile && mobileDetailOpen ? <section className="mobile-detail-screen" ref={detailRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={selectedGroup ? '周期作业详情' : '作业详情'}><div className="mobile-detail-bar"><button className="glass-control" onClick={closeDetail} aria-label={detailParentId ? '周期计划' : '返回'} title={detailParentId ? '周期计划' : '返回'}><ChevronLeft size={21} /></button><span>{selectedGroup ? '周期作业' : '作业详情'}</span></div><div className="mobile-detail-body">{detailContent || <p>这项作业已不在当前列表中。请返回查看其他作业。</p>}</div></section> : null}
+    {isMobile && !nativeChrome ? <nav className="mobile-bottom-nav" aria-label="主导航" inert={mobileDetailOpen || undefined}>{([{ key: 'overview', label: '待办', Icon: ClipboardList }, { key: 'all', label: '作业', Icon: FileText }, { key: 'files', label: '文件', Icon: Folder }, { key: 'settings', label: '设置', Icon: Settings2 }] as const).map(({key, label, Icon}) => <button key={key} className={view === key || key === 'all' && (view === 'course' || view === 'plans') ? 'active' : ''} aria-current={view === key || key === 'all' && (view === 'course' || view === 'plans') ? 'page' : undefined} onClick={() => chooseView(key)}><Icon size={21} strokeWidth={1.8} /><span>{label}</span></button>)}</nav> : null}
+    {isMobile && mobileDetailOpen ? <section className="mobile-detail-screen" ref={detailRef} tabIndex={-1} role="dialog" inert={detailCovered || undefined} aria-modal={!detailCovered} aria-label={selectedGroup ? '周期作业详情' : '作业详情'}><div className="mobile-detail-bar"><button className="glass-control" onClick={closeDetail} aria-label={detailParentId ? '周期计划' : '返回'} title={detailParentId ? '周期计划' : '返回'}><ChevronLeft size={21} /></button><span>{selectedGroup ? '周期作业' : '作业详情'}</span></div><div className="mobile-detail-body">{detailContent || <p>这项作业已不在当前列表中。请返回查看其他作业。</p>}</div></section> : null}
     {editor ? <AssignmentEditor initial={editor} courses={snapshot.courses} recentValues={snapshot.recent_values} onClose={() => setEditor(null)} onSave={saveAssignment} /> : null}
     {enabledAppModules.filter(module => module.id === activeModuleId).map(module => <module.Overlay key={module.id} snapshot={snapshot} onClose={() => setActiveModuleId(null)} onSettings={() => { setActiveModuleId(null); chooseView('settings') }} onSaved={async () => { await refresh(); setActiveModuleId(null); setToast(module.savedMessage) }} />)}
     {importInboxOpen && syncModules.length ? <ImportInbox modules={syncModules} snapshot={snapshot} onClose={() => setImportInboxOpen(false)} onSaved={refresh}/> : null}

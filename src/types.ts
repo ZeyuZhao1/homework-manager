@@ -42,3 +42,20 @@ export const roleLabels: Record<FileRole, string> = { prompt: '题目材料', re
 export function blankAssignment(courseId = ''): Assignment {
   return { id: '', course_id: courseId, title: '', description: '', due_at: null, status: 'todo', submission_label: '', submission_url: '', submission_notes: '', source_name: '', source_text: '', created_at: '', updated_at: '', custom_fields: {} }
 }
+
+export type MacosChromeState = {
+  semesters: Pick<Semester, 'id' | 'name'>[]
+  courses: Pick<Course, 'id' | 'name'>[]
+  semesterId: string
+  courseId: string
+  view: 'overview' | 'all' | 'course' | 'plans' | 'files' | 'settings'
+  showPlans: boolean
+  showSearch: boolean
+  searchReset: number
+  showAddAssignment: boolean
+  canAddAssignment: boolean
+  assignmentFilter: { selected: string; options: { id: string; name: string }[] } | null
+  tools: { id: string; name: string }[]
+  theme: Theme
+  blocked: boolean
+}

@@ -10,16 +10,18 @@
 | --- | --- | --- | --- |
 | Windows x64 | `x86_64-pc-windows-msvc` | `windows-2022` | NSIS `.exe`、便携 `.exe` |
 | Windows ARM64 | `aarch64-pc-windows-msvc` | `windows-11-arm` | NSIS `.exe`、便携 `.exe` |
-| macOS ARM64 | `aarch64-apple-darwin` | `macos-15`（Apple Silicon） | `.dmg` |
+| macOS ARM64 | `aarch64-apple-darwin` | `macos-26`（Apple Silicon） | `.dmg` |
 | Linux x64 | `x86_64-unknown-linux-gnu` | `ubuntu-24.04` | `.deb`、`.AppImage` |
 | Linux ARM64 | `aarch64-unknown-linux-gnu` | `ubuntu-24.04-arm` | `.deb`、`.AppImage` |
 
 矩阵由 `scripts/desktop-targets.mjs` 统一定义。每个 runner 原生执行对应架构的 Rust 单元测试与构建；`check-native-host.mjs` 拒绝使用架构不匹配的 Node/Rust 工具链。分发前额外读取 PE/ELF/Mach-O 文件头校验架构。Windows ARM64 指应用本体为 ARM64；NSIS 安装引导程序本身可能通过 Windows 的兼容机制运行。
 
+同一版本标签固定所有平台的源码与应用版本。macOS 的 AppKit 桥接和 SDK 要求只适用于 macOS 目标。Windows 与 Linux 继续使用共享桌面界面，无需 Apple 工具链。三端继续共用业务与数据格式。
+
 ## 系统要求与数据位置
 
 - Windows x64：Windows 10/11；Windows ARM64：Windows 11 ARM64。需要 WebView2（NSIS 安装程序可按 Tauri 默认流程安装，便携版需系统已具备）。
-- macOS ARM64：Apple Silicon，最低系统版本配置为 macOS 11。使用系统 WebKit 和原生红绿灯窗口控件，保留 Tauri 默认的 macOS 应用菜单。当前配置使用 ad-hoc 签名，不包含 Apple Developer ID 签名或公证；首次打开可能受到 Gatekeeper 限制。正式面向广泛用户分发时应另行配置签名与公证。
+- macOS ARM64：Apple Silicon，最低系统版本配置为 macOS 11。使用系统 WebKit、原生窗口、侧栏和工具栏，提供 macOS 原生应用菜单、工作区操作与菜单栏入口。macOS 26 及以上由系统为标准控件呈现 Liquid Glass；macOS 11–15 使用该系统的原生控件外观。应用内容与编辑仍由 React 提供。当前配置使用 ad-hoc 签名，不包含 Apple Developer ID 签名或公证；首次打开可能受到 Gatekeeper 限制。正式面向广泛用户分发时应另行配置签名与公证。
 - Linux 安装包使用符合 Debian 规则的 ASCII 包名 `homework-manager`，应用内部仍显示“作业簿”。
 - Linux：构建基线为 Ubuntu 24.04（glibc 2.39），需要 GTK 3、WebKitGTK 4.1、D-Bus 及可用图形会话。其他发行版需要提供兼容运行库；AppImage 不保证兼容比构建基线更旧的 glibc。Wayland 可能由窗口管理器决定窗口位置，应用不会因定位被拒绝而保持隐藏或退出。
 
@@ -39,7 +41,7 @@ Linux 必须运行并解锁 Secret Service；不可用时 AI 密钥保存/读取
 
 ## 本地开发与验证
 
-所有平台需要 Node.js 24+、pnpm 11 和 Rust stable。Windows 还需要 Visual Studio C++ 工具链（ARM64 安装对应编译组件）；macOS 需要 Xcode Command Line Tools。
+所有平台需要 Node.js 24+、pnpm 11 和 Rust stable。Windows 还需要 Visual Studio C++ 工具链（ARM64 安装对应编译组件）；macOS 构建需要 Apple 工具链和 macOS 26 或更高版本的 SDK（可通过相应版本的 Xcode 或 Command Line Tools 提供）；运行最低版本仍为 macOS 11。
 
 Ubuntu 构建依赖与原生密钥测试依赖：
 

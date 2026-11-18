@@ -575,19 +575,28 @@ fn validate_url(raw: &str) -> Result<String, String> {
 }
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
+        .user_agent(concat!("homeworkbook-desktop/", env!("CARGO_PKG_VERSION")))
         .timeout(Duration::from_secs(60))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| "无法创建同步连接".into())
 }
-async fn json_response(r: reqwest::Response) -> Result<Value, String> {
-    if !r.status().is_success() {
-        return Err(format!("同步请求失败（HTTP {}）", r.status().as_u16()));
+async fn json_response(mut r: reqwest::Response) -> Result<Value, String> {
+    let status = r.status();
+    if !status.is_success() {
+        let reason = if status == reqwest::StatusCode::BAD_REQUEST {
+            sync_rejection(&mut r).await
+        } else {
+            None
+        };
+        return Err(match reason {
+            Some(reason) => format!("同步请求失败（HTTP {}）：{reason}", status.as_u16()),
+            None => format!("同步请求失败（HTTP {}）", status.as_u16()),
+        });
     }
     if r.content_length().is_some_and(|n| n > MAX_BODY as u64) {
         return Err("同步响应超出大小限制".into());
     }
-    let mut r = r;
     let mut bytes = Vec::new();
     while let Some(chunk) = r.chunk().await.map_err(|_| "同步响应读取失败")? {
         if bytes.len() + chunk.len() > MAX_BODY {
@@ -600,6 +609,28 @@ async fn json_response(r: reqwest::Response) -> Result<Value, String> {
     }
     serde_json::from_slice(&bytes).map_err(|_| "同步服务返回格式无效".into())
 }
+async fn sync_rejection(response: &mut reqwest::Response) -> Option<&'static str> {
+    const LIMIT: usize = 2048;
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if body.len() + chunk.len() > LIMIT {
+            return None;
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let error: Value = serde_json::from_slice(&body).ok()?;
+    // Only display known reasons. Never echo private service responses to the UI.
+    match error.get("error")?.as_str()? {
+        "Unsupported field" => Some("服务版本不支持某个同步字段"),
+        "Invalid sync request" => Some("同步游标或请求批次无效"),
+        "Invalid course reference" => Some("课程文件引用无效"),
+        "Missing parent" => Some("服务器缺少关联记录"),
+        "Occurrences are server managed" => Some("周期作业实例由服务端管理"),
+        "Invalid recurrence configuration" => Some("周期计划配置无效"),
+        _ => None,
+    }
+}
+
 async fn request(
     c: &Config,
     method: reqwest::Method,
@@ -1393,13 +1424,66 @@ fn replay_active(
     Ok(())
 }
 
+fn supports_course_paths(health: &Value) -> bool {
+    health.get("service").and_then(Value::as_str) == Some("homework-personal-sync")
+        && health.pointer("/capabilities/course_paths").and_then(Value::as_bool) == Some(true)
+}
+
+fn prepare_wire_operations(operations: &mut [Operation], course_paths: bool) {
+    if course_paths {
+        return;
+    }
+    for operation in operations {
+        operation.changes.retain_mut(|change| {
+            if change.entity_type == "file" {
+                if let Some(fields) = change.data.as_mut().and_then(Value::as_object_mut) {
+                    if fields.remove("course_path").is_some() && fields.is_empty() {
+                        return false;
+                    }
+                }
+            }
+            true
+        });
+        // Keep the operation ID even when no fields remain, so the server
+        // acknowledges it and retrying after a lost response remains idempotent.
+    }
+}
+
+fn queue_deferred_course_paths(conn: &Connection) -> Result<(), String> {
+    // A legacy server acknowledges the rest of a file operation. Once support
+    // is advertised, recover the portable reference from local file metadata.
+    conn.execute(
+        "INSERT INTO sync_outbox(entity_type,entity_id,data)
+         SELECT 'file', f.id, json_object('course_path',f.course_path)
+         FROM sync_files f
+         JOIN sync_shadow s ON s.entity_type='file' AND s.entity_id=f.id
+         WHERE s.data IS NOT NULL AND f.drive_id IS NULL
+           AND f.course_path IS NOT json_extract(s.data,'$.course_path')
+           AND NOT EXISTS (
+             SELECT 1 FROM sync_outbox o WHERE o.entity_type='file' AND o.entity_id=f.id
+             AND (o.data IS NULL OR json_type(o.data,'$.course_path') IS NOT NULL)
+           )
+         ORDER BY f.id",
+        [],
+    )
+    .map_err(sql_error)?;
+    Ok(())
+}
+
 async fn sync_rounds(state: &AppState, config: &mut Config) -> Result<(), String> {
-    for _ in 0..100 {
+    ensure_active(state, config)?;
+    let course_paths = request(config, reqwest::Method::GET, "/api/health", None, false)
+        .await
+        .is_ok_and(|health| supports_course_paths(&health));
+    for round in 0..100 {
         ensure_active(state, config)?;
-        let (cursor, operations, baseline_pending) = {
+        let (cursor, mut operations, baseline_pending) = {
             let mut conn = state.db.lock().map_err(|_| "数据库繁忙")?;
             let tx = conn.transaction().map_err(sql_error)?;
             seed_files(&tx)?;
+            if course_paths && round == 0 {
+                queue_deferred_course_paths(&tx)?;
+            }
             let (cursor, phase) = tx
                 .query_row(
                     "SELECT cursor,baseline_pending FROM sync_runtime WHERE id=1",
@@ -1426,6 +1510,7 @@ async fn sync_rounds(state: &AppState, config: &mut Config) -> Result<(), String
             replay_active(state, config, &response, Some(2))?;
             continue;
         }
+        prepare_wire_operations(&mut operations, course_paths);
         let mut body = json!({"cursor":cursor,"operations":operations,"limit":500});
         while serde_json::to_vec(&body).map_err(|_| "同步数据无效")?.len() > MAX_BODY {
             let operations = body["operations"].as_array_mut().ok_or("同步数据无效")?;
@@ -1826,6 +1911,55 @@ mod tests {
             server_time: "2026-10-28T00:00:00Z".into(),
         }
     }
+    #[test]
+    fn legacy_server_syncs_records_and_upgrade_backfills_deferred_paths() {
+        let mut conn = database();
+        enable(&conn);
+        let reference = "course://c/Week 1/Notes.pdf";
+        conn.execute("INSERT INTO file_assets VALUES('portable',?1)", [reference])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO sync_outbox(entity_type,entity_id,data)
+             VALUES('file','portable',json_object('course_path',?1))",
+            [reference],
+        )
+        .unwrap();
+        conn.execute("UPDATE assignments SET title='Edited' WHERE id='a'", [])
+            .unwrap();
+
+        let queued = pending(&conn, 100).unwrap();
+        let mut legacy = queued.clone();
+        assert!(!supports_course_paths(&json!({"service":"homework-personal-sync","protocol":1})));
+        assert!(supports_course_paths(&json!({"service":"homework-personal-sync","capabilities":{"course_paths":true}})));
+        prepare_wire_operations(&mut legacy, false);
+        assert_eq!(legacy[0].operation_id, queued[0].operation_id);
+        let file = legacy[0].changes[0].data.clone().unwrap();
+        assert!(file.get("course_path").is_none());
+        assert_eq!(file["name"], "Notes.pdf");
+        assert!(legacy[1].changes.is_empty());
+        assert_eq!(legacy[1].operation_id, queued[1].operation_id);
+        assert_eq!(legacy[2].changes[0].data.as_ref().unwrap()["title"], "Edited");
+        assert_eq!(pending(&conn, 100).unwrap()[1].changes[0].data.as_ref().unwrap()["course_path"], reference);
+
+        let ack = legacy.into_iter().map(|operation| operation.operation_id).collect();
+        replay(&mut conn, &response(vec![Entity {
+            entity_type: "file".into(), entity_id: "portable".into(), data: Some(file), seq: 1,
+        }], ack)).unwrap();
+        assert!(pending(&conn, 100).unwrap().is_empty());
+        assert_eq!(conn.query_row("SELECT path FROM file_assets WHERE id='portable'", [], |r| r.get::<_,String>(0)).unwrap(), reference);
+        queue_deferred_course_paths(&conn).unwrap();
+        queue_deferred_course_paths(&conn).unwrap();
+        let mut upgraded = pending(&conn, 100).unwrap();
+        assert_eq!(upgraded.len(), 1);
+        prepare_wire_operations(&mut upgraded, true);
+        assert_eq!(upgraded[0].changes[0].data, Some(json!({"course_path":reference})));
+        replay(&mut conn, &response(vec![Entity {
+            entity_type: "file".into(), entity_id: "portable".into(), data: Some(json!({"course_path":reference})), seq: 2,
+        }], vec![upgraded.remove(0).operation_id])).unwrap();
+        queue_deferred_course_paths(&conn).unwrap();
+        assert!(pending(&conn, 100).unwrap().is_empty());
+    }
+
     #[test]
     fn runtime_origin_changes_never_reuse_old_device_or_pair_authorization() {
         let directory = std::env::temp_dir().join(format!("sync-services-{}", uuid::Uuid::new_v4()));

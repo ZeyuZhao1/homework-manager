@@ -1,5 +1,14 @@
-use tauri::{LogicalSize, PhysicalPosition, PhysicalSize, WebviewWindow};
+use tauri::WebviewWindow;
+#[cfg(any(not(target_os = "macos"), test))]
+use tauri::{LogicalSize, PhysicalPosition, PhysicalSize};
 
+#[cfg(target_os = "macos")]
+extern "C" {
+    fn homeworkbook_place_macos_window(window: *mut std::ffi::c_void) -> bool;
+}
+
+
+#[cfg(any(not(target_os = "macos"), test))]
 fn startup_size(work_area: PhysicalSize<u32>, scale: f64, frame: PhysicalSize<u32>) -> LogicalSize<f64> {
     // Reserve desktop space around the entire window, including its title bar.
     LogicalSize::new(
@@ -8,6 +17,7 @@ fn startup_size(work_area: PhysicalSize<u32>, scale: f64, frame: PhysicalSize<u3
     )
 }
 
+#[cfg(any(not(target_os = "macos"), test))]
 fn centered_position(origin: PhysicalPosition<i32>, area: PhysicalSize<u32>, window: PhysicalSize<u32>) -> PhysicalPosition<i32> {
     PhysicalPosition::new(
         origin.x + (area.width.saturating_sub(window.width) / 2) as i32,
@@ -24,6 +34,16 @@ pub fn prepare_main_window(window: &WebviewWindow) -> tauri::Result<()> {
     window.show()
 }
 
+#[cfg(target_os = "macos")]
+fn configure_main_window(window: &WebviewWindow) -> tauri::Result<()> {
+    // setup runs on the AppKit thread. Keep geometry in native screen points.
+    if !unsafe { homeworkbook_place_macos_window(window.ns_window()?) } {
+        window.center()?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
 fn configure_main_window(window: &WebviewWindow) -> tauri::Result<()> {
     let monitor = window.current_monitor().ok().flatten()
         .or_else(|| window.primary_monitor().ok().flatten());
