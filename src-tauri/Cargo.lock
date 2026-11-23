@@ -1620,7 +1620,7 @@ dependencies = [
 
 [[package]]
 name = "homework-manager"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "base64 0.22.1",
  "cc",
