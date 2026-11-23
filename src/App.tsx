@@ -3,7 +3,7 @@ import { AlertCircle, ArrowLeft, BookOpen, CalendarDays, ChevronDown, ChevronLef
 import { service } from './service'
 import { blankAssignment } from './types'
 import type { Assignment, Course, FileAsset, FileLink, FileRole, MacosChromeState, ModuleDescriptor, Semester, Settings, Snapshot, Status } from './types'
-import { AssignmentDetail, AssignmentTable, dueState, errorText, isOpen } from './ui'
+import { AssignmentDetail, AssignmentTable, Modal, dueState, errorText, isOpen } from './ui'
 import { CourseEditor, SemesterEditor } from './dialogs'
 import { appModules } from './moduleRegistry'
 import type { AssignmentGroup } from './moduleTypes'
@@ -30,7 +30,7 @@ const assignmentFilters = [
   { id: 'week', name: '7 天内' },
   { id: 'submitted', name: '已提交' },
 ] as const
-const compactAssignmentFilters = [{ id: 'open', name: '待处理' }, assignmentFilters[1], assignmentFilters[6]] as const
+const compactAssignmentFilters = [assignmentFilters[0], assignmentFilters[1], assignmentFilters[6]] as const
 type Filter = (typeof assignmentFilters)[number]['id']
 
 function isUpcoming(value: string | null) {
@@ -40,15 +40,20 @@ function isUpcoming(value: string | null) {
 }
 
 function App() {
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 780px), (max-width: 1024px) and (pointer: coarse)').matches)
+  const [isMobile, setIsMobile] = useState(() => !service.isMacDesktop && window.matchMedia('(max-width: 780px), (max-width: 1024px) and (pointer: coarse)').matches)
+  const [narrowWorkspace, setNarrowWorkspace] = useState(false)
+  const compactInspector = !service.isMacDesktop && !isMobile && narrowWorkspace
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [detailParentId, setDetailParentId] = useState('')
   const parentDetail = useRef<{ scrollTop: number; focus: HTMLElement | null }>({ scrollTop: 0, focus: null })
   const detailRef = useRef<HTMLElement>(null)
+  const inspectorRef = useRef<HTMLElement>(null)
+  const detailOpener = useRef<HTMLElement | null>(null)
   const mainRef = useRef<HTMLElement>(null)
   const moreRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    if (service.isMacDesktop) return
     const query = window.matchMedia('(max-width: 780px), (max-width: 1024px) and (pointer: coarse)')
     const update = () => { setIsMobile(query.matches); setMobileDetailOpen(false); setMoreOpen(false); setDetailParentId('') }
     query.addEventListener('change', update)
@@ -87,6 +92,18 @@ function App() {
     return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape) }
   }, [moreOpen])
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const workspaceReady = !!snapshot
+  useEffect(() => {
+    const main = mainRef.current
+    if (!workspaceReady || !main) return
+    // On macOS the native sidebar is outside WebKit, so window breakpoints
+    // don't tell us how much space the two panes can actually use.
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setNarrowWorkspace(entry.contentRect.width < 700)
+    })
+    observer.observe(main)
+    return () => observer.disconnect()
+  }, [workspaceReady])
   const [loadError, setLoadError] = useState('')
   const hasLoaded = useRef(false)
   const [themePreview, setThemePreview] = useState<Settings['theme'] | null>(null)
@@ -266,17 +283,29 @@ function App() {
     setSearch('')
     if (service.isMacDesktop) setSearchReset(++searchRevision.current)
   }
+  const clearAssignmentFilters = () => { clearSearch(); selectFilter('all') }
   const openCourse = (id: string) => { setDetailParentId(''); setMobileDetailOpen(false); setMoreOpen(false); setCourseId(id); setView('course'); setFilter('open'); clearSearch(); setSelectedId(''); setSelectedGroupId('') }
   const chooseView = (next: View) => { setDetailParentId(''); mainRef.current?.scrollTo({ top: 0, left: 0 }); setMobileDetailOpen(false); setMoreOpen(false); setView(next); setFilter('open'); clearSearch(); setSelectedId(''); setSelectedGroupId('') }
   const showAssignments = (nextFilter: OverviewFilter) => { chooseView('all'); setFilter(nextFilter); mainRef.current?.scrollTo({ top: 0 }) }
-  const openOverviewAssignment = (id: string) => { setDetailParentId(''); setSelectedId(id); setSelectedGroupId(''); setMobileDetailOpen(true); setMoreOpen(false) }
-  const openOverviewGroup = (id: string) => { setDetailParentId(''); setSelectedGroupId(id); setSelectedId(''); setMobileDetailOpen(true); setMoreOpen(false) }
+  const openOverviewAssignment = (id: string) => {
+    detailOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setDetailParentId(''); setSelectedId(id); setSelectedGroupId(''); setMobileDetailOpen(true); setMoreOpen(false)
+  }
+  const openOverviewGroup = (id: string) => {
+    detailOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setDetailParentId(''); setSelectedGroupId(id); setSelectedId(''); setMobileDetailOpen(true); setMoreOpen(false)
+  }
   const seriesScrollArea = () => detailRef.current?.querySelector('.mobile-detail-body') ||
-    mainRef.current?.closest('[data-native-workspace]')?.querySelector('.detail-series') || mainRef.current
+    document.querySelector('.compact-assignment-inspector .modal-body') ||
+    mainRef.current?.querySelector('.detail-series:not([hidden])') || mainRef.current
   const openGroupAssignment = (id: string) => {
     parentDetail.current = { scrollTop: seriesScrollArea()?.scrollTop || 0, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null }
     setDetailParentId(selectedGroupId); setSelectedGroupId(''); setSelectedId(id); setMobileDetailOpen(true)
-    requestAnimationFrame(() => { const body = detailRef.current?.querySelector('.mobile-detail-body'); if (body) body.scrollTop = 0; detailRef.current?.focus({ preventScroll: true }) })
+    requestAnimationFrame(() => {
+      const body = detailRef.current?.querySelector('.mobile-detail-body') || document.querySelector('.compact-assignment-inspector .modal-body')
+      if (body) body.scrollTop = 0
+      detailRef.current?.focus({ preventScroll: true })
+    })
   }
   const closeDetail = () => {
     if (detailParentId && assignmentGroups.some(group => group.id === detailParentId)) {
@@ -289,7 +318,12 @@ function App() {
     setSelectedGroupId('')
     setDetailParentId('')
     setMobileDetailOpen(false)
-    mainRef.current?.focus({ preventScroll: true })
+    const opener = detailOpener.current
+    detailOpener.current = null
+    if (compactInspector) return
+    const restoreFocus = () => (opener?.isConnected ? opener : mainRef.current)?.focus({ preventScroll: true })
+    if (service.isMacDesktop && narrowWorkspace) requestAnimationFrame(restoreFocus)
+    else restoreFocus()
   }
   const saveAssignment = async (payload: Assignment) => { const okay = await run(() => service.saveAssignment(payload), payload.id ? '作业已更新' : '作业已创建', true); if (!okay) throw new Error('保存失败'); setEditor(current => current === editor ? null : current) }
   const setStatus = async (item: Assignment, status: Status) => { await run(() => service.saveAssignment({ ...item, status }), '状态已更新', true) }
@@ -308,11 +342,14 @@ function App() {
   const detailGroup = selectedGroup || assignmentGroups.find(group => group.id === detailParentId)
   const detailExtension = enabledAppModules.find(module => module.id === detailGroup?.module_id)?.assignmentList
   const GroupDetail = detailExtension?.Detail
+  const inspectorTools = detailParentId ? <div className="workspace-inspector-tools">
+    <button className="workspace-back glass-control glass-control-pill" onClick={closeDetail}><ArrowLeft size={16} aria-hidden="true" />返回周期计划</button>
+  </div> : null
   // Keep the source plan mounted while reading a child; returning then restores
   // its scroll position and original focused control without an async reload.
   const detailContent = snapshot && (detailGroup || selected) ? <>
     {detailGroup && GroupDetail ? <div className="detail-series" hidden={!!detailParentId} inert={detailParentId ? true : undefined}><GroupDetail key={detailGroup.id} group={detailGroup} snapshot={snapshot} onRefresh={refresh} onEditAssignment={setEditor} onOpenAssignment={openGroupAssignment}/></div> : null}
-    {!selectedGroup && selected ? <AssignmentDetail printModules={printModules} item={selected} onClose={!isMobile ? dismissInspector : undefined} course={snapshot.courses.find(c => c.id === selected.course_id)} links={currentLinks} files={snapshot.files} fileHistory={currentFileHistory} onEdit={() => setEditor(selected)} onDelete={deleteSelected} onAddFile={role => setFileDrawer({ assignmentId: selected.id, role })} onEditLink={editing => setFileDrawer({ assignmentId: selected.id, editing })} onRename={setRenameLink} onStatus={status => setStatus(selected,status)} onRelink={relink} addon={enabledAppModules.map(module=>{const Addon=module.assignmentList?.AssignmentAddon;return Addon?<Addon key={module.id} assignment={selected} snapshot={snapshot}/>:null})}/> : null}
+    {!selectedGroup && selected ? <AssignmentDetail printModules={printModules} item={selected} onClose={!isMobile && !compactInspector ? dismissInspector : undefined} course={snapshot.courses.find(c => c.id === selected.course_id)} links={currentLinks} files={snapshot.files} fileHistory={currentFileHistory} onEdit={() => setEditor(selected)} onDelete={deleteSelected} onAddFile={role => setFileDrawer({ assignmentId: selected.id, role })} onEditLink={editing => setFileDrawer({ assignmentId: selected.id, editing })} onRename={setRenameLink} onStatus={status => setStatus(selected,status)} onRelink={relink} addon={enabledAppModules.map(module=>{const Addon=module.assignmentList?.AssignmentAddon;return Addon?<Addon key={module.id} assignment={selected} snapshot={snapshot}/>:null})}/> : null}
   </> : null
 
   const chooseSemester = (id: string) => {
@@ -365,6 +402,10 @@ function App() {
       }
     } else if (action === 'semester') chooseSemester(value)
     else if (action === 'course' && semesterCourses.some(course => course.id === value)) openCourse(value)
+    else if (action === 'edit-course') {
+      const course = semesterCourses.find(item => item.id === value)
+      if (course) setCourseEditor(course)
+    }
     else if (action === 'search' && showSearch && revision === searchRevision.current) setSearch(value)
     else if (action === 'filter' && showSearch) {
       const next = assignmentFilters.find(option => option.id === value)
@@ -378,20 +419,23 @@ function App() {
     } else if (action === 'quick-add-assignment' && canAddAssignment) addAssignment()
     else if (action === 'add-course' && semesterId) addCourse()
     else if (action === 'add-assignment' && showAddAssignment) addAssignment()
-    else if (action === 'toggle-theme') toggleTheme()
     else if (action === 'set-theme' && (value === 'system' || value === 'light' || value === 'dark')) setTheme(value)
   })
 
   const detailCovered = !!(editor || fileDrawer || renameLink || activeModuleId || importInboxOpen || courseEditor || semesterEditor)
   const webActions = nativeChrome ? enabledAppModules.filter(module => !module.actionLabel) : enabledAppModules
+  const nativeCompactDetail = nativeChrome && narrowWorkspace && !!detailContent
+  useEffect(() => {
+    if (nativeCompactDetail) inspectorRef.current?.focus({ preventScroll: true })
+  }, [nativeCompactDetail])
 
   if (!snapshot) return <StartupScreen error={loadError} onRetry={() => { setToast(''); setLoadError(''); void refresh().catch(error => setToast(errorText(error))) }} />
-  return <div className="app-shell" data-view={view} data-native-chrome={nativeChrome || undefined} data-native-workspace={nativeChrome && !isMobile || undefined} onDragStart={event => event.preventDefault()} onDragOver={event => event.preventDefault()} onDrop={event => event.preventDefault()}>
+  return <div className="app-shell" data-view={view} data-touch-layout={isMobile || undefined} data-compact-workspace={compactInspector || undefined} data-native-chrome={nativeChrome || undefined} data-native-workspace={nativeChrome && !isMobile || undefined} onDragStart={event => event.preventDefault()} onDragOver={event => event.preventDefault()} onDrop={event => event.preventDefault()}>
     {isMobile && !nativeChrome ? <header className="mobile-topbar" inert={mobileDetailOpen || undefined}><a className="mobile-brand" href="#" onClick={event => { event.preventDefault(); chooseView('overview') }}><BookOpen size={22} strokeWidth={2} /><strong>作业簿</strong></a><div className="mobile-semester"><select value={semesterId} aria-label="选择学期" onChange={event => chooseSemester(event.target.value)}>{snapshot.semesters.map(semester => <option key={semester.id} value={semester.id}>{semester.name}</option>)}</select><ChevronDown size={14} /></div></header> : null}
     {!nativeChrome ? <aside className="sidebar"><div className="brand"><div className="brand-mark"><BookOpen size={26} strokeWidth={1.8} /></div><div><strong>作业簿</strong></div></div>
       <div className="semester-row"><CalendarDays className="semester-icon" size={16} aria-hidden="true" /><select value={semesterId} onChange={event => chooseSemester(event.target.value)} aria-label="选择学期">{snapshot.semesters.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}</select><ChevronDown className="semester-chevron" size={15} aria-hidden="true" /></div>
-      <nav className="main-nav" aria-label="主导航"><button className={view === 'overview' ? 'active' : ''} onClick={() => chooseView('overview')}><ClipboardList size={19} />待办</button><button className={view === 'all' ? 'active' : ''} onClick={() => chooseView('all')}><FileText size={19} />作业</button>{enabledAppModules.some(module => module.assignmentList) ? <button className={view === 'plans' ? 'active' : ''} onClick={() => chooseView('plans')}><Repeat2 size={19} />周期计划</button> : null}<button className={view === 'files' ? 'active' : ''} onClick={() => chooseView('files')}><Folder size={19} />文件</button><button className={view === 'settings' ? 'active' : ''} onClick={() => chooseView('settings')}><Settings2 size={19} />设置</button></nav>
-      <div className="sidebar-section-title"><span>我的课程</span><button className="icon-button tiny" onClick={addCourse} title="添加课程"><Plus size={18} /></button></div><nav className="course-nav" aria-label="课程">{semesterCourses.map(course => <button key={course.id} className={view === 'course' && course.id === courseId ? 'active' : ''} onClick={() => openCourse(course.id)}><BookOpen className="course-nav-icon" size={18} strokeWidth={1.6} /><span>{course.name}</span></button>)}</nav>
+      <nav className="main-nav" aria-label="主导航"><button className={view === 'overview' ? 'active' : ''} aria-current={view === 'overview' ? 'page' : undefined} onClick={() => chooseView('overview')}><ClipboardList size={19} />待办</button><button className={view === 'all' ? 'active' : ''} aria-current={view === 'all' ? 'page' : undefined} onClick={() => chooseView('all')}><FileText size={19} />作业</button>{enabledAppModules.some(module => module.assignmentList) ? <button className={view === 'plans' ? 'active' : ''} aria-current={view === 'plans' ? 'page' : undefined} onClick={() => chooseView('plans')}><Repeat2 size={19} />周期计划</button> : null}<button className={view === 'files' ? 'active' : ''} aria-current={view === 'files' ? 'page' : undefined} onClick={() => chooseView('files')}><Folder size={19} />文件</button><button className={view === 'settings' ? 'active' : ''} aria-current={view === 'settings' ? 'page' : undefined} onClick={() => chooseView('settings')}><Settings2 size={19} />设置</button></nav>
+      <div className="sidebar-section-title"><span>我的课程</span><button className="icon-button tiny" onClick={addCourse} title="添加课程"><Plus size={18} /></button></div><nav className="course-nav" aria-label="课程">{semesterCourses.map(course => <button key={course.id} className={view === 'course' && course.id === courseId ? 'active' : ''} aria-current={view === 'course' && course.id === courseId ? 'page' : undefined} onClick={() => openCourse(course.id)}><BookOpen className="course-nav-icon" size={18} strokeWidth={1.6} /><span>{course.name}</span></button>)}</nav>
       <div className="sidebar-bottom"><button onClick={toggleTheme}>{snapshot.settings.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}{snapshot.settings.theme === 'system' ? '切换明暗' : snapshot.settings.theme === 'dark' ? '浅色模式' : '深色模式'}</button></div>
     </aside> : null}
     <main ref={mainRef} tabIndex={-1} className="main-content" inert={isMobile && mobileDetailOpen || undefined}>
@@ -416,8 +460,8 @@ function App() {
             </div> : null}
           </div></div> : null}
         </div>
-        <div className="task-workspace" data-has-detail={!!detailContent || undefined}>
-          <div className="task-workspace-list">
+        <div className="task-workspace" data-has-detail={!!detailContent && !compactInspector && !isMobile || undefined} data-native-compact-detail={nativeCompactDetail || undefined}>
+          <div className="task-workspace-list" inert={nativeCompactDetail || undefined}>
             {view === 'overview' ? <Overview key={semesterId} assignments={scoped} groups={overviewGroups} courses={semesterCourses} onOpenAssignment={openOverviewAssignment} onOpenGroup={openOverviewGroup} onViewAll={showAssignments} selectedId={selectedId} /> : view === 'plans' ? <>
               {overviewGroups.length ? <AssignmentTable mode="plans" items={[]} courses={snapshot.courses} selectedId="" onSelect={openOverviewAssignment} filesFor={filesFor} groupRows={overviewGroups.flatMap(group => {
                 const extension = enabledAppModules.find(module => module.id === group.module_id)?.assignmentList
@@ -426,23 +470,32 @@ function App() {
                 return [{ id: group.id, sortAt: group.next_at, node: <Row group={group} selected={selectedGroupId === group.id} courseName={snapshot.courses.find(course => course.id === group.course_id)?.name || '课程'} fileCount={snapshot.module_file_links.filter(link => link.module_id === group.module_id && link.owner_id === group.id).length} onSelect={() => openOverviewGroup(group.id)} /> }]
               })} /> : <div className="empty-list"><Repeat2 size={28}/><strong>尚无周期计划</strong><span>使用新增入口安排每周或按序生成的作业。</span></div>}
             </> : <>
+              <div className="assignment-list-controls">
               {!nativeChrome ? <div className="section-heading assignment-toolbar">
                 <select className="mobile-course-filter" aria-label="筛选课程" value={view === 'course' ? courseId : ''} onChange={event => event.target.value ? openCourse(event.target.value) : chooseView('all')}><option value="">全部课程</option>{semesterCourses.map(course => <option key={course.id} value={course.id}>{course.name}</option>)}</select>
-                <div className="search-field"><Search size={16} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索作业" aria-label="搜索作业" /></div>
+                <div className="search-field"><Search size={16} aria-hidden="true" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索作业" aria-label="搜索作业" />{search ? <button className="search-clear" type="button" aria-label="清空搜索" onClick={event => { clearSearch(); event.currentTarget.parentElement?.querySelector('input')?.focus() }}><X size={15} aria-hidden="true" /></button> : null}</div>
               </div> : null}
               {!nativeChrome ? <div className="filter-tabs" aria-label="筛选作业状态">{(isMobile ? compactAssignmentFilters : assignmentFilters).map(({ id: key, name: label }) => <button aria-pressed={filter === key} className={filter === key ? 'active' : ''} onClick={() => selectFilter(key)} key={key}>{label}</button>)}
-                {isMobile ? <label className={`mobile-filter-more${['doing', 'done', 'overdue', 'week'].includes(filter) ? ' is-filtered' : ''}`}><SlidersHorizontal size={19} />{filter === 'doing' ? <span>进行中</span> : filter === 'done' ? <span>待提交</span> : filter === 'overdue' ? <span>已逾期</span> : filter === 'week' ? <span>7 天内</span> : null}<select aria-label="筛选状态" value={filter} onChange={event => selectFilter(event.target.value as Filter)}><option value="open">待处理</option><option value="all">全部</option><option value="doing">进行中</option><option value="done">待提交</option><option value="overdue">已逾期</option><option value="week">7 天内</option><option value="submitted">已提交</option></select></label> : null}
+                {isMobile ? <label className={`mobile-filter-more${['doing', 'done', 'overdue', 'week'].includes(filter) ? ' is-filtered' : ''}`}><SlidersHorizontal size={19} />{filter === 'doing' ? <span>进行中</span> : filter === 'done' ? <span>待提交</span> : filter === 'overdue' ? <span>已逾期</span> : filter === 'week' ? <span>7 天内</span> : null}<select aria-label="筛选状态" value={filter} onChange={event => selectFilter(event.target.value as Filter)}><option value="open">未提交</option><option value="all">全部</option><option value="doing">进行中</option><option value="done">待提交</option><option value="overdue">已逾期</option><option value="week">7 天内</option><option value="submitted">已提交</option></select></label> : null}
               </div> : null}
-              <div className="workspace-results" role="status" aria-busy={search !== deferredSearch}><span>{search !== deferredSearch ? '正在筛选…' : `${assignmentFilters.find(option => option.id === filter)?.name ?? '全部'} · ${visibleAssignments.length} 项`}</span>{search || !['open', 'all'].includes(filter) ? <button onClick={() => { clearSearch(); setFilter('open') }}>清除筛选</button> : null}</div>
-              <AssignmentTable items={visibleAssignments} courses={snapshot.courses} groupLabels={groupLabels} selectedId={isMobile && !mobileDetailOpen ? '' : selected?.id || ''} onSelect={openOverviewAssignment} filesFor={filesFor} />
+              <div className="workspace-results"><span role="status" aria-busy={search !== deferredSearch}>{search !== deferredSearch ? '正在筛选…' : `${assignmentFilters.find(option => option.id === filter)?.name ?? '全部'} · ${visibleAssignments.length} 项`}</span>{search || !['open', 'all'].includes(filter) ? <button onClick={clearAssignmentFilters}>清除筛选</button> : null}</div>
+              </div>
+              <AssignmentTable items={visibleAssignments} courses={snapshot.courses} groupLabels={groupLabels} selectedId={isMobile && !mobileDetailOpen ? '' : selected?.id || ''} onSelect={openOverviewAssignment} filesFor={filesFor}
+                emptyFiltered={!!deferredSearch || filter !== 'all' && scoped.length > 0} onResetFilters={clearAssignmentFilters} />
             </>}
           </div>
-          {!isMobile ? <aside className="task-workspace-detail" aria-label="当前选择的详情">
-            {(detailParentId || selectedGroup) && detailContent ? <div className="workspace-inspector-tools">
-              {detailParentId ? <button className="workspace-back glass-control glass-control-pill" onClick={closeDetail}><ArrowLeft size={16}/>返回周期计划</button> : null}
-              {selectedGroup ? <button className="icon-button tiny" type="button" aria-label="关闭详情" title="关闭详情" onClick={dismissInspector}><X size={16} aria-hidden="true" /></button> : null}
+          {!isMobile && !compactInspector && detailContent ? <aside className="task-workspace-detail" ref={inspectorRef} tabIndex={-1}
+            aria-label="当前选择的详情" onKeyDown={event => {
+              if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || document.querySelector('[role="menu"]')) return
+              event.preventDefault()
+              if (detailParentId) closeDetail()
+              else dismissInspector()
+            }}>
+            {inspectorTools}
+            {selectedGroup ? <div className="workspace-inspector-tools">
+              <button className="icon-button tiny" type="button" aria-label="关闭详情" title="关闭详情" onClick={dismissInspector}><X size={16} aria-hidden="true" /></button>
             </div> : null}
-            {detailContent || <div className="workspace-detail-empty"><FileText size={28}/><p>选择{view === 'plans' ? '一个计划' : '一项作业'}查看详情</p></div>}
+            {detailContent}
           </aside> : null}
         </div>
       </> : null}
@@ -451,6 +504,7 @@ function App() {
     </main>
     {isMobile && !nativeChrome ? <nav className="mobile-bottom-nav" aria-label="主导航" inert={mobileDetailOpen || undefined}>{([{ key: 'overview', label: '待办', Icon: ClipboardList }, { key: 'all', label: '作业', Icon: FileText }, { key: 'files', label: '文件', Icon: Folder }, { key: 'settings', label: '设置', Icon: Settings2 }] as const).map(({key, label, Icon}) => <button key={key} className={view === key || key === 'all' && (view === 'course' || view === 'plans') ? 'active' : ''} aria-current={view === key || key === 'all' && (view === 'course' || view === 'plans') ? 'page' : undefined} onClick={() => chooseView(key)}><Icon size={21} strokeWidth={1.8} /><span>{label}</span></button>)}</nav> : null}
     {isMobile && mobileDetailOpen ? <section className="mobile-detail-screen" ref={detailRef} tabIndex={-1} role="dialog" inert={detailCovered || undefined} aria-modal={!detailCovered} aria-label={selectedGroup ? '周期作业详情' : '作业详情'}><div className="mobile-detail-bar"><button className="glass-control" onClick={closeDetail} aria-label={detailParentId ? '周期计划' : '返回'} title={detailParentId ? '周期计划' : '返回'}><ChevronLeft size={21} /></button><span>{selectedGroup ? '周期作业' : '作业详情'}</span></div><div className="mobile-detail-body">{detailContent || <p>这项作业已不在当前列表中。请返回查看其他作业。</p>}</div></section> : null}
+    {compactInspector && detailContent ? <Modal title={selectedGroup ? '周期计划详情' : '作业详情'} className="compact-assignment-inspector" onClose={dismissInspector}>{inspectorTools}{detailContent}</Modal> : null}
     {editor ? <AssignmentEditor initial={editor} courses={snapshot.courses} recentValues={snapshot.recent_values} onClose={() => setEditor(null)} onSave={saveAssignment} /> : null}
     {enabledAppModules.filter(module => module.id === activeModuleId).map(module => <module.Overlay key={module.id} snapshot={snapshot} onClose={() => setActiveModuleId(null)} onSettings={() => { setActiveModuleId(null); chooseView('settings') }} onSaved={async () => { await refresh(); setActiveModuleId(null); setToast(module.savedMessage) }} />)}
     {importInboxOpen && syncModules.length ? <ImportInbox modules={syncModules} snapshot={snapshot} onClose={() => setImportInboxOpen(false)} onSaved={refresh}/> : null}

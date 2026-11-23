@@ -9,7 +9,7 @@ import { appModules } from './moduleRegistry'
 import { PrintSettingsDialog } from './printing'
 import { errorText, fileName, fullDate } from './ui'
 import { attachmentName, attachmentLocation, canOpenAttachment, isCloudReference, isDriveReference } from './filePresentation'
-import { driveService } from './drive/service'
+import { desktopSync } from './sync/desktop'
 import { DriveSettings } from './drive/DriveControls'
 import { SyncSettings } from './sync/SyncSettings'
 import './mobileSurfaces.css'
@@ -20,29 +20,16 @@ import { FileTransferActions } from './sync/FileTransferActions'
 type FileIndex = { links: Snapshot['links']; moduleLinks: Snapshot['module_file_links']; commonFiles: Snapshot['common_files']; events: Snapshot['file_history']; courses: Course[]; courseIds: Set<string> }
 
 function FileRelations({ file, relations, assignments, onOpenAssignment }: { file: FileAsset; relations: FileIndex; assignments: Map<string, Snapshot['assignments'][number]>; onOpenAssignment: (id: string) => void }) {
-  const [refreshing, setRefreshing] = useState(false)
-  const [driveError, setDriveError] = useState('')
-  const refreshingRef = useRef(false)
-  const alive = useRef(true)
-  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
-  const refreshDrive = async () => {
-    if (!isDriveReference(file) || refreshingRef.current) return
-    refreshingRef.current = true; setRefreshing(true); setDriveError('')
-    try { if (!await driveService.connectedDesktop()) throw new Error('请先在设置中连接个人云端并授权此设备，再刷新 Drive 信息。'); await driveService.refresh(file) }
-    catch (reason) { if (alive.current) setDriveError(errorText(reason)) }
-    finally { refreshingRef.current = false; if (alive.current) setRefreshing(false) }
-  }
   const { links, moduleLinks, commonFiles, courses } = relations
   const assignmentCount = new Set(links.map(link => link.assignment_id)).size
   const courseSummary = courses.length > 1 ? `${courses[0].name} 等 ${courses.length} 门科目` : courses[0]?.name
   const relationSummary = [assignmentCount ? `${assignmentCount} 个作业` : '', moduleLinks.length ? `${moduleLinks.length} 个周期任务` : '', commonFiles.length ? '常用文件' : ''].filter(Boolean).join(' · ')
-  return <details className="file-relation-details" onToggle={event => { if (event.currentTarget.open) void refreshDrive() }}>
+  return <details className="file-relation-details">
     <summary>
       <span className="file-relation-summary-text">{courseSummary ? <span className="file-relation-course">{courseSummary}</span> : null}<span>{relationSummary || '文件详情'}</span></span>
       <ChevronDown size={14} aria-hidden="true" />
     </summary>
     <div className="file-relation-content">
-      {refreshing ? <small role="status">正在刷新 Google Drive 信息…</small> : null}{driveError ? <p className="drive-error" role="alert">{driveError}</p> : null}
       {courses.length ? <div className="file-relation-courses">{courses.map(course => <span key={course.id}>{course.name}</span>)}</div> : null}
       {links.length ? <div className="file-relation-links">{links.map(link => <button className="file-relation-assignment" key={link.id} onClick={() => onOpenAssignment(link.assignment_id)}>
         <span className="file-relation-assignment-main"><span className="file-relation-assignment-title">{assignments.get(link.assignment_id)?.title || '未知作业'}</span><span className="file-relation-role">{roleLabels[link.role]}</span></span>
@@ -62,6 +49,15 @@ export function FilesPage({ snapshot, onRelink, onOpenAssignment, onUndo }: { sn
   const [missingOnly, setMissingOnly] = useState(false)
   const [typeFilter, setTypeFilter] = useState('')
   const [courseFilter, setCourseFilter] = useState('')
+  const [connected, setConnected] = useState(false)
+  useEffect(() => {
+    if (!service.isDesktop) return
+    let active = true
+    const update = () => { void desktopSync.status().then(status => { if (active) setConnected(status.connected) }).catch(() => {}) }
+    update()
+    window.addEventListener('homeworkbook:sync-settings-changed', update)
+    return () => { active = false; window.removeEventListener('homeworkbook:sync-settings-changed', update) }
+  }, [])
   const [historyFileId, setHistoryFileId] = useState('')
   const { usedFiles, assignments } = useMemo(() => {
     const assignments = new Map(snapshot.assignments.map(assignment => [assignment.id, assignment]))
@@ -102,7 +98,59 @@ export function FilesPage({ snapshot, onRelink, onOpenAssignment, onUndo }: { sn
     </div>
     <div className="file-workspace-body">
       {hasFilters ? <div className="workspace-results"><span role="status">{visible.length} 个匹配文件</span><button type="button" onClick={clearFilters}><X size={14} aria-hidden="true" />清除筛选</button></div> : null}
-      <div className="file-page-list">{visible.map(({ file, relations }) => { const events = relations.events; const expanded = historyFileId === file.id; return <div className="file-page-item" key={file.id}><div className="file-page-row"><div className={`file-page-icon ${(isDriveReference(file) ? file.drive_unavailable : file.missing) ? 'missing' : ''}`}><FileText size={21} /></div><div className="file-page-main"><strong>{attachmentName(file)}</strong><small className={`file-availability ${(isDriveReference(file) ? file.drive_unavailable : file.missing) ? 'is-unavailable' : ''}`}>{isDriveReference(file) ? (file.drive_unavailable ? 'Google Drive · 暂不可访问' : 'Google Drive · 链接') : isCloudReference(file.path) ? (file.cloud_available ? '云端内容可用' : '仅有文件信息') : file.missing ? '本机文件未找到' : '本机文件可用'}</small><FileRelations file={file} relations={relations} assignments={assignments} onOpenAssignment={onOpenAssignment} /></div><div className="file-page-actions"><FileTransferActions file={file} />{events.length ? <button className="button button-quiet file-history-toggle" onClick={() => setHistoryFileId(expanded ? '' : file.id)} aria-expanded={expanded} aria-label={`${attachmentName(file)}的历史记录（${events.length} 条）`} title="查看文件历史"><History size={16} aria-hidden="true" />历史{expanded ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}</button> : null}{file.missing && !isDriveReference(file) ? <button className="button button-quiet" onClick={() => onRelink(file)}><Link2 size={16} />{isCloudReference(file.path) ? "关联本机文件" : "重新定位"}</button> : <button className="button button-quiet file-open-button" disabled={!canOpenAttachment(file, service.isCloud)} onClick={() => { void service.openFile(file.id).catch(e => window.alert(`打开文件失败：${errorText(e)}`)) }} title={isDriveReference(file) ? "在 Google Drive 中打开" : canOpenAttachment(file, service.isCloud) ? "打开文件" : file.cloud_available ? "请先下载到本机" : "仅元数据，尚未上传内容"}><ExternalLink size={16} />{service.isCloud && !isDriveReference(file) ? '下载' : '打开'}</button>}</div></div>{expanded ? <div className="file-history-panel">{events.map(event => <div className="file-history-event" key={event.id}><span className={`file-history-dot event-${event.event_type}`} /><div><div className="file-history-heading"><strong>{eventLabels[event.event_type] || event.event_type}</strong><time>{fullDate(event.occurred_at)}</time></div>{event.assignment_title ? assignments.has(event.assignment_id) ? <button className="text-link" onClick={() => onOpenAssignment(event.assignment_id)}>{event.assignment_title}</button> : <span className="muted">曾关联：{event.assignment_title}</span> : null}{event.details ? <p>{event.details}</p> : null}<small title={fileName(event.path)}>{fileName(event.path)}{event.file_size !== null ? ` · ${sizeLabel(event.file_size)}` : ''}</small></div></div>)}</div> : null}</div> })}{!visible.length ? <div className="empty-list"><FolderOpen size={30} /><strong>{hasFilters ? '没有符合筛选条件的文件' : '没有找到关联文件'}</strong><span>{hasFilters ? '尝试调整搜索或筛选条件。' : '在作业详情中添加题目材料或解答。'}</span></div> : null}</div>{service.isDesktop ? <details className="history-section"><summary>可撤回的改名 <span>{snapshot.renames.length ? `${snapshot.renames.length} 条记录` : '暂无记录'}</span><ChevronDown size={15} /></summary><p>只有最近一次仍有效的改名可以撤回；文件被外部修改后会阻止撤回。</p>{snapshot.renames.map(event => <div className="history-row" key={event.id}><RotateCcw size={17} /><div><strong>{fileName(event.new_path)}</strong><small>原名：{fileName(event.old_path)} · {fullDate(event.changed_at)}</small></div>{event.undone_at ? <span className="muted">已撤回</span> : <button className="button button-quiet" onClick={() => onUndo(event.id)}>撤回</button>}</div>)}{!snapshot.renames.length ? <div className="history-empty">尚无改名记录</div> : null}</details> : null}
+      <div className="file-page-list">
+        {visible.map(({ file, relations }) => {
+          const name = attachmentName(file)
+          const drive = isDriveReference(file)
+          const cloud = isCloudReference(file.path)
+          const unavailable = drive ? !!file.drive_unavailable : file.missing
+          const canOpen = canOpenAttachment(file, service.isCloud)
+          const canRelink = service.isDesktop && unavailable && !drive
+          const canTransfer = drive || service.isCloud || service.isDesktop && (connected || file.cloud_available)
+          const expanded = historyFileId === file.id
+          const events = relations.events
+          const location = drive
+            ? file.drive_unavailable ? 'Google Drive · 暂不可访问' : 'Google Drive'
+            : cloud ? file.cloud_available ? '云端内容可用' : '仅有文件信息'
+            : file.missing ? '本机文件未找到' : '本机文件可用'
+          return <article className="file-page-item" aria-label={name} key={file.id}>
+            <div className="file-page-row">
+              <div className={`file-page-icon ${unavailable ? 'missing' : ''}`}><FileText size={21} aria-hidden="true" /></div>
+              <div className="file-page-main">
+                <strong>{canOpen ? <button type="button" className="file-name-action" aria-label={`${service.isCloud && !drive ? '下载' : '打开'} ${name}`} onClick={() => {
+                  void service.openFile(file.id).catch(error => window.alert(`打开文件失败：${errorText(error)}`))
+                }}><span>{name}</span><ExternalLink size={14} aria-hidden="true" /></button> : name}</strong>
+                <small className={`file-availability ${unavailable ? 'is-unavailable' : ''}`}>{location}</small>
+                <FileRelations file={file} relations={relations} assignments={assignments} onOpenAssignment={onOpenAssignment} />
+              </div>
+              <div className="file-page-actions">
+                {canRelink ? <button type="button" className="button button-quiet" onClick={() => onRelink(file)}><Link2 size={16} aria-hidden="true" />{cloud ? '关联本机文件' : '重新定位'}</button> : null}
+                {events.length ? <button type="button" className="button button-quiet file-history-toggle" onClick={() => setHistoryFileId(expanded ? '' : file.id)} aria-expanded={expanded} aria-label={`${name}的历史记录（${events.length} 条）`}>
+                  <History size={16} aria-hidden="true" />历史{expanded ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+                </button> : null}
+                {canTransfer ? <details className="file-transfer-options">
+                  <summary>{drive ? 'Drive 操作' : '云端操作'}<ChevronDown size={14} aria-hidden="true" /></summary>
+                  <FileTransferActions file={file} />
+                </details> : null}
+              </div>
+            </div>
+            {expanded ? <div className="file-history-panel">{events.map(event => <div className="file-history-event" key={event.id}>
+              <span className={`file-history-dot event-${event.event_type}`} />
+              <div>
+                <div className="file-history-heading"><strong>{eventLabels[event.event_type] || event.event_type}</strong><time>{fullDate(event.occurred_at)}</time></div>
+                {event.assignment_title ? assignments.has(event.assignment_id) ? <button className="text-link" onClick={() => onOpenAssignment(event.assignment_id)}>{event.assignment_title}</button> : <span className="muted">曾关联：{event.assignment_title}</span> : null}
+                {event.details ? <p>{event.details}</p> : null}
+                <small title={fileName(event.path)}>{fileName(event.path)}{event.file_size !== null ? ` · ${sizeLabel(event.file_size)}` : ''}</small>
+              </div>
+            </div>)}</div> : null}
+          </article>
+        })}
+        {!visible.length ? <div className="empty-list">
+          <FolderOpen size={26} aria-hidden="true" /><strong>{hasFilters ? '没有符合筛选条件的文件' : '还没有关联文件'}</strong>
+          {hasFilters ? <button className="button button-quiet" type="button" onClick={clearFilters}>清除筛选</button> : <span>从作业详情添加题目材料或解答。</span>}
+        </div> : null}
+      </div>
+      {service.isDesktop ? <details className="history-section"><summary>可撤回的改名 <span>{snapshot.renames.length ? `${snapshot.renames.length} 条记录` : '暂无记录'}</span><ChevronDown size={15} /></summary><p>只有最近一次仍有效的改名可以撤回；文件被外部修改后会阻止撤回。</p>{snapshot.renames.map(event => <div className="history-row" key={event.id}><RotateCcw size={17} /><div><strong>{fileName(event.new_path)}</strong><small>原名：{fileName(event.old_path)} · {fullDate(event.changed_at)}</small></div>{event.undone_at ? <span className="muted">已撤回</span> : <button className="button button-quiet" onClick={() => onUndo(event.id)}>撤回</button>}</div>)}{!snapshot.renames.length ? <div className="history-empty">尚无改名记录</div> : null}</details> : null}
     </div>
   </section>
 }
@@ -161,7 +209,7 @@ export function SettingsPage({ snapshot, onSaveSettings, onThemeChange, onEditCo
             data-native-tint={connection === item.id ? 'accent' : undefined} onClick={() => chooseConnection(item.id)}>{item.label}</button>)}
         </div> : null}
         <div className="settings-scroll" ref={settingsScroll} data-native-scroll-under>
-        <div className="settings-column" hidden={category !== 'learning'}><section className="settings-card"><div className="settings-card-title"><div><h2>学期与课程目录</h2><p>文件仍在原位置；目录用于按课程浏览和搜索。</p></div><button className="button button-quiet" onClick={onAddSemester}><Plus size={16} />添加学期</button></div>{snapshot.semesters.map(semester => <div className="semester-settings" key={semester.id}><div className="semester-settings-heading"><div><strong>{semester.name}</strong><small>{semester.source_root || '未关联学期根目录'}</small></div><button className="button button-quiet mobile-add-course" onClick={() => onEditCourse({ id: '', semester_id: semester.id, name: '', code: '', folder_path: '' })}><Plus size={15} />课程</button><button className="icon-button danger-hover" onClick={() => onDeleteSemester(semester.id)} disabled={snapshot.semesters.length <= 1} title={snapshot.semesters.length <= 1 ? '至少保留一个学期' : `删除 ${semester.name}`}><Trash2 size={16} /></button></div>{snapshot.courses.filter(c => c.semester_id === semester.id).map(course => <button key={course.id} className="course-settings-row" onClick={() => onEditCourse(course)}><Folder size={17} /><span>{course.name}<small>{course.folder_path || '未关联文件夹'}</small></span><Pencil size={15} /></button>)}</div>)}</section></div>
+        <div className="settings-column" hidden={category !== 'learning'}><section className="settings-card"><div className="settings-card-title"><div><h2>学期与课程目录</h2><p>文件仍在原位置；目录用于按课程浏览和搜索。</p></div><button className="button button-quiet" onClick={onAddSemester}><Plus size={16} />添加学期</button></div>{snapshot.semesters.map(semester => <div className="semester-settings" key={semester.id}><div className="semester-settings-heading"><div><strong>{semester.name}</strong><small>{semester.source_root || '未关联学期根目录'}</small></div><button className="button button-quiet mobile-add-course" onClick={() => onEditCourse({ id: '', semester_id: semester.id, name: '', code: '', folder_path: '' })}><Plus size={15} />课程</button><button className="icon-button danger-hover" onClick={() => onDeleteSemester(semester.id)} disabled={snapshot.semesters.length <= 1} title={snapshot.semesters.length <= 1 ? '至少保留一个学期' : `删除 ${semester.name}`}><Trash2 size={16} /></button></div>{snapshot.courses.filter(c => c.semester_id === semester.id).map(course => <button key={course.id} className="course-settings-row" aria-label={`编辑课程：${course.name}`} onClick={() => onEditCourse(course)}><Folder size={17} aria-hidden="true" /><span>{course.name}<small title={course.folder_path || undefined}>{course.folder_path || '未关联文件夹'}</small></span><Pencil size={15} aria-hidden="true" /></button>)}</div>)}</section></div>
         <div className="settings-column" hidden={category !== 'appearance'}><section className="settings-card"><div className="settings-card-title"><div><h2>外观</h2><p>选择应用的显示主题，修改后立即生效。</p></div></div><div className="form-grid"><label className="form-field">界面主题<select value={snapshot.settings.theme} onChange={e => onThemeChange(e.target.value as Settings['theme'])}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>{service.isDesktop ? <label className="form-field span-2">命名模板<input value={settings.naming_template} onChange={e => update({ naming_template:e.target.value })} /></label> : null}</div>{service.isDesktop ? <p className="helper-text">可用字段：{'{course_code}'}、{'{material}'}、{'{scope}'}（s 节或 ch 章）；兼容 {'{sections}'}；也兼容 {'{semester}'}、{'{course}'}、{'{assignment}'}、{'{role}'}、{'{version}'}。原文件扩展名会保留。</p> : null}{service.isDesktop ? <button className="button button-primary" onClick={() => onSaveSettings({ ...settings, theme: snapshot.settings.theme })}>保存命名模板</button> : null}</section></div>
         <div className="settings-column connection-settings" hidden={category !== 'connections' || connection !== 'sync'}><SyncSettings /></div>
         <div className="settings-column connection-settings" hidden={category !== 'connections' || connection !== 'drive'}><DriveSettings /></div>

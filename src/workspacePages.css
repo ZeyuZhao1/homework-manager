@@ -150,3 +150,78 @@
 .sync-disclosure-content { display: grid; gap: 12px; padding: 12px 0 2px; }
 .sync-disclosure-content .sync-section { padding-top: 0; border-top: 0; }
 .sync-disclosure-content .sync-baseline { background: transparent; }
+
+.file-workspace .file-page-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 8px;
+}
+.file-workspace .file-page-row .file-page-actions {
+  grid-column: 2;
+  width: auto;
+  padding: 0;
+  justify-content: flex-start;
+}
+.file-workspace .file-page-actions:empty { display: none; }
+.file-name-action {
+  display: inline;
+  max-width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+}
+.file-name-action { overflow-wrap: anywhere; }
+.file-name-action svg { vertical-align: -.16em; margin-inline-start: 6px; color: var(--blue); }
+.file-name-action:hover { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
+.file-name-action:focus-visible, .file-transfer-options > summary:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+.file-transfer-options { min-width: 0; }
+.file-transfer-options[open] { flex-basis: 100%; }
+.file-transfer-options > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 13px;
+  cursor: pointer;
+  list-style: none;
+}
+.file-transfer-options > summary::-webkit-details-marker { display: none; }
+.file-transfer-options[open] > summary > svg { transform: rotate(180deg); }
+.file-transfer-options :is(.file-transfer-actions, .drive-file-actions) {
+  justify-content: flex-start;
+  margin-top: 8px;
+  max-width: none;
+}
+.file-transfer-options .file-transfer-actions > small { flex-basis: 100%; }
+.file-workspace .empty-list > .button { margin-top: 4px; }
+.workspace-settings .settings-column > .settings-card + .settings-card { margin-top: 12px; }
+.workspace-settings .course-settings-row { padding-block: 10px; }
+.workspace-settings .course-settings-row + .course-settings-row { border-top: 1px solid var(--border); }
+.workspace-settings .settings-card-title > div { min-width: 0; }
+.workspace-settings .settings-card-title > .button { flex: none; }
+@media (min-width: 781px) {
+  .app-shell[data-compact-workspace] .workspace-settings {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 16px;
+  }
+  .app-shell[data-compact-workspace] .settings-category-nav {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+}
+.app-shell[data-touch-layout] .file-workspace .page-header p { display: block; margin: 2px 0 0; }

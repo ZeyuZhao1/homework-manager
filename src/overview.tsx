@@ -53,7 +53,7 @@ export function Overview({ assignments, groups, courses, onOpenAssignment, onVie
       <div className="overview-selectors">
         <div className="overview-tabs" role="group" aria-label="筛选待办" data-native-control="overview-tabs">
           <button type="button" className={tab === 'handling' ? 'active' : ''} aria-pressed={tab === 'handling'} onClick={() => chooseTab('handling')}>需要处理</button>
-          <button type="button" className={tab === 'done' ? 'active' : ''} aria-pressed={tab === 'done'} onClick={() => chooseTab('done')}>待提交 <span>{queue.done.length}</span></button>
+          <button type="button" className={tab === 'done' ? 'active' : ''} aria-pressed={tab === 'done'} onClick={() => chooseTab('done')}>待提交{queue.done.length > 0 ? <span>{queue.done.length}</span> : null}</button>
         </div>
         {calendarEnabled ? <div className="overview-layout" role="group" aria-label="待办视图" data-native-control="overview-layout">
           {([['list', '清单'], ['calendar', '日历']] as const).map(([key, label]) => <button type="button" key={key} aria-pressed={layout === key} className={layout === key ? 'active' : ''} onClick={() => chooseLayout(key)}>{label}</button>)}

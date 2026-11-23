@@ -129,9 +129,13 @@
 .app-shell[data-native-workspace] .task-workspace[data-has-detail] {
   grid-template-columns: minmax(0, 1.2fr) minmax(294px, 1fr);
 }
+.app-shell[data-native-workspace] .task-workspace[data-native-compact-detail] {
+  grid-template-columns: minmax(0, 1fr);
+}
 .app-shell[data-native-workspace] .task-workspace:not([data-has-detail]) .task-workspace-detail { display: none; }
 .app-shell[data-native-workspace] .task-workspace-list { min-height: 0; overflow: auto; padding-bottom: 20px; }
 .app-shell[data-native-chrome][data-view="overview"] .task-workspace-list { display: flex; flex-direction: column; min-height: 0; overflow: hidden; padding-bottom: 0; }
+.app-shell[data-native-workspace] [data-native-compact-detail] > .task-workspace-list { display: none; }
 .app-shell[data-native-chrome] .overview-content { display: flex; flex: 1; flex-direction: column; min-height: 0; margin: 0; position: relative; }
 .app-shell[data-native-chrome] .overview-controls { flex: none; padding-bottom: 16px; }
 .app-shell[data-native-chrome] .overview-meta { min-height: 32px; margin-bottom: 10px; }
@@ -142,17 +146,11 @@
 .app-shell[data-native-chrome] .overview-selectors .overview-layout { flex-basis: min(100%, 120px); }
 .app-shell[data-native-chrome] .overview-selectors button { min-width: 0; min-height: 0; padding: 0 3px; font-size: 13px; }
 .app-shell[data-native-chrome] .overview-meta .overview-all button { min-height: 32px; padding: 0 13px; font-size: 13px; }
-.app-shell[data-native-chrome] .overview-meta .overview-all {
-  position: absolute;
-  inset: auto 12px 14px auto;
-  z-index: 1;
-}
 .app-shell[data-native-chrome] .overview-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 0 60px;
-  scroll-padding-bottom: 60px;
+  padding: 0 0 24px;
 }
 .app-shell[data-native-chrome] .overview-meta .overview-all button:not([data-native-installed]) {
   background: var(--surface);
@@ -173,81 +171,85 @@
 .app-shell[data-native-workspace] [data-has-detail] .assignment-table th:nth-child(4) { width: 17%; }
 .app-shell[data-native-chrome] .overview-queue-item.selected { box-shadow: inset 3px 0 var(--blue); }
 
-@media (min-width: 781px) {
-  .app-shell[data-native-workspace] .task-workspace-detail {
-    position: static;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    margin: 0;
-    padding: 16px 14px 0;
-    border: 1px solid var(--border);
-    border-bottom: 0;
-    border-radius: var(--workspace-radius) var(--workspace-radius) 0 0;
-    background: var(--inspector);
-  }
-  .app-shell[data-native-workspace] .task-workspace-detail .detail-panel {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-height: 0;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-  .app-shell[data-native-workspace] .task-workspace-detail .detail-icon { display: none; }
-  .app-shell[data-native-workspace] .detail-panel .detail-heading { flex: none; margin: 0 0 8px; padding: 0; border: 0; }
-  .app-shell[data-native-workspace] .detail-viewport {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    position: relative;
-  }
-  .app-shell[data-native-workspace] .detail-command-bar {
-    position: absolute;
-    inset: 0 5px auto 0;
-    z-index: 1;
-    display: grid;
-    gap: 8px;
-    margin: 0;
-    background: transparent;
-    pointer-events: none;
-  }
-  .app-shell[data-native-workspace] .detail-command-bar :is(button, select) { pointer-events: auto; }
-  .app-shell[data-native-workspace] .detail-title h2 { font-size: 19px; line-height: 25px; overflow-wrap: anywhere; }
-  .app-shell[data-native-workspace] .detail-panel .detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: 6px; }
-  .app-shell[data-native-workspace] .detail-web-action { display: none; }
-  .app-shell[data-native-workspace] .detail-menu {
-    display: block;
-    height: 34px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    padding: 0 6px 0 10px;
-    font: inherit;
-    font-size: 13px;
-  }
-  .app-shell[data-native-workspace] .detail-actions .status-select { inline-size: 92px; min-inline-size: 92px; }
-  .app-shell[data-native-workspace] .detail-add { inline-size: 100px; background: var(--blue-soft); }
-  .app-shell[data-native-workspace] .detail-more { inline-size: 62px; }
-  .app-shell[data-native-workspace] .detail-body {
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-    overflow: auto;
-    padding: calc(var(--detail-command-height, 34px) + 16px) 0 24px;
-    scroll-padding-top: calc(var(--detail-command-height, 34px) + 8px);
-    scrollbar-gutter: stable;
-  }
-  .app-shell[data-native-workspace] .detail-column > .add-inline { display: none; }
-  .app-shell[data-native-workspace] .task-workspace-detail .detail-columns { grid-template-columns: 1fr; }
-  .app-shell[data-native-workspace] .task-workspace-detail .detail-column { border-left: 0; border-top: 1px solid var(--border); padding: 18px 0; }
-  .app-shell[data-native-workspace] .task-workspace-detail .detail-column:first-child { border-top: 0; padding-top: 0; }
-  .app-shell[data-native-workspace] .task-workspace-detail .detail-series:not([hidden]) { flex: 1; min-height: 0; overflow: auto; }
+.app-shell[data-native-workspace] .task-workspace-detail {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 16px 14px 0;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--workspace-radius) var(--workspace-radius) 0 0;
+  background: var(--inspector);
 }
+.app-shell[data-native-workspace] .task-workspace-detail:focus { outline: none; }
+.app-shell[data-native-workspace] [data-native-compact-detail] > .task-workspace-detail {
+  padding-inline: clamp(16px, 3vw, 26px);
+}
+.app-shell[data-native-workspace] .task-workspace-detail .detail-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.app-shell[data-native-workspace] .task-workspace-detail .detail-icon { display: none; }
+.app-shell[data-native-workspace] .detail-panel .detail-heading { flex: none; margin: 0 0 8px; padding: 0; border: 0; }
+.app-shell[data-native-workspace] .detail-viewport {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.app-shell[data-native-workspace] .detail-command-bar {
+  position: absolute;
+  inset: 0 5px auto 0;
+  z-index: 1;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+}
+.app-shell[data-native-workspace] .detail-command-bar :is(button, select) { pointer-events: auto; }
+.app-shell[data-native-workspace] .detail-title h2 { font-size: 19px; line-height: 25px; overflow-wrap: anywhere; }
+.app-shell[data-native-workspace] .detail-panel .detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: 6px; }
+.app-shell[data-native-workspace] .detail-web-action { display: none; }
+.app-shell[data-native-workspace] .detail-menu {
+  display: block;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  padding-inline: 12px;
+  text-align: center;
+  text-align-last: center;
+  font: inherit;
+  font-size: 13px;
+}
+.app-shell[data-native-workspace] .detail-actions .status-select { inline-size: 92px; min-inline-size: 92px; }
+.app-shell[data-native-workspace] .detail-add { inline-size: 100px; background: var(--blue-soft); }
+.app-shell[data-native-workspace] .detail-more { inline-size: 62px; }
+.app-shell[data-native-workspace] .detail-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: calc(var(--detail-command-height, 34px) + 16px) 0 24px;
+  scroll-padding-top: calc(var(--detail-command-height, 34px) + 8px);
+  scrollbar-gutter: stable;
+}
+.app-shell[data-native-workspace] .detail-column > :is(.add-inline, .detail-add-actions) { display: none; }
+.app-shell[data-native-workspace] .task-workspace-detail .detail-columns { grid-template-columns: 1fr; }
+.app-shell[data-native-workspace] .task-workspace-detail .detail-column { border-left: 0; border-top: 1px solid var(--border); padding: 18px 0; }
+.app-shell[data-native-workspace] .task-workspace-detail .detail-column:first-child { border-top: 0; padding-top: 0; }
+.app-shell[data-native-workspace] .task-workspace-detail .detail-series:not([hidden]) { flex: 1; min-height: 0; overflow: auto; }
 
 .workspace-inspector-tools {
   display: flex;

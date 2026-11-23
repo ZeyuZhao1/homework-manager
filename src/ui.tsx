@@ -92,12 +92,12 @@ export function useDialogFocus(ref: RefObject<HTMLElement | null>, onClose: () =
   }, [ref])
 }
 
-export function Modal({ title, onClose, children, footer, wide = false, closeDisabled = false }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; closeDisabled?: boolean }) {
+export function Modal({ title, onClose, children, footer, wide = false, closeDisabled = false, className = '' }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; closeDisabled?: boolean; className?: string }) {
   const dialogRef = useRef<HTMLElement>(null)
   const closeModal = () => { if (!closeDisabled) onClose() }
   useDialogFocus(dialogRef, closeModal)
   return createPortal(<div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closeModal() }}>
-    <section ref={dialogRef} tabIndex={-1} className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+    <section ref={dialogRef} tabIndex={-1} className={`modal ${wide ? 'modal-wide' : ''} ${className}`} role="dialog" aria-modal="true" aria-label={title}>
       <header className="modal-header"><h2>{title}</h2><button className="icon-button glass-control" disabled={closeDisabled} onClick={closeModal} aria-label="关闭"><X size={19} /></button></header>
       <div className="modal-body">{children}</div>
       {footer ? <footer className="modal-footer">{footer}</footer> : null}
@@ -109,7 +109,7 @@ export function AssignmentMobileSummary({ course, status, due, overdue = false, 
   return <div className="assignment-mobile-summary"><span className="assignment-card-course">{course}{extra ? <span className="assignment-card-extra"> · {extra}</span> : null}</span><div className="assignment-card-meta"><span className={`assignment-card-due ${overdue ? 'date-overdue' : ''}`}>{due}</span><span className="assignment-card-state">{status}</span></div><ChevronRight className="assignment-card-chevron" size={16} aria-hidden="true" /></div>
 }
 
-export function AssignmentTable({ items, courses, selectedId, onSelect, filesFor, groupRows = [], groupLabels = {}, mode = 'assignments' }: { items: Assignment[]; courses: Course[]; selectedId: string; onSelect: (id: string) => void; filesFor: (id: string) => number; groupRows?: { id:string; sortAt:string|null; node:ReactNode }[]; groupLabels?: Record<string, string>; mode?: 'assignments' | 'plans' }) {
+export function AssignmentTable({ items, courses, selectedId, onSelect, filesFor, groupRows = [], groupLabels = {}, mode = 'assignments', emptyFiltered = false, onResetFilters }: { items: Assignment[]; courses: Course[]; selectedId: string; onSelect: (id: string) => void; filesFor: (id: string) => number; groupRows?: { id:string; sortAt:string|null; node:ReactNode }[]; groupLabels?: Record<string, string>; mode?: 'assignments' | 'plans'; emptyFiltered?: boolean; onResetFilters?: () => void }) {
   const courseNames = new Map(courses.map(course => [course.id, course.name]))
   const sortedItems = [...items].sort((a, b) => (a.due_at || '9999').localeCompare(b.due_at || '9999'))
   const listKey = JSON.stringify(sortedItems.map(item => item.id))
@@ -124,14 +124,61 @@ export function AssignmentTable({ items, courses, selectedId, onSelect, filesFor
     const seriesTitle = groupLabels[item.id]
     const overdue = dueState(item) === 'overdue'
     const status = <span className={`status status-${item.status}`}>{statusLabels[item.status]}</span>
-    return { key:`assignment-${item.id}`,sortAt:item.due_at||'9999',node:<tr className={`assignment-row ${selectedId === item.id ? 'selected' : ''}`} tabIndex={0} aria-label={`打开作业：${item.title}`} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(item.id) } }} onClick={() => onSelect(item.id)}><td><div className="table-title"><FileText size={20} strokeWidth={1.8} /><span>{item.title}{seriesTitle ? <small className="assignment-series-label">{seriesTitle} · 周期作业</small> : null}</span></div><AssignmentMobileSummary course={course} status={status} due={item.due_at ? dateLabel(item.due_at) : '未设截止时间'} overdue={overdue} extra={seriesTitle ? `${seriesTitle} · 周期作业` : fileCount ? `${fileCount} 个附件` : undefined} /></td><td>{course}</td><td><span className={overdue ? 'date-overdue' : ''}>{dateLabel(item.due_at)}</span></td><td>{status}</td><td>{item.submission_label || <span className="muted">—</span>}</td><td>{fileCount ? `${fileCount} 个文件` : <span className="muted">—</span>}</td><td><ChevronRight size={16} /></td></tr>}
+    const selected = selectedId === item.id
+    return { key: `assignment-${item.id}`, sortAt: item.due_at || '9999', node:
+      <tr className={`assignment-row ${selected ? 'selected' : ''}`} onClick={event => {
+        event.currentTarget.querySelector('button')?.focus({ preventScroll: true })
+        onSelect(item.id)
+      }}>
+        <td>
+          <button type="button" className="table-title assignment-title-button" aria-current={selected || undefined} aria-label={`打开作业：${item.title}`}>
+            <FileText size={18} strokeWidth={1.8} aria-hidden="true" />
+            <span>{item.title}{seriesTitle ? <small className="assignment-series-label">{seriesTitle} · 周期作业</small> : null}</span>
+          </button>
+          <AssignmentMobileSummary course={course} status={status} due={item.due_at ? dateLabel(item.due_at) : '未设截止时间'} overdue={overdue} extra={seriesTitle ? `${seriesTitle} · 周期作业` : fileCount ? `${fileCount} 个附件` : undefined} />
+        </td>
+        <td title={course}>{course}</td>
+        <td><span className={overdue ? 'date-overdue' : ''}>{item.due_at ? dateLabel(item.due_at) : '—'}</span></td>
+        <td>{status}</td>
+        <td>{item.submission_label || <span className="muted">—</span>}</td>
+        <td>{fileCount ? `${fileCount} 个文件` : <span className="muted">—</span>}</td>
+        <td><ChevronRight size={16} aria-hidden="true" /></td>
+      </tr>,
+    }
   }), ...groupRows.map(row => ({key:`group-${row.id}`,sortAt:row.sortAt||'9999',node:row.node}))].sort((a,b)=>a.sortAt.localeCompare(b.sortAt))
-  return <div className="assignment-table-wrap"><table className="assignment-table"><thead><tr><th scope="col">{mode === 'plans' ? '计划' : '作业'}</th><th scope="col">课程</th><th scope="col">{mode === 'plans' ? '下次截止' : '截止时间'}</th><th scope="col">状态</th><th scope="col">提交位置</th><th scope="col">文件</th><th aria-label="打开详情" /></tr></thead><tbody>{rows.map(row => <Fragment key={row.key}>{row.node}</Fragment>)}</tbody></table>{count < sortedItems.length ? <div className="assignment-list-more"><span>已显示 {visibleItems.length} / {sortedItems.length} 项</span><button type="button" onClick={() => setShown({ key: listKey, count: count + 100 })}>显示更多</button></div> : null}{rows.length === 0 ? <div className="empty-list"><CheckCircle2 size={29} /><strong>这里暂时没有作业</strong><span>试试调整筛选条件，或新建作业。</span></div> : null}</div>
+  return <div className="assignment-table-wrap"><table className="assignment-table"><thead><tr><th scope="col">{mode === 'plans' ? '计划' : '作业'}</th><th scope="col">课程</th><th scope="col">{mode === 'plans' ? '下次截止' : '截止时间'}</th><th scope="col">状态</th><th scope="col">提交位置</th><th scope="col">文件</th><th aria-label="打开详情" /></tr></thead><tbody>{rows.map(row => <Fragment key={row.key}>{row.node}</Fragment>)}</tbody></table>{count < sortedItems.length ? <div className="assignment-list-more"><span>已显示 {visibleItems.length} / {sortedItems.length} 项</span><button type="button" onClick={() => setShown({ key: listKey, count: count + 100 })}>显示更多</button></div> : null}{rows.length === 0 ? <div className="empty-list"><CheckCircle2 size={26} aria-hidden="true" /><strong>{emptyFiltered ? '没有符合条件的作业' : '这里还没有作业'}</strong>{emptyFiltered ? <button className="button button-quiet" type="button" onClick={onResetFilters}>查看全部作业</button> : null}</div> : null}</div>
 }
 
 function LinkedFile({ link, file, printModules, onEdit, onRename, onRelink }: { link: FileLink; file?: FileAsset; printModules: ModuleDescriptor[]; onEdit: () => void; onRename: () => void; onRelink: () => void }) {
   const drive = isDriveReference(file)
-  return <PrintFileActions file={drive ? undefined : file} modules={drive ? [] : printModules} renderActions={actions => <FileContextMenu menuItems={<>{!drive ? <button role="menuitem" disabled={!service.isDesktop || !file || file.missing} onClick={onRename} title={!service.isDesktop ? "桌面专属" : undefined}><FileText size={16} />统一命名</button> : null}{drive ? null : actions}</>} file={drive ? undefined : file} className={`linked-file ${file?.missing && !isCloudReference(file.path) && !drive ? 'linked-file-missing' : ''}`}><div className="file-glyph"><File size={18} /></div><div className="linked-file-info"><button className="text-link file-name-link" onClick={() => { if (file && canOpenAttachment(file, service.isCloud)) void service.openFile(file.id,link.id).then(result => { if (result.warning) window.alert(result.warning) }).catch(e => window.alert(`打开文件失败：${errorText(e)}`)) }} disabled={!canOpenAttachment(file, service.isCloud)} title={file ? attachmentHint(file, service.isCloud) || attachmentName(file) : undefined}>{file ? attachmentName(file) : '未知文件'}{canOpenAttachment(file, service.isCloud) ? <ExternalLink size={13} /> : null}</button><small>{roleLabels[link.role]}{link.page ? ` · p.${link.page}` : ''}{link.chapter ? ` · ${link.chapter}` : ''}{link.problem ? ` · 第 ${link.problem} 题` : ''}</small>{file && attachmentHint(file, service.isCloud) ? <span className="muted">{attachmentHint(file, service.isCloud)}</span> : null}</div><div className="file-actions"><button className="icon-button tiny" onClick={file?.missing && !isCloudReference(file.path) && !drive ? onRelink : onEdit} title={file?.missing && !isCloudReference(file.path) && !drive ? '重新定位' : '编辑关联'}><Pencil size={15} /></button></div></FileContextMenu>} />
+  const missing = !!file?.missing && !drive
+  const canRelink = service.isDesktop && missing
+  const openable = canOpenAttachment(file, service.isCloud)
+  const hint = file ? attachmentHint(file, service.isCloud) : ''
+  const open = () => {
+    if (!file || !openable) return
+    void service.openFile(file.id, link.id).then(result => {
+      if (result.warning) window.alert(result.warning)
+    }).catch(error => window.alert(`打开文件失败：${errorText(error)}`))
+  }
+  return <PrintFileActions file={drive ? undefined : file} modules={drive ? [] : printModules} renderActions={actions =>
+    <FileContextMenu
+      menuItems={<>{!drive ? <button role="menuitem" disabled={!service.isDesktop || !file || missing} onClick={onRename} title={!service.isDesktop ? '桌面专属' : undefined}><FileText size={16} />统一命名</button> : null}{drive ? null : actions}</>}
+      file={drive ? undefined : file}
+      className={`linked-file ${missing && file && !isCloudReference(file.path) ? 'linked-file-missing' : ''}`}
+    >
+      <div className="file-glyph"><File size={18} /></div>
+      <div className="linked-file-info">
+        <button className="text-link file-name-link" onClick={open} disabled={!openable} title={hint || (file ? attachmentName(file) : undefined)}>
+          <span>{file ? attachmentName(file) : '未知文件'}</span>{openable ? <ExternalLink size={13} /> : null}
+        </button>
+        <small>{roleLabels[link.role]}{link.page ? ` · p.${link.page}` : ''}{link.chapter ? ` · ${link.chapter}` : ''}{link.problem ? ` · 第 ${link.problem} 题` : ''}</small>
+        {hint ? <span className="muted">{hint}</span> : null}
+        {canRelink ? <button type="button" className="text-link" onClick={onRelink}>关联本机文件</button> : null}
+      </div>
+      <div className="file-actions"><button className="icon-button tiny" onClick={onEdit} title="编辑关联"><Pencil size={15} /></button></div>
+    </FileContextMenu>
+  } />
 }
 
 export function AssignmentDetail({ item, course, links, files, fileHistory, onEdit, onDelete, onAddFile, onEditLink, onRename, onStatus, onRelink, printModules, onClose, addon }: { item: Assignment; course?: Course; links: FileLink[]; files: FileAsset[]; fileHistory: FileHistoryEvent[]; onEdit: () => void; onDelete: () => void; onAddFile: (role: FileRole) => void; onEditLink: (link: FileLink) => void; onRename: (link: FileLink) => void; onStatus: (status: Status) => void | Promise<void>; onRelink: (file: FileAsset) => void; printModules: ModuleDescriptor[]; onClose?: () => void; addon?: ReactNode }) {
@@ -181,9 +228,11 @@ export function AssignmentDetail({ item, course, links, files, fileHistory, onEd
     const file = filesById.get(link.file_id)
     return <LinkedFile key={link.id} link={link} printModules={printModules} file={file} onEdit={() => onEditLink(link)} onRename={() => onRename(link)} onRelink={() => { if (file) onRelink(file) }} />
   }
+  const [expandedHistoryId, setExpandedHistoryId] = useState('')
+  const historyOpen = expandedHistoryId === item.id
   const historyLabels: Record<string,string> = { tracking_started:'开始追踪', content_changed:'文件内容变化', linked:'关联文件', link_updated:'更新关联', unlinked:'取消关联', common_added:'设为常用文件', common_updated:'更新常用文件', common_removed:'取消常用文件', relocated:'重新定位', renamed:'文件改名', rename_undone:'撤回改名' }
   const historicRoles = new Map<string, FileRole | 'other'>()
-  for (const event of fileHistory) {
+  if (historyOpen) for (const event of fileHistory) {
     if (event.assignment_id !== item.id || !event.details.includes('角色：') || historicRoles.has(event.file_id)) continue
     const details = event.details
     historicRoles.set(event.file_id, details.includes('我的解答') ? 'solution' : details.includes('教材参考') ? 'reference' : details.includes('题目材料') ? 'prompt' : 'other')
@@ -193,7 +242,7 @@ export function AssignmentDetail({ item, course, links, files, fileHistory, onEd
     { key:'materials', label:'题目与参考', events:[] },
     { key:'other', label:'其他文件', events:[] },
   ]
-  for (const event of fileHistory) {
+  if (historyOpen) for (const event of fileHistory) {
     const role = currentRoles.get(event.file_id) || historicRoles.get(event.file_id) || 'other'
     historyGroups[role === 'solution' ? 0 : role === 'prompt' || role === 'reference' ? 1 : 2].events.push(event)
   }
@@ -228,9 +277,30 @@ export function AssignmentDetail({ item, course, links, files, fileHistory, onEd
     </div>
     <div className="detail-body" key={item.id} data-native-scroll-under>{statusBusy ? <span className="detail-saving" role="status">保存中…</span> : null}{statusError ? <InlineError>{statusError}</InlineError> : null}
     <div className="detail-columns"><div className="detail-column"><h3>截止与提交</h3><div className="detail-field"><Clock3 size={18} /><div><small>截止时间</small><span>{fullDate(item.due_at)}{dueState(item) === 'overdue' ? <em className="danger-text"> · 已逾期</em> : null}</span></div></div><div className="detail-field"><ExternalLink size={18} /><div><small>提交到</small>{item.submission_url && urlIsSafe(item.submission_url) ? <button className="text-link" onClick={() => { void service.openUrl(item.submission_url).catch(error => window.alert(`打开提交链接失败：${errorText(error)}`)) }}>{item.submission_label || '前往提交'}<ExternalLink size={14} /></button> : <span>{item.submission_label || '—'}</span>}</div></div>{item.submission_notes ? <div className="detail-field"><FileText size={18} /><div><small>提交要求</small><span>{item.submission_notes}</span></div></div> : null}</div>
-      <div className="detail-column"><h3>题目材料</h3>{[...linksByRole.prompt, ...linksByRole.reference].map(fileRow)}{!linksByRole.prompt.length && !linksByRole.reference.length ? <p className="detail-empty">尚未关联题目或教材</p> : null}<button className="add-inline" onClick={() => onAddFile('prompt')}><Plus size={16} />添加材料</button></div><div className="detail-column"><h3>我的解答</h3>{linksByRole.solution.map(fileRow)}{!linksByRole.solution.length ? <p className="detail-empty">尚未关联解答文件</p> : null}<button className="add-inline" onClick={() => onAddFile('solution')}><Plus size={16} />添加解答</button></div></div>
+      {links.length ? <>
+        <div className="detail-column">
+          <h3>题目材料</h3>
+          {[...linksByRole.prompt, ...linksByRole.reference].map(fileRow)}
+          {!linksByRole.prompt.length && !linksByRole.reference.length ? <p className="detail-empty">尚未关联题目或教材</p> : null}
+          <button type="button" className="add-inline" onClick={() => onAddFile('prompt')}><Plus size={16} aria-hidden="true" />添加材料</button>
+        </div>
+        <div className="detail-column">
+          <h3>我的解答</h3>
+          {linksByRole.solution.map(fileRow)}
+          {!linksByRole.solution.length ? <p className="detail-empty">尚未关联解答文件</p> : null}
+          <button type="button" className="add-inline" onClick={() => onAddFile('solution')}><Plus size={16} aria-hidden="true" />添加解答</button>
+        </div>
+      </> : <div className="detail-column">
+        <h3>附件</h3>
+        <p className="detail-empty">尚未添加题目材料或解答</p>
+        <div className="detail-add-actions">
+          <button type="button" className="add-inline" onClick={() => onAddFile('prompt')}><Plus size={16} aria-hidden="true" />添加材料</button>
+          <button type="button" className="add-inline" onClick={() => onAddFile('solution')}><Plus size={16} aria-hidden="true" />添加解答</button>
+        </div>
+      </div>}
+    </div>
     {addon}
-    {item.description ? <div className="detail-notes"><h3>作业说明</h3><p>{item.description}</p></div> : null}{Object.keys(item.custom_fields || {}).length ? <div className="detail-notes"><h3>自定义字段</h3><dl className="custom-detail-list">{Object.entries(item.custom_fields).map(([key,value]) => <div key={key}><dt>{key}</dt><dd>{value || "—"}</dd></div>)}</dl></div> : null}<details className="assignment-file-history"><summary><History size={16} /><span>作业文件历史</span><em>{fileHistory.length} 条</em></summary>{nonEmptyHistoryGroups.length ? <div className="assignment-history-groups">{nonEmptyHistoryGroups.map(group => <section key={group.key}><h4>{group.label}</h4>{group.events.slice(0,30).map(event => { const asset = filesById.get(event.file_id); return <div className="assignment-history-row" key={event.id}><span className={`file-history-dot event-${event.event_type}`} /><div><div><strong>{historyLabels[event.event_type] || event.event_type}</strong><time>{fullDate(event.occurred_at)}</time></div><button className="assignment-history-file" title={asset ? attachmentLocation(asset) : fileName(event.path)} disabled={!canOpenAttachment(asset, service.isCloud)} onClick={() => { if (asset) void service.openFile(asset.id).catch(error => window.alert(`打开文件失败：${errorText(error)}`)) }}>{asset ? attachmentName(asset) : fileName(event.path)}</button>{event.details ? <small>{event.details}</small> : null}</div></div> })}</section>)}</div> : <div className="history-empty">尚无文件历史；关联解答或题目文件后会开始记录。</div>}</details>{item.source_name || item.source_text ? <details className="source-detail"><summary>来源内容 {item.source_name ? `· ${item.source_name}` : ''}</summary><p>{item.source_text || '没有保存来源原文'}</p></details> : null}</div></div></section>
+    {item.description ? <div className="detail-notes"><h3>作业说明</h3><p>{item.description}</p></div> : null}{Object.keys(item.custom_fields || {}).length ? <div className="detail-notes"><h3>自定义字段</h3><dl className="custom-detail-list">{Object.entries(item.custom_fields).map(([key,value]) => <div key={key}><dt>{key}</dt><dd>{value || "—"}</dd></div>)}</dl></div> : null}{fileHistory.length > 0 ? <details className="assignment-file-history" open={historyOpen} onToggle={event => setExpandedHistoryId(event.currentTarget.open ? item.id : '')}><summary><History size={16} /><span>作业文件历史</span><em>{fileHistory.length} 条</em></summary>{historyOpen ? (nonEmptyHistoryGroups.length ? <div className="assignment-history-groups">{nonEmptyHistoryGroups.map(group => <section key={group.key}><h4>{group.label}</h4>{group.events.slice(0,30).map(event => { const asset = filesById.get(event.file_id); return <div className="assignment-history-row" key={event.id}><span className={`file-history-dot event-${event.event_type}`} /><div><div><strong>{historyLabels[event.event_type] || event.event_type}</strong><time>{fullDate(event.occurred_at)}</time></div><button className="assignment-history-file" title={asset ? attachmentLocation(asset) : fileName(event.path)} disabled={!canOpenAttachment(asset, service.isCloud)} onClick={() => { if (asset) void service.openFile(asset.id).catch(error => window.alert(`打开文件失败：${errorText(error)}`)) }}>{asset ? attachmentName(asset) : fileName(event.path)}</button>{event.details ? <small>{event.details}</small> : null}</div></div> })}</section>)}</div> : <div className="history-empty">尚无文件历史；关联解答或题目文件后会开始记录。</div>) : null}</details> : null}{item.source_name || item.source_text ? <details className="source-detail"><summary>来源内容 {item.source_name ? `· ${item.source_name}` : ''}</summary><p>{item.source_text || '没有保存来源原文'}</p></details> : null}</div></div></section>
 }
 
 export function InlineError({ children }: { children: ReactNode }) { return <div className="inline-error"><AlertCircle size={16} />{children}</div> }

@@ -41,6 +41,17 @@ static NSDictionary *HBRow(NSString *name, NSString *action, NSString *value, NS
     return @{ @"name": name, @"action": action, @"value": value, @"symbol": symbol };
 }
 
+@interface HBSidebarTable : NSTableView
+@property(nonatomic, copy) NSMenu *(^courseMenuForRow)(NSInteger);
+@end
+
+@implementation HBSidebarTable
+- (NSMenu *)menuForEvent:(NSEvent *)event {
+    NSInteger row = [self rowAtPoint:[self convertPoint:event.locationInWindow fromView:nil]];
+    return self.courseMenuForRow ? self.courseMenuForRow(row) : nil;
+}
+@end
+
 API_AVAILABLE(macos(26.0))
 @interface HBCapsuleButtonView : NSGlassEffectView
 @end
@@ -72,6 +83,20 @@ API_AVAILABLE(macos(26.0))
 }
 @end
 
+@interface HBCenteredPullDownCell : NSPopUpButtonCell
+@end
+
+@implementation HBCenteredPullDownCell
+- (NSRect)titleRectForBounds:(NSRect)bounds {
+    NSRect title = [super titleRectForBounds:bounds];
+    // Reserve the arrow inset on both sides so the title centers in the capsule.
+    CGFloat inset = MAX(NSMinX(title) - NSMinX(bounds), NSMaxX(bounds) - NSMaxX(title));
+    title.origin.x = NSMinX(bounds) + inset;
+    title.size.width = MAX(0, NSWidth(bounds) - 2 * inset);
+    return title;
+}
+@end
+
 static NSView *HBButtonSurface(NSButton *button) {
     button.bezelStyle = NSBezelStylePush;
     if (@available(macOS 26.0, *)) {
@@ -100,8 +125,6 @@ static NSView *HBButtonSurface(NSButton *button) {
 @property(nonatomic, strong) NSMenuToolbarItem *filterItem;
 @property(nonatomic, strong) NSMenuToolbarItem *toolsItem;
 @property(nonatomic, strong) NSStatusItem *statusItem;
-@property(nonatomic, strong) NSMenuItem *quickAddItem;
-@property(nonatomic, strong) NSMenuItem *settingsItem;
 @property(nonatomic, copy) NSDictionary *assignmentFilter;
 @property(nonatomic, copy) NSArray<NSDictionary *> *tools;
 @property(nonatomic, copy) NSString *theme;
@@ -116,6 +139,7 @@ static NSView *HBButtonSurface(NSButton *button) {
 @property(nonatomic, copy) NSString *activeView;
 @property(nonatomic, strong) NSNumber *lastReset;
 - (instancetype)initWithWindow:(NSWindow *)window webview:(WKWebView *)webview;
+- (NSMenu *)courseMenuForRow:(NSInteger)row;
 - (void)apply:(NSDictionary *)state;
 @end
 
@@ -155,6 +179,7 @@ static NSView *HBButtonSurface(NSButton *button) {
     sideItem.minimumThickness = 218;
     sideItem.maximumThickness = 300;
     sideItem.canCollapse = YES;
+    sideItem.collapseBehavior = NSSplitViewItemCollapseBehaviorPreferResizingSiblingsWithFixedSplitView;
     [_split addSplitViewItem:sideItem];
     [_split addSplitViewItem:[NSSplitViewItem splitViewItemWithViewController:content]];
     // Set the replacement root before reparenting Wry so Tao's window delegate
@@ -169,7 +194,10 @@ static NSView *HBButtonSurface(NSButton *button) {
     _semesters.font = [NSFont systemFontOfSize:14 weight:NSFontWeightMedium];
     _semesters.toolTip = @"选择学期";
     [_semesters setAccessibilityLabel:@"选择学期"];
-    _table = [[NSTableView alloc] initWithFrame:NSZeroRect];
+    HBSidebarTable *table = [[HBSidebarTable alloc] initWithFrame:NSZeroRect];
+    __weak HBChrome *weakSelf = self;
+    table.courseMenuForRow = ^NSMenu *(NSInteger row) { return [weakSelf courseMenuForRow:row]; };
+    _table = table;
     NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:@"navigation"];
     column.resizingMask = NSTableColumnAutoresizingMask;
     [_table addTableColumn:column];
@@ -191,11 +219,11 @@ static NSView *HBButtonSurface(NSButton *button) {
     _addCourse.image = [NSImage imageWithSystemSymbolName:@"plus" accessibilityDescription:nil];
     _addCourse.imagePosition = NSImageLeft;
     _addCourse.imageHugsTitle = YES;
-    _themeButton = [NSButton buttonWithTitle:@"" target:self action:@selector(themeAction:)];
+    _themeButton = [NSButton buttonWithTitle:@"" target:self action:@selector(showAppearanceMenu:)];
     _themeButton.image = [NSImage imageWithSystemSymbolName:@"circle.lefthalf.filled" accessibilityDescription:nil];
     _themeButton.imagePosition = NSImageOnly;
-    _themeButton.toolTip = @"切换明暗";
-    [_themeButton setAccessibilityLabel:@"切换明暗"];
+    _themeButton.toolTip = @"外观";
+    [_themeButton setAccessibilityLabel:@"外观"];
     NSView *addCourseSurface = HBButtonSurface(_addCourse);
     NSView *themeSurface = HBButtonSurface(_themeButton);
     for (NSView *view in @[_semesters, scroll, addCourseSurface, themeSurface]) {
@@ -248,12 +276,17 @@ static NSView *HBButtonSurface(NSButton *button) {
     if (!button.image) button.title = @"作业簿";
 
     NSMenu *menu = [NSMenu new];
-    menu.autoenablesItems = NO;
     [menu addItem:[self menuItem:@"显示作业簿" action:@selector(showMainWindow:)]];
-    self.quickAddItem = [self menuItem:@"新建作业…" action:@selector(quickAddAssignment:)];
-    [menu addItem:self.quickAddItem];
-    self.settingsItem = [self menuItem:@"设置…" action:@selector(openSettings:)];
-    [menu addItem:self.settingsItem];
+    [menu addItem:NSMenuItem.separatorItem];
+    for (NSArray<NSString *> *destination in @[@[@"待办", @"overview"], @[@"作业", @"all"], @[@"文件", @"files"]]) {
+        NSMenuItem *item = [self menuItem:destination[0] action:@selector(navigateFromMenu:)];
+        item.representedObject = destination[1];
+        [menu addItem:item];
+    }
+    [menu addItem:NSMenuItem.separatorItem];
+    [menu addItem:[self menuItem:@"新建作业…" action:@selector(quickAddAssignment:)]];
+    [menu addItem:[self menuItem:@"查找作业…" action:@selector(findAssignments:)]];
+    [menu addItem:[self menuItem:@"设置…" action:@selector(openSettings:)]];
     [menu addItem:NSMenuItem.separatorItem];
     [menu addItem:[self menuItem:@"隐藏窗口" action:@selector(hideMainWindow:)]];
     NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"退出作业簿" action:@selector(terminate:) keyEquivalent:@""];
@@ -314,12 +347,7 @@ static NSView *HBButtonSurface(NSButton *button) {
             [menu insertItem:sidebar atIndex:destinations.count + 1];
 
             NSMenuItem *appearance = [self menuItem:@"外观" action:nil];
-            appearance.submenu = [[NSMenu alloc] initWithTitle:@"外观"];
-            for (NSArray<NSString *> *choice in @[@[@"跟随系统", @"system"], @[@"浅色", @"light"], @[@"深色", @"dark"]]) {
-                NSMenuItem *item = [self menuItem:choice[0] action:@selector(selectThemeFromMenu:)];
-                item.representedObject = choice[1];
-                [appearance.submenu addItem:item];
-            }
+            appearance.submenu = [self appearanceMenu];
             [menu insertItem:appearance atIndex:destinations.count + 2];
             [menu insertItem:NSMenuItem.separatorItem atIndex:destinations.count + 3];
         } else if ([originalTitle isEqualToString:@"Window"]) {
@@ -347,6 +375,8 @@ static NSView *HBButtonSurface(NSButton *button) {
         return !self.blocked;
     }
     if (action == @selector(openSettings:) || action == @selector(findAssignments:)) return !self.blocked;
+    if (action == @selector(hideMainWindow:)) return self.window.isVisible && !self.window.isMiniaturized;
+    if (action == @selector(editCourseFromMenu:)) return !self.blocked;
     return YES;
 }
 - (void)navigateFromMenu:(NSMenuItem *)item {
@@ -416,6 +446,7 @@ static NSView *HBButtonSurface(NSButton *button) {
         item.searchField.target = self;
         item.searchField.action = @selector(sendSearch:);
         item.autovalidates = NO;
+        item.visibilityPriority = NSToolbarItemVisibilityPriorityHigh;
         self.searchItem = item;
         return item;
     }
@@ -431,6 +462,7 @@ static NSView *HBButtonSurface(NSButton *button) {
                            accessibilityDescription:item.label];
         item.bordered = YES;
         item.autovalidates = NO;
+        if (!filter) item.visibilityPriority = NSToolbarItemVisibilityPriorityLow;
         if (filter) self.filterItem = item;
         else self.toolsItem = item;
         return item;
@@ -450,6 +482,20 @@ static NSView *HBButtonSurface(NSButton *button) {
         return item;
     }
     return nil;
+}
+- (NSMenu *)courseMenuForRow:(NSInteger)row {
+    if (self.blocked || row < 0 || (NSUInteger)row >= self.rows.count) return nil;
+    NSDictionary *course = self.rows[(NSUInteger)row];
+    if (![course[@"action"] isEqual:@"course"]) return nil;
+    NSMenu *menu = [NSMenu new];
+    NSMenuItem *edit = [self menuItem:@"编辑课程…" action:@selector(editCourseFromMenu:)];
+    edit.representedObject = course[@"value"];
+    edit.image = [NSImage imageWithSystemSymbolName:@"pencil" accessibilityDescription:nil];
+    [menu addItem:edit];
+    return menu;
+}
+- (void)editCourseFromMenu:(NSMenuItem *)item {
+    [self send:@"edit-course" value:item.representedObject];
 }
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView { (void)tableView; return (NSInteger)self.rows.count; }
 - (BOOL)tableView:(NSTableView *)tableView isGroupRow:(NSInteger)row {
@@ -502,6 +548,7 @@ static NSView *HBButtonSurface(NSButton *button) {
         ]];
     }
     cell.textField.stringValue = item[@"name"];
+    cell.toolTip = [item[@"action"] isEqual:@"course"] ? item[@"name"] : nil;
     if (!heading) cell.imageView.image = [NSImage imageWithSystemSymbolName:item[@"symbol"] accessibilityDescription:nil];
     return cell;
 }
@@ -517,7 +564,19 @@ static NSView *HBButtonSurface(NSButton *button) {
 }
 - (void)addCourseAction:(id)sender { (void)sender; [self send:@"add-course" value:@""]; }
 - (void)addAssignmentAction:(id)sender { (void)sender; [self send:@"add-assignment" value:@""]; }
-- (void)themeAction:(id)sender { (void)sender; [self send:@"toggle-theme" value:@""]; }
+- (NSMenu *)appearanceMenu {
+    return [self menuWithChoices:@[
+        @{@"id": @"system", @"name": @"跟随系统"},
+        @{@"id": @"light", @"name": @"浅色"},
+        @{@"id": @"dark", @"name": @"深色"},
+    ] action:@selector(selectThemeFromMenu:) selected:self.theme];
+}
+- (void)showAppearanceMenu:(NSButton *)sender {
+    if (self.blocked) return;
+    NSRect bounds = sender.bounds;
+    NSPoint origin = NSMakePoint(NSMinX(bounds), sender.isFlipped ? NSMaxY(bounds) : NSMinY(bounds));
+    [[self appearanceMenu] popUpMenuPositioningItem:nil atLocation:origin inView:sender];
+}
 - (void)sendSearch:(NSSearchField *)field {
     NSText *editor = field.currentEditor;
     if ([editor isKindOfClass:NSTextView.class] && [(NSTextView *)editor hasMarkedText]) return;
@@ -642,10 +701,20 @@ static NSView *HBButtonSurface(NSButton *button) {
         }
         insertionIndex++;
     }
-    self.quickAddItem.enabled = !self.blocked && self.canAdd;
-    self.settingsItem.enabled = !self.blocked;
     if (filter && ![self.assignmentFilter isEqualToDictionary:filter]) {
         self.filterItem.menu = [self menuWithChoices:filter[@"options"] action:@selector(selectFilter:) selected:filter[@"selected"]];
+        NSString *selected = filter[@"selected"];
+        NSString *label = @"筛选作业状态";
+        for (NSDictionary *option in filter[@"options"]) {
+            if ([option[@"id"] isEqual:selected]) {
+                label = [NSString stringWithFormat:@"筛选作业状态（%@）", option[@"name"]];
+                break;
+            }
+        }
+        BOOL narrowed = ![selected isEqual:@"all"];
+        self.filterItem.image = [NSImage imageWithSystemSymbolName:narrowed ? @"line.3.horizontal.decrease.circle.fill" : @"line.3.horizontal.decrease"
+                                         accessibilityDescription:label];
+        self.filterItem.toolTip = label;
         self.assignmentFilter = filter;
     }
     if (tools.count && ![self.tools isEqualToArray:tools]) {
@@ -788,7 +857,12 @@ static void HBApplyTint(NSButton *button, NSView *surface, NSString *tint) {
                 control = segments;
             }
             else if ([kind isEqualToString:@"select"] || [kind isEqualToString:@"menu"]) {
-                NSPopUpButton *popup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:[kind isEqualToString:@"menu"]];
+                BOOL pullsDown = [kind isEqualToString:@"menu"];
+                NSPopUpButton *popup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:pullsDown];
+                if (pullsDown) {
+                    popup.cell = [[HBCenteredPullDownCell alloc] initTextCell:@"" pullsDown:YES];
+                    popup.alignment = NSTextAlignmentCenter;
+                }
                 popup.controlSize = NSControlSizeLarge;
                 control = popup;
             }
